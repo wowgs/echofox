@@ -222,7 +222,7 @@ class Models:
         return self.models[name]
 
     async def activate(self, name):
-        """Makes `name` the only model in memory; None: no model at all (Anthropic is chosen)."""
+        """Makes `name` the only model in memory; None: no model at all."""
         entry = self.entries.get(name) if name else None
         if self.manage:
             for n, e in self.entries.items():

@@ -3,7 +3,8 @@ adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
   adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 1,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads]}
-  adapter.py    a module with one class that subclasses adapters.Adapter
+  adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
+                import the plugin's other modules (from . import helpers)
 A plugin the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
 interface is this one, and that the module has its class (Alex's decision, 2026-10-15). A user plugin with the name of
 a built-in one replaces it. A plugin works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
@@ -13,6 +14,7 @@ import json
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 
 import adapters
@@ -58,9 +60,13 @@ def load(folder, builtin):
             raise ValueError(f"interface {m.get('interface')!r}; this server has interface {INTERFACE}")
         if not all(isinstance(a, str) for a in m.get("apps") or []):
             raise ValueError("\"apps\" is not a list of bundle ids")
-        spec = importlib.util.spec_from_file_location(f"lv_plugin_{re.sub(r'\W', '_', p.name)}",
-                                                      os.path.join(folder, "adapter.py"))
+        package = f"lv_plugin_{re.sub(r'\W', '_', p.name)}"
+        spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
+                                                      submodule_search_locations=[folder])
         module = importlib.util.module_from_spec(spec)
+        for name in [n for n in sys.modules if n == package or n.startswith(package + ".")]:
+            del sys.modules[name]  # a plugin that loads again gets its modules fresh
+        sys.modules[package] = module
         spec.loader.exec_module(module)
         p.module = module
         classes = [c for c in vars(module).values() if isinstance(c, type) and issubclass(c, adapters.Adapter)

@@ -1,7 +1,8 @@
 """Adapters: one per target app (the app with the input box). They give the model the context of the conversation
 the dictation goes into. Each adapter is a plugin (adapters/registry.py), and works only when the config enables it;
 with none enabled, dictation runs in the base mode, without context. Plugins import this module for Adapter, Claim,
-bundle, terms, and the libraries markdown and claude_transcripts.
+bundle and terms, and adapters.markdown for chat apps that write Markdown. The core knows no vendor: everything about
+one platform's apps lives in that platform's plugin.
 
 The core (protocol.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
@@ -100,7 +101,8 @@ def claims(snapshot, sessions=(), enabled=None):
 
 def context(snapshot, sessions=(), enabled=None):
     """The context of the conversation the dictation goes into: {"adapter", "confidence", "reason", "session", "file",
-    "how", "title", "messages": newest first and cleaned, "terms": from the cleaned messages}, or with no "messages"
+    "how", "title", "details": the adapter's own fields for the record, "messages": newest first and cleaned, "terms":
+    from the cleaned messages}, or with no "messages"
     if the surest adapter found no conversation, or None if no enabled adapter claims the snapshot (with none enabled:
     the base mode, no context)."""
     ranked = claims(snapshot, sessions, enabled)

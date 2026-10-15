@@ -20,7 +20,7 @@ async def main():
     p.add_argument("--url", default="ws://127.0.0.1:8090")
     p.add_argument("--language", default="ru")
     p.add_argument("--model", help="a model of the registry (default: the server's first)")
-    p.add_argument("--session", action="append", default=[], help="a Claude Code session id for the chat context")
+    p.add_argument("--session", action="append", default=[], help="a session id that the client knows, for the chat context")
     p.add_argument("--app", help="the bundle id of the app with the input box, for the chat context")
     p.add_argument("--snapshot", help="a focus snapshot (macos lv-snapshot), for the chat context")
     p.add_argument("--fast", action="store_true", help="send without waiting between chunks")

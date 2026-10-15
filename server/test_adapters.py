@@ -4,10 +4,11 @@ import json
 import os
 import tempfile
 import time
+import sys
 import unittest
 
 import adapters
-from adapters import claude_transcripts, markdown, registry  # noqa: F401
+from adapters import markdown, registry  # noqa: F401
 
 DESKTOP = "com.anthropic.claudefordesktop"
 
@@ -72,7 +73,7 @@ class ClaudeCodeTest(Fixture):
             reply("m4", "Запушил в master."),
         ], tail="not json\n")
         c = adapters.context({}, ["old", "new", "../x"])
-        self.assertEqual((c["adapter"], c["session"], c["how"], c["title"]), ("claude-code", "new", "named sessions", "Тесты"))
+        self.assertEqual((c["adapter"], c["session"], c["how"], c["title"]), ("claude", "new", "named sessions", "Тесты"))
         self.assertEqual(c["messages"], [{"role": "assistant", "text": "Запушил в master."},
                                          {"role": "assistant", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
         self.assertEqual(c["terms"], ["master", "test", "npm"])
@@ -146,7 +147,7 @@ class PluginTest(Fixture):
         self.plugin("mine")
         snap = {"app": {"bundleId": "com.example.app"}}
         self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
-        self.assertIsNone(adapters.context(snap, enabled=["claude-desktop"]))
+        self.assertIsNone(adapters.context(snap, enabled=["claude"]))
         c = adapters.context(snap, enabled=["mine"])
         self.assertEqual((c["adapter"], c["messages"][0]["text"], c["terms"]), ("mine", "Hello Kubernetes", ["Kubernetes", "Hello"]))
         self.assertEqual(registry.plugins()["mine"].info({"mine"})["apps"], ["com.example.app"])
@@ -159,12 +160,12 @@ class PluginTest(Fixture):
         self.assertIn("interface 0", found["old"].error)
         self.assertIn("0 subclasses", found["twice"].error)
         self.assertIn("boom", found["crash"].error)
-        self.assertIsNotNone(found["claude-desktop"].adapter)
+        self.assertIsNotNone(found["claude"].adapter)
         self.assertFalse(found["crash"].info({"crash"})["enabled"])
 
     def test_a_users_plugin_replaces_a_built_in_one_of_the_same_name(self):
-        self.plugin("claude-code", {"name": "claude-code", "interface": 1})
-        self.assertFalse(registry.plugins()["claude-code"].builtin)
+        self.plugin("claude", {"name": "claude", "interface": 1})
+        self.assertFalse(registry.plugins()["claude"].builtin)
 
 
 class ClaudeDesktopTest(Fixture):
@@ -173,8 +174,8 @@ class ClaudeDesktopTest(Fixture):
         self.put("b", "other", [reply("m2", "другая сессия", entrypoint="claude-desktop")])  # newer, but not on screen
         self.desktop_record("local_abc", "cli-1", "Local Speech")
         c = adapters.context(code_tab("local_abc"))
-        self.assertEqual((c["adapter"], c["confidence"], c["how"], c["session"], c["desktopSession"]),
-                         ("claude-desktop", 1.0, "desktop store", "cli-1", "local_abc"))
+        self.assertEqual((c["adapter"], c["confidence"], c["how"], c["session"], c["details"]),
+                         ("claude", 1.0, "desktop store", "cli-1", {"desktopSession": "local_abc"}))
         self.assertEqual(c["messages"], [{"role": "assistant", "text": "Готово."}])
 
     def test_without_a_record_the_title_finds_the_transcript(self):
@@ -192,15 +193,15 @@ class ClaudeDesktopTest(Fixture):
         for n in ("t1", "t2"):
             self.put("a", n, [{"type": "custom-title", "customTitle": "Same"}, reply("m", "x")])
         c = adapters.context(code_tab("local_missing", title="Same"))
-        self.assertEqual(c["adapter"], "claude-desktop")
+        self.assertEqual(c["adapter"], "claude")
         self.assertNotIn("messages", c)
 
     def test_the_surest_adapter_wins(self):
         ranked = adapters.claims(code_tab("local_abc"), ["s1"])
-        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude-desktop", 1.0), ("claude-code", 0.9)])
+        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one plugin: the Code tab wins over named sessions
 
     def test_a_bad_desktop_id_reads_no_file(self):
-        self.assertIsNone(registry.plugins()["claude-desktop"].module.record("local_../../etc"))
+        self.assertIsNone(sys.modules["lv_plugin_claude.desktop"].record("local_../../etc"))
 
     def test_old_clients_send_a_bundle_id(self):
         self.assertEqual(adapters.snapshot_of({"app": DESKTOP}), {"app": {"bundleId": DESKTOP}})

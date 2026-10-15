@@ -77,16 +77,21 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order[2:], [("end", 2), ("end", 1)])
 
     async def test_the_app_asks_which_adapters_there_are(self):
-        self.args.adapters = ["claude-desktop"]
+        self.args.adapters = ["claude"]
         async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
             async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                 await ws.send(json.dumps({"type": "adapters"}))
                 got = json.loads(await ws.recv())
         by = {a["name"]: a for a in got["adapters"]}
         self.assertEqual((got["type"], got["interface"]), ("adapters", 1))
-        self.assertTrue(by["claude-desktop"]["enabled"] and by["claude-desktop"]["electronTree"])
-        self.assertEqual(by["claude-desktop"]["apps"], ["com.anthropic.claudefordesktop"])
-        self.assertFalse(by["claude-code"]["enabled"])
+        self.assertTrue(by["claude"]["enabled"] and by["claude"]["electronTree"] and by["claude"]["builtin"])
+        self.assertEqual(by["claude"]["apps"], ["com.anthropic.claudefordesktop"])
+        self.args.adapters = []
+        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
+            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(json.dumps({"type": "adapters"}))
+                got = json.loads(await ws.recv())
+        self.assertFalse(any(a["enabled"] for a in got["adapters"]))
 
     async def test_without_warm_text_nothing_is_warmed(self):
         self.args.warm_text = False
@@ -159,8 +164,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stub2.contexts[0]["session"], "s1")
         a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))
         self.assertEqual(a["session"], {"id": "s1", "file": os.path.join(d, "projects", "p", "s1.jsonl")})
-        self.assertEqual((a["chat"]["adapter"], a["chat"]["how"], a["chat"]["desktopSession"]),
-                         ("claude-desktop", "desktop store", "local_abc"))
+        self.assertEqual((a["chat"]["adapter"], a["chat"]["how"], a["chat"]["details"]),
+                         ("claude", "desktop store", {"desktopSession": "local_abc"}))
 
     async def test_a_recording_writes_its_metrics(self):
         saved = metrics.METRICS

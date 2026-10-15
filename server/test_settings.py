@@ -126,7 +126,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class MigrateTest(unittest.TestCase):
-    def test_version_2_becomes_3_with_the_built_in_adapters_enabled_and_the_order_kept(self):
+    def test_version_2_becomes_3_with_every_built_in_plugin_enabled_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             with open(f, "w", encoding="utf-8") as fh:
@@ -134,8 +134,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
             self.assertEqual(list(c), ["model", "language", "adapters", "models", "version"])
-            self.assertEqual((c["version"], c["adapters"]["claude-desktop"], c["adapters"]["claude-code"]),
-                             (3, {"enabled": True}, {"enabled": True}))
+            self.assertEqual((c["version"], c["adapters"]), (3, {"claude": {"enabled": True}}))  # every built-in one
             s.migrate(f)  # a version-3 file stays as it is
             self.assertEqual(json.load(open(f, encoding="utf-8")), c)
 

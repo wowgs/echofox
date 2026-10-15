@@ -2,7 +2,7 @@
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/mic.wav       the whole recording as the client sent it (16 kHz, 16-bit, mono),
                                                   before any cutting
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the model, the language, the client, the stop reason, the errors,
-                                                  each piece's text and the whole text, the Claude Code session the
+                                                  each piece's text and the whole text, the session the
                                                   text went to (its transcript), the chat context, and the Mac's input
                                                   volume and input device at the start
 gemma_voice.py also writes each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the

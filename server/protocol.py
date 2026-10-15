@@ -136,7 +136,7 @@ async def handle(ws, models, args):
                     found = await asyncio.to_thread(adapters.context, snapshot, sessions, args.adapters)
                     if found:
                         chat_info.update({k: found[k] for k in ("adapter", "confidence", "reason", "how", "session",
-                                                                "file", "title", "desktopSession") if found.get(k)})
+                                                                "file", "title", "details") if found.get(k)})
                     if found and "messages" in found:
                         chat = found
                         chat_info.update(messages=len(found["messages"]), terms=len(found["terms"]))

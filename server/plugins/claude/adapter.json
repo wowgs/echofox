@@ -1,9 +1,9 @@
 {
-  "name": "claude-desktop",
+  "name": "claude",
   "version": "1.0",
   "author": "local-voice",
   "source": "https://github.com/wowgs/local-voice",
-  "description": "Claude Desktop's Code tab: the conversation of the session in focus, through Desktop's session records.",
+  "description": "Anthropic's Claude: Claude Desktop's Code tab (the session in focus) and Claude Code sessions that a client names.",
   "interface": 1,
   "apps": [
     "com.anthropic.claudefordesktop"

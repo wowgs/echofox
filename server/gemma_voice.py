@@ -7,8 +7,8 @@ model's prompt and options, the adapters that give the chat context, and the rec
                    "client":"<name>","snapshot":{…},"sessions":["<session id>",…]}, then binary audio (16-bit
                    little-endian PCM, 16 kHz, mono), then {"type":"stop","reason":"user"|"silence"|"max_duration"}.
                    "snapshot": the focus at the start of the dictation (adapters/__init__.py has its fields); the
-                   adapter that claims it gives the context. "sessions": Claude Code sessions, if the client knows
-                   them. Clients from before snapshots send "app": a bundle id. An experiment may also send "prompt"
+                   adapter that claims it gives the context. "sessions": session ids the client knows, which an
+                   adapter may use. Clients from before snapshots send "app": a bundle id. An experiment may also send "prompt"
                    and "options", which override the model's.
   server → client  {"type":"speech"} while it hears speech; {"type":"text","text":…} for each finished piece,
                    in order; {"type":"error","message":…}; {"type":"done"} after the last piece, then it closes
@@ -26,9 +26,10 @@ seed), maxOutputTokens, the chat history (chatHistoryTokenBudget, chatTermsToken
 (pieceSeconds, cutSearchSeconds, thresholdDb, speechAboveNoiseDb). The server logs each recording's levels (speech,
 noise, peak, clipping, digital silence) and keeps them in audio.json.
 
-A piece's request holds the text before the audio (Claude's final replies in the session, within the option
+A piece's request holds the text before the audio (the assistant's replies in the conversation that an
+enabled adapter found, within the option
 chatHistoryTokenBudget, default 1000, terms within chatTermsTokenBudget, default a tenth of it, then the prompt) and
-the piece's audio. llama-server keeps the text's prefix in its cache between requests (cache_prompt).
+the piece's audio. The text is warmed in llama-server's cache while the speaker talks (cache_prompt).
 
 The text of a piece is limited to --output-tokens-per-second tokens per second of its audio plus
 --output-tokens-base (maxOutputTokens overrides it): without a limit, a model that never writes its end token

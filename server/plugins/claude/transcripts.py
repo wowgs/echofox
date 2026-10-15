@@ -1,5 +1,5 @@
-"""Reading Claude Code transcripts: a library for the adapters of Claude Code clients (Claude Desktop's Code tab, the
-VS Code extension, the CLI), which write each session to ~/.claude/projects/<project>/<session id>.jsonl.
+"""Reading Claude Code transcripts, for the Claude plugin: Claude Code clients (Claude Desktop's Code tab, the
+VS Code extension, the CLI) write each session to ~/.claude/projects/<project>/<session id>.jsonl.
 
 Kept from a transcript: only Claude's final replies, the text of each turn's last answer (stop_reason "end_turn").
 Dropped: the user's own messages (the model copied the user's previous dictation into the next transcription instead

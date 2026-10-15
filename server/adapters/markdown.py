@@ -1,9 +1,9 @@
-"""Markdown → plain text, for replies that an assistant wrote in Markdown (Claude Code, Claude Desktop).
+"""Markdown → plain text, for plugins of chat apps whose assistants write their replies in Markdown.
 
 The model that transcribes reads the chat context before the audio. With Markdown in it (lists, **bold**, `code`,
 tables), the model wrote the transcription without punctuation and capital letters: one recording, five runs each,
 text with punctuation in 1 of 5 runs with this session's Markdown replies, 5 of 5 without context, 5 of 5 with a
-session whose replies had little Markdown (2026-10-15, Gemma 4 E4B Q8_0 in llama.cpp). So the context gets plain
+session whose replies had little Markdown (2026-10-15, Claude Code transcripts, Gemma 4 E4B Q8_0 in llama.cpp). So the context gets plain
 prose: the words stay, the marks go, and each heading, list item and table row becomes a sentence.
 
 Code blocks go (code is not speech); inline code keeps its text (identifiers are the terms the speaker says), unless it

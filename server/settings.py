@@ -12,13 +12,13 @@ log = logging.getLogger("gemma_voice")
 
 
 # The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 3, shared with the menus:
-#   {"version": 3, "model": "<name>" | "anthropic", "language": "ru", "adapters": {"<plugin>": {"enabled": true}},
+#   {"version": 3, "model": "<name>", "language": "ru", "adapters": {"<plugin>": {"enabled": true}},
 #    "models": {"<name>": {"llamaServer": "http://127.0.0.1:8092", "launchd": "<label>", "prompt": "…", "options": {…}}},
 #    "silenceStopSeconds": 60, "saveRecordings": true,
 #    "server": {"host": …, "port": …, "pieceSeconds": …, …}}
 # language: the clients' dictation language; the server does not read it. adapters: the adapter plugins that work
 # (adapters/registry.py); none: the base mode, dictation without context. models: the registry; each a llama.cpp llama-server, started and stopped through its launchd agent. Only the model
-# chosen in the menus ("model") is in memory; Anthropic chosen: none. The server's settings: built-in defaults, then
+# chosen in the menus ("model") is in memory; a name not in the registry, or none: no model in memory. The server's settings: built-in defaults, then
 # the file, then the command line, which wins (the test server keeps its own port, log and metrics). The server
 # watches the file:
 #   "recording" settings take effect at the next recording;
@@ -38,8 +38,9 @@ def good_adapters(v):
 
 
 def migrate(path):
-    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had both built-in adapters
-    working, so the upgrade enables them; a new config has none (the base mode). The file keeps its order."""
+    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
+    working, so the upgrade enables every built-in plugin; a new config has none (the base mode). The file keeps its
+    order."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
@@ -47,17 +48,19 @@ def migrate(path):
         return
     if not isinstance(c, dict) or c.get("version") != 2:
         return
+    import adapters  # here, not at the top: adapters does not need the settings
+    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items() if p.builtin}
     out = {}
     for k, v in c.items():
         out[k] = 3 if k == "version" else v
         if k == "language" or (k == "model" and "language" not in c):
-            out["adapters"] = {"claude-desktop": {"enabled": True}, "claude-code": {"enabled": True}}
-    out.setdefault("adapters", {"claude-desktop": {"enabled": True}, "claude-code": {"enabled": True}})
+            out["adapters"] = builtin
+    out.setdefault("adapters", builtin)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     os.replace(tmp, path)
-    log.info("config %s: version 2 → 3; the built-in adapters claude-desktop and claude-code are enabled", path)
+    log.info("config %s: version 2 → 3; the built-in adapters are enabled: %s", path, ", ".join(builtin) or "none")
 
 
 def good_model(m):
@@ -165,7 +168,7 @@ def apply_recording_settings(st, now):
 
 
 def selected_model(config_path, models):
-    """The model chosen in the menus ("model" in the config), if this server has it; None for Anthropic or none."""
+    """The model chosen in the menus ("model" in the config), if this server has it; None otherwise."""
     try:
         with open(config_path, encoding="utf-8") as f:
             name = (json.load(f) or {}).get("model")

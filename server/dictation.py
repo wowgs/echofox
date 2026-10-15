@@ -17,7 +17,7 @@ MAX_PROMPT = 4000  # the menu allows the same
 # far had 95 tokens for 20.6 s (4.6 per second); 10 per second leaves twice that.
 OUTPUT_TOKENS_PER_SECOND = 10
 OUTPUT_TOKENS_BASE = 32
-# Tokens of the Claude Code chat history before the audio, when the options do not set chatHistoryTokenBudget.
+# Tokens of the chat history before the audio, when the options do not set chatHistoryTokenBudget.
 CHAT_HISTORY_TOKEN_BUDGET = 1000
 # The sampler when the options do not set it: Google's for Gemma 4 (generation_config.json of google/gemma-4-E4B-it
 # and google/gemma-4-12B-it: do_sample, temperature 1.0, top_k 64, top_p 0.95; the model card: "Use the following
