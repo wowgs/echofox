@@ -6,26 +6,41 @@
 //   a. Accessibility: the box's selected text is replaced. Claude Desktop's box reports success and changes nothing
 //      (2026-10-15).
 //   b. Cmd+V: to the frontmost app if the box is in it, else to the box's app in the background (CGEventPostToPid),
-//      if that app's own focus is still in the box; the clipboard is restored after it.
-//   c. The box's app comes to the front, Cmd+V, and the speaker is taken back to the app and box they were in.
+//      if that app's own focus is still in the box; the clipboard is restored after it. In the background, Claude
+//      Desktop did not take it (2026-10-15).
+//   c. In the background, without the focus: the box's value through Accessibility, only for an empty box (a draft in
+//      the box could lose its formatting); then the text typed as characters into the box's app (CGEventPostToPid).
+//   d. The box's app comes to the front, Cmd+V, and the speaker is taken back to the app and box they were in.
 import AppKit
 import ApplicationServices
 import FocusSnapshot
 
 enum Inserter {
     enum Result: String {
-        case accessibility, accessibilityUnchecked, paste, pasteUnchecked, pasteInBackground, pasteBroughtToFront,
-             clipboard
+        case accessibility, accessibilityUnchecked, paste, pasteUnchecked, pasteInBackground, valueInBackground,
+             typedInBackground, pasteBroughtToFront, clipboard
     }
 
     static let inputRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"]
 
     static func insert(_ text: String, into capture: FocusSnapshot.Capture?) -> (Result, String) {
         if let box = capture?.focused, let pid = capture?.pid, isInput(box) {
-            if let r = setSelectedText(text, box) { return (r, "the input box of the tap") }
-            if let r = pasteInto(box, pid: pid, text) { return (r, "the input box of the tap") }
+            var tried: [String] = []
+            let note = { (r: Result) in (r, "the input box of the tap" + (tried.isEmpty ? "" : "; \(tried.joined(separator: ", "))")) }
+            if let r = setSelectedText(text, box) { return note(r) }
+            tried.append("selected text: no")
+            let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            let focusKept = focused(in: pid).map { CFEqual($0, box) } ?? false
+            if let r = pasteInto(box, pid: pid, text) { return note(r) }
+            tried.append("cmd+v\(front ? "" : " in the background"): \(focusKept ? "no" : "skipped, the app's focus moved")")
+            if !front {
+                if let r = setValueIfEmpty(text, box) { return note(r) }
+                tried.append("value: \(length(box) == 0 ? "no" : "skipped, the box is not empty")")
+                if focusKept, let r = type(text, into: box, pid: pid) { return note(r) }
+                tried.append("typing: \(focusKept ? "no" : "skipped")")
+            }
             if bringToFrontAndPaste(box, pid: pid, text) {
-                return (.pasteBroughtToFront, "the input box of the tap; the speaker was taken back")
+                return (.pasteBroughtToFront, "the input box of the tap, brought to the front and back; " + tried.joined(separator: ", "))
             }
         }
         if let (now, pid) = focusedInput() {
@@ -76,7 +91,37 @@ enum Inserter {
         return grew(box, from: b) ? (front ? .paste : .pasteInBackground) : nil
     }
 
-    /// c. Brings the box's app to the front with the focus in the box, pastes, and takes the speaker back.
+    /// c. The box's whole value through Accessibility, only if the box is empty. The result if the text went in.
+    static func setValueIfEmpty(_ text: String, _ box: AXUIElement) -> Result? {
+        guard length(box) == 0 else { return nil }
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(box, kAXValueAttribute as CFString, &settable) == .success,
+              settable.boolValue,
+              AXUIElementSetAttributeValue(box, kAXValueAttribute as CFString, text as CFString) == .success
+        else { return nil }
+        return grew(box, from: 0) ? .valueInBackground : nil
+    }
+
+    /// c. The text as typed characters, sent to the box's app in the background. The result if the text went in.
+    static func type(_ text: String, into box: AXUIElement, pid: pid_t) -> Result? {
+        guard let before = length(box) else { return nil }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let units = Array(text.utf16)
+        var i = 0
+        while i < units.count {
+            let chunk = Array(units[i..<min(i + 16, units.count)])  // a keyboard event carries a few characters
+            for down in [true, false] {
+                let e = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down)
+                e?.flags = []
+                chunk.withUnsafeBufferPointer { e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: $0.baseAddress) }
+                e?.postToPid(pid)
+            }
+            i += 16
+        }
+        return grew(box, from: before, within: 1.5) ? .typedInBackground : nil
+    }
+
+    /// d. Brings the box's app to the front with the focus in the box, pastes, and takes the speaker back.
     static func bringToFrontAndPaste(_ box: AXUIElement, pid: pid_t, _ text: String) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
         let back = NSWorkspace.shared.frontmostApplication
@@ -100,9 +145,9 @@ enum Inserter {
         return ok
     }
 
-    /// Whether the element's text grows past `from` within half a second.
-    static func grew(_ e: AXUIElement, from: Int) -> Bool {
-        let until = Date().addingTimeInterval(0.5)
+    /// Whether the element's text grows past `from` within `seconds`.
+    static func grew(_ e: AXUIElement, from: Int, within seconds: TimeInterval = 0.5) -> Bool {
+        let until = Date().addingTimeInterval(seconds)
         repeat {
             if let n = length(e), n > from { return true }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
