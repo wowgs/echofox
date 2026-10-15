@@ -1,7 +1,6 @@
 {
- "schema": 2,
+ "schema": 3,
  "name": "local-voice",
- "files": "managed",
  "docs": {
   "dictation-terms": {
    "id": "NPqnqAUHX8Rr7DjYnsfqHW",
@@ -63,5 +62,6 @@
     }
    ]
   }
- }
+ },
+ "conflicts": "local"
 }

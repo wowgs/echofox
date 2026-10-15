@@ -8,3 +8,5 @@ __pycache__/
 /.docsync/push.json
 /.docsync/lock
 /.docsync-trash/
+# docs-local: this machine's sync state
+/.docsync/base/
