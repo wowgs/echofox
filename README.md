@@ -32,15 +32,15 @@ The server's settings are in the section `server` of the config file: `pieceSeco
 
 The server writes its metrics to `~/Library/Logs/local-voice/gemma-voice-metrics.jsonl`, one JSON object per line: each model request (prefill, cached and decode tokens and speeds from `llama-server`, time to the first token, wall time, audio length, `llama-server`'s physical footprint as macOS counts it), each recording (audio length, the wait after the stop) and each recording's levels. `server/metrics.py` prints a summary per model and the last requests.
 
-To send a WAV file the way a client does, and see the timing:
+To send a WAV file the way a client does, and see the timing (it goes to the test server below; the working one it reaches only with `--working`):
 
 ```
 server/.venv/bin/python server/try_wav.py recording.wav --language ru
 ```
 
-To try the model without touching the dictation you use, `server/test_server.sh start` runs a second dictation server on `ws://127.0.0.1:8091` with its own `llama-server` on port 8093, and stops the working `llama-server` meanwhile, so only one model is in memory. `server/test_server.sh stop` ends both and restarts the working dictation server, which starts the chosen model's `llama-server` again. 
+To try the model without touching the dictation you use, `server/test_server.sh start` runs a second dictation server on `ws://127.0.0.1:8091` with its own `llama-server` on port 8093 (the ports are in `server/places.py`), and stops the working dictation server (after its running recording) and the working `llama-server` meanwhile, so only one model is in memory and nothing starts the working one again. Your dictation is off until `server/test_server.sh stop`, which ends both test processes and starts the working dictation server again; it starts the chosen model's `llama-server`. 
 
-The tests need no model and no `llama-server`:
+The tests need no model and no `llama-server`. They run in a sandbox (`server/sandbox.py`, which every test module imports first): a temporary home folder and paths, a fake `launchctl`, and the ports of the working and the test servers refused, so they never touch your config, recordings, metrics, plugins or servers:
 
 ```
 server/.venv/bin/python -m unittest discover -s server
