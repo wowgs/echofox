@@ -22,7 +22,7 @@ def main():
           f", {len(snapshot.get('ancestors') or [])} ancestors, {len(snapshot.get('processes') or [])} processes,"
           f" snapshot took {snapshot.get('tookMs')} ms")
     ranked = adapters.claims(snapshot)
-    print("claims:" if ranked else "claims: none (the dictation would run without context)")
+    print("claims:" if ranked else "claims: none: the dictation runs without context")
     for _, c in ranked:
         print(f"  {c.adapter}: {c.confidence} ({c.reason})")
     found = adapters.context(snapshot)

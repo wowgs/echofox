@@ -80,8 +80,10 @@ Unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts Cl
 
 The client sends a focus snapshot in the start message: the frontmost app, its window, the element with the cursor and its ancestors, the nearest web area's URL and title, and the app's child processes with their working folders. It holds service fields only, never the text of input fields. `macos/` builds it (the `FocusSnapshot` library). The server asks every adapter whether the snapshot is its own and how sure it is, and the surest one finds the conversation. If none claims it, the dictation runs without context.
 
-- `claude-desktop`: Claude Desktop's Code tab. Its web area has the URL `https://claude.ai/epitaxy/local_<id>`. Desktop's record of that session (`~/Library/Application Support/Claude/claude-code-sessions/…/local_<id>.json`) names the Claude Code transcript (`cliSessionId`). Without a record, the web area's title finds the transcript of that title; without the Code tab, the newest session that Desktop wrote is read. The record's format is Desktop's own and not documented.
-- `claude-code`: a client that names its Claude Code sessions (the newest of them is read), or an app that may host Claude Code (VS Code, a terminal; then its newest session is read, a guess).
+- `claude-desktop`: Claude Desktop's Code tab. Its web area has the URL `https://claude.ai/epitaxy/local_<id>`. Desktop's record of that session (`~/Library/Application Support/Claude/claude-code-sessions/…/local_<id>.json`) names the Claude Code transcript (`cliSessionId`). Without a record, the web area's title finds the transcript of that title, but only if exactly one transcript has it. The record's format is Desktop's own and not documented. Without the Code tab in the snapshot (no Accessibility permission, the Chat tab, another window), the adapter does not claim it.
+- `claude-code`: a client that names its Claude Code sessions; the newest of them is read.
+
+The adapters never guess a session from the app alone: the newest session of an app is often another one that runs in the background. If no session is found exactly, the dictation runs without context.
 
 From a transcript, only the last text of each finished turn (`stop_reason` `end_turn`) goes there: not your own messages (the model copied your previous dictation into the next transcription), and not Claude's texts between tool calls. Tool calls and their results, thinking, attachments, skill texts, subagents, and tags such as `<system-reminder>` are left out.
 

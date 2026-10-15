@@ -72,15 +72,10 @@ class ClaudeCodeTest(Fixture):
         self.assertEqual(c["terms"], ["master", "test", "npm"])
         self.assertNotIn("messages", adapters.context({}, ["none"]))  # claimed, but no such transcript
 
-    def test_a_host_app_gets_its_newest_session_by_the_entrypoint_of_the_last_line(self):
-        self.put("b", "code", [reply("m2", "из VS Code", entrypoint="claude-vscode")], age=10)
-        self.put("b", "moved", [reply("m3", "начало", entrypoint="claude-vscode"),
-                                reply("m4", "продолжение", entrypoint="claude-desktop")], age=5)
-        c = adapters.context({"app": {"bundleId": "com.microsoft.VSCode"}})
-        self.assertEqual((c["adapter"], c["confidence"], c["session"]), ("claude-code", 0.3, "code"))
-
-    def test_an_unknown_app_gets_no_adapter(self):
-        self.assertIsNone(adapters.context({"app": {"bundleId": "com.tdesktop.Telegram"}}))
+    def test_no_session_is_guessed_from_the_app_alone(self):
+        self.put("b", "code", [reply("m2", "из VS Code", entrypoint="claude-vscode")])
+        for app in ("com.microsoft.VSCode", "com.mitchellh.ghostty", "com.tdesktop.Telegram"):
+            self.assertIsNone(adapters.context({"app": {"bundleId": app}}), app)
         self.assertIsNone(adapters.context({}))
 
     def test_terms_are_latin_script_words_the_most_frequent_first_without_common_english_words(self):
@@ -104,10 +99,17 @@ class ClaudeDesktopTest(Fixture):
         c = adapters.context(code_tab("local_missing"))
         self.assertEqual((c["how"], c["session"]), ("title", "cli-2"))
 
-    def test_desktop_without_the_code_tab_falls_back_to_its_newest_session_less_surely(self):
+    def test_desktop_without_the_code_tab_in_focus_is_not_claimed(self):
         self.put("b", "newest", [reply("m2", "свежая", entrypoint="claude-desktop")])
-        c = adapters.context({"app": {"bundleId": DESKTOP}})
-        self.assertEqual((c["confidence"], c["how"], c["session"]), (0.5, "newest session of the app", "newest"))
+        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}}))  # no Accessibility, the Chat tab, …
+        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}}))
+
+    def test_a_title_that_several_transcripts_share_gives_no_context(self):
+        for n in ("t1", "t2"):
+            self.put("a", n, [{"type": "custom-title", "customTitle": "Same"}, reply("m", "x")])
+        c = adapters.context(code_tab("local_missing", title="Same"))
+        self.assertEqual(c["adapter"], "claude-desktop")
+        self.assertNotIn("messages", c)
 
     def test_the_surest_adapter_wins(self):
         ranked = adapters.claims(code_tab("local_abc"), ["s1"])

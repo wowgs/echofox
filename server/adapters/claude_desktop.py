@@ -4,12 +4,13 @@ The Code tab is a web page in the app. Its web area, above the input box, has th
 https://claude.ai/epitaxy/local_<id>; <id> is the Desktop session. Desktop keeps a record of each session in
 ~/Library/Application Support/Claude/claude-code-sessions/<…>/<…>/local_<id>.json, whose "cliSessionId" names the
 Claude Code transcript (~/.claude/projects/<project>/<cliSessionId>.jsonl) and whose "title" is the session's name
-(measured 2026-10-15, Claude Desktop 2.37337.1; the format is Desktop's own and not documented). Ways to the session,
-the surest first:
+(measured 2026-10-15, Claude Desktop 2.37337.1; the format is Desktop's own and not documented). Ways to the session:
   1. the web area's URL → the session record → its transcript ("desktop store");
-  2. the web area's title ("<title> - Claude Code") → the transcript with that title ("title");
-  3. the newest session Desktop wrote ("newest session of the app"), a guess.
-The Chat tab (claude.ai conversations) has no local transcript; it is not read yet.
+  2. without a record, the web area's title ("<title> - Claude Code") → the one transcript with that title ("title");
+     several transcripts with that title: no context.
+The adapter claims only a snapshot whose focus is in the Code tab, and never guesses: without the Code tab's URL in
+the snapshot (no Accessibility permission, the Chat tab, another window) it does not claim it, and the dictation runs
+without context. The Chat tab (claude.ai conversations) has no local transcript; it is not read yet.
 """
 import glob
 import json
@@ -53,9 +54,7 @@ class ClaudeDesktop:
         if bundle(snapshot) != BUNDLE:
             return None
         m = CODE_URL.match(str(web_area(snapshot).get("url") or ""))
-        if m:
-            return Claim(self.name, 1.0, f"the Code tab of Desktop session {m.group(1)}")
-        return Claim(self.name, 0.5, "Claude Desktop, no Code tab in focus")
+        return Claim(self.name, 1.0, f"the Code tab of Desktop session {m.group(1)}") if m else None
 
     def context(self, snapshot, sessions):
         area = web_area(snapshot)
@@ -67,7 +66,5 @@ class ClaudeDesktop:
             return {**claude_code.context_of(where, "desktop store"), "desktopSession": m.group(1)}
         title = str(area.get("title") or "")
         if title.endswith(TITLE_SUFFIX):
-            where = claude_code.titled_session(title[:-len(TITLE_SUFFIX)])
-            if where:
-                return claude_code.context_of(where, "title")
-        return claude_code.context_of(claude_code.entrypoint_session("claude-desktop"), "newest session of the app")
+            return claude_code.context_of(claude_code.titled_session(title[:-len(TITLE_SUFFIX)]), "title")
+        return None
