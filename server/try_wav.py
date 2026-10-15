@@ -32,7 +32,7 @@ async def main():
     texts, stop, done = [], None, None
     async with connect(args.url, max_size=None) as ws:
         await ws.send(json.dumps({"type": "start", "language": args.language, "sampleRate": 16000,
-                                  "encoding": "pcm_s16le", "client": "try_wav", "sessions": args.session,
+                                  "encoding": "pcm_s16le", "client": "try_wav", "hints": {"sessions": args.session} if args.session else {},
                                   **({"model": args.model} if args.model else {}), **({"app": args.app} if args.app else {}),
                                   **({"snapshot": json.load(open(args.snapshot))} if args.snapshot else {})}))
 

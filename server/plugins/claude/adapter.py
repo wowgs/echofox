@@ -14,27 +14,45 @@ from adapters import Adapter, Claim, bundle, markdown
 from . import desktop, transcripts
 
 
+ABOUT = "a session with Claude, an AI assistant for software work"
+
+
+def as_context(found, **details):
+    """A transcript that transcripts.context_of found → this plugin's context, or None."""
+    if not found:
+        return None
+    return {"about": ABOUT, "messages": [{"from": "Claude", "text": m["text"]} for m in found["messages"]],
+            "source": f"{found['how']}: {found['file']}",
+            "details": {"session": found["session"], "file": found["file"], "how": found["how"],
+                        "title": found.get("title"), **details}}
+
+
 class Claude(Adapter):
-    def claim(self, snapshot, sessions):
-        m = desktop.code_tab(snapshot)
+    def claim(self, focus, hints):
+        m = desktop.code_tab(focus)
         if m:
             return Claim(self.name, 1.0, f"the Code tab of Claude Desktop session {m}")
-        if sessions:
+        if sessions(hints):
             return Claim(self.name, 0.9, "the client named its Claude Code sessions")
         return None
 
-    def context(self, snapshot, sessions):
-        local = desktop.code_tab(snapshot)
+    def context(self, focus, hints):
+        local = desktop.code_tab(focus)
         if not local:
-            return transcripts.context_of(transcripts.session_file(sessions), "named sessions")
+            return as_context(transcripts.context_of(transcripts.session_file(sessions(hints)), "named sessions"))
         cli = (desktop.record(local) or {}).get("cliSessionId")
         where = transcripts.session_file([cli]) if cli else None
         if where:
-            return {**transcripts.context_of(where, "desktop store"), "details": {"desktopSession": local}}
-        title = str(desktop.web_area(snapshot).get("title") or "")
+            return as_context(transcripts.context_of(where, "desktop store"), desktopSession=local)
+        title = str(desktop.web_area(focus).get("title") or "")
         if title.endswith(desktop.TITLE_SUFFIX):
-            return transcripts.context_of(transcripts.titled_session(title[:-len(desktop.TITLE_SUFFIX)]), "title")
-        return None
+            return as_context(transcripts.context_of(transcripts.titled_session(title[:-len(desktop.TITLE_SUFFIX)]), "title"))
+        return {"about": ABOUT, "details": {"desktopSession": local}}  # claimed, but no transcript found
 
     def clean(self, text):
         return markdown.plain(text)
+
+
+def sessions(hints):
+    """The Claude Code session ids a client sends (hints["sessions"])."""
+    return [s for s in (hints or {}).get("sessions") or [] if isinstance(s, str)][:50]

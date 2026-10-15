@@ -4,7 +4,7 @@
   "author": "local-voice",
   "source": "https://github.com/wowgs/local-voice",
   "description": "Anthropic's Claude: Claude Desktop's Code tab (the session in focus) and Claude Code sessions that a client names.",
-  "interface": 1,
+  "interface": 2,
   "apps": [
     "com.anthropic.claudefordesktop"
   ],

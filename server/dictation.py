@@ -107,11 +107,10 @@ async def run_blocking(fn, *args, cancel=None):
         raise
 
 
-CONTEXT_HEADER = ("The speaker is talking with an AI assistant about software. The assistant's earlier replies "
-                  "follow, oldest first. They show names and terms the speaker may use. Do not transcribe them.")
-
-
-ROLES = {"user": "Speaker", "assistant": "Assistant"}
+def context_header(about):
+    """What the model reads before the context: where the speaker writes, as the adapter says it."""
+    return (f"The speaker is writing into {about or 'a conversation'}. Its earlier messages follow, oldest first. "
+            "They show names and terms the speaker may use. Do not transcribe them.")
 
 
 class Dictation:
@@ -142,7 +141,7 @@ class Dictation:
             used += n
         lines, left = [], budget - used
         for m in context.get("messages") or []:  # newest first
-            line = f"{ROLES.get(m.get('role'), 'Speaker')}: {str(m.get('text', '')).strip()}"
+            line = f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}"
             ids = self.m.tokenize(line)
             if len(ids) > left:
                 if not lines and left > 32:  # the newest message alone is too long: its end
@@ -153,7 +152,7 @@ class Dictation:
             left -= len(ids)
         if not lines and not terms:
             return
-        parts = [CONTEXT_HEADER]
+        parts = [context_header(context.get("about"))]
         if terms:
             parts.append("Terms: " + ", ".join(terms))
         parts += reversed(lines)

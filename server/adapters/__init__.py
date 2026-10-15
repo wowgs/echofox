@@ -11,7 +11,7 @@ context. Only that adapter finds the session and builds its context. Every adapt
 each message of the context through it before the message goes to the model, and takes the terms from the cleaned
 messages. clean makes the app's text plain prose (adapters/markdown.py has why).
 
-SNAPSHOT, as the client sends it (only service fields, never the text of input fields):
+FOCUS, the snapshot the client sends (only service fields, never the text of input fields):
   {"app": {"bundleId", "pid", "name"},
    "window": {"title", "document"},
    "focused": {"role", "subrole", "title", "description", "identifier", "domClasses": [...]},
@@ -41,18 +41,27 @@ class Claim:
 
 
 class Adapter(abc.ABC):
-    """An adapter: claim, context, clean. An adapter without one of them cannot be made. The registry sets `name` and
-    `manifest` from the plugin's adapter.json."""
+    """An adapter: claim, context, clean, for any app whose content tells what the speaker is writing about: a chat
+    with an assistant, a messenger, mail, a document, a terminal. An adapter without one of the three cannot be made.
+    The registry sets `name` and `manifest` from the plugin's adapter.json.
+
+    focus: the snapshot (FOCUS above). hints: what the client knows and sends in the start message, as it is; the core
+    does not read it (an old client's "sessions" arrive as hints["sessions"])."""
     name = ""
     manifest = {}
 
     @abc.abstractmethod
-    def claim(self, snapshot, sessions):
-        """Claim, or None if the snapshot is not this adapter's."""
+    def claim(self, focus, hints):
+        """Claim(adapter, confidence 0..1, reason), or None if the focus is not this adapter's."""
 
     @abc.abstractmethod
-    def context(self, snapshot, sessions):
-        """{"session", "file", "how", "title", "messages": [{"role", "text"}] newest first}, or None."""
+    def context(self, focus, hints):
+        """What the speaker writes into, or None:
+        {"about": what it is, told to the model ("a Telegram chat with Anna"),
+         "messages": [{"from": who wrote it, told to the model, "text": …}], newest first,
+         "terms": names and words of this place (contacts, project names), optional,
+         "source": where it was read, for the record, optional,
+         "details": the adapter's own fields, for the record, optional}"""
 
     @abc.abstractmethod
     def clean(self, text):
@@ -88,29 +97,32 @@ def snapshot_of(start):
 from . import registry  # noqa: E402
 
 
-def claims(snapshot, sessions=(), enabled=None):
+def claims(focus, hints=None, enabled=None):
     """The claims of the enabled adapters (`enabled`: names; None: every working plugin), the surest first."""
     names = enabled if enabled is not None else list(registry.plugins())
     out = []
     for a in registry.enabled(names):
-        c = a.claim(snapshot, sessions)
+        c = a.claim(focus or {}, hints or {})
         if c is not None:
             out.append((a, c))
     return sorted(out, key=lambda ac: -ac[1].confidence)
 
 
-def context(snapshot, sessions=(), enabled=None):
-    """The context of the conversation the dictation goes into: {"adapter", "confidence", "reason", "session", "file",
-    "how", "title", "details": the adapter's own fields for the record, "messages": newest first and cleaned, "terms":
-    from the cleaned messages}, or with no "messages"
-    if the surest adapter found no conversation, or None if no enabled adapter claims the snapshot (with none enabled:
-    the base mode, no context)."""
-    ranked = claims(snapshot, sessions, enabled)
+def context(focus, hints=None, enabled=None):
+    """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
+    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages}; without
+    "messages" if the surest adapter found nothing; None if no enabled adapter claims the focus (with none enabled: the
+    base mode, no context)."""
+    ranked = claims(focus, hints, enabled)
     if not ranked:
         return None
     a, c = ranked[0]
-    found = dict(a.context(snapshot, sessions) or {})
-    if "messages" in found:
-        found["messages"] = [{**m, "text": t} for m in found["messages"] if (t := a.clean(m["text"]))]
-        found["terms"] = terms(m["text"] for m in reversed(found["messages"]))
-    return {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason, **found}
+    found = dict(a.context(focus or {}, hints or {}) or {})
+    out = {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason,
+           **{k: found[k] for k in ("about", "source", "details") if found.get(k)}}
+    if isinstance(found.get("messages"), list):
+        out["messages"] = [{"from": str(m.get("from") or ""), "text": t} for m in found["messages"]
+                           if isinstance(m, dict) and (t := a.clean(str(m.get("text") or "")))]
+        own = [t for t in found.get("terms") or [] if isinstance(t, str)]
+        out["terms"] = own + [t for t in terms(m["text"] for m in reversed(out["messages"])) if t not in own]
+    return out

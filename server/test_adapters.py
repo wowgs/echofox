@@ -72,12 +72,14 @@ class ClaudeCodeTest(Fixture):
             {"type": "user", "message": {"content": [{"type": "text", "text": "Закоммить в master"}]}},
             reply("m4", "Запушил в master."),
         ], tail="not json\n")
-        c = adapters.context({}, ["old", "new", "../x"])
-        self.assertEqual((c["adapter"], c["session"], c["how"], c["title"]), ("claude", "new", "named sessions", "Тесты"))
-        self.assertEqual(c["messages"], [{"role": "assistant", "text": "Запушил в master."},
-                                         {"role": "assistant", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
+        c = adapters.context({}, {"sessions": ["old", "new", "../x"]})
+        d = c["details"]
+        self.assertEqual((c["adapter"], d["session"], d["how"], d["title"]), ("claude", "new", "named sessions", "Тесты"))
+        self.assertTrue(c["about"] and c["source"].startswith("named sessions: "))
+        self.assertEqual(c["messages"], [{"from": "Claude", "text": "Запушил в master."},
+                                         {"from": "Claude", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
         self.assertEqual(c["terms"], ["master", "test", "npm"])
-        self.assertNotIn("messages", adapters.context({}, ["none"]))  # claimed, but no such transcript
+        self.assertNotIn("messages", adapters.context({}, {"sessions": ["none"]}))  # claimed, but no such transcript
 
     def test_no_session_is_guessed_from_the_app_alone(self):
         self.put("b", "code", [reply("m2", "из VS Code", entrypoint="claude-vscode")])
@@ -113,8 +115,8 @@ class CleanTest(Fixture):
     def test_every_adapter_cleans_and_the_terms_come_from_clean_text(self):
         self.put("a", "s", [reply("m1", "Смотри `FocusSnapshot`:\n```\nlet secretVar = take()\n```"),
                             reply("m2", "```\nonlyCode()\n```")])
-        c = adapters.context({}, ["s"])
-        self.assertEqual(c["messages"], [{"role": "assistant", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
+        c = adapters.context({}, {"sessions": ["s"]})
+        self.assertEqual(c["messages"], [{"from": "Claude", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
         self.assertEqual(c["terms"], ["FocusSnapshot"])
         for p in registry.plugins().values():
             self.assertIsInstance(p.adapter, adapters.Adapter)
@@ -131,15 +133,15 @@ class PluginTest(Fixture):
     def plugin(self, name, manifest=None, code=None):
         d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], name)
         os.makedirs(d, exist_ok=True)
-        json.dump(manifest if manifest is not None else {"name": name, "interface": 1, "apps": ["com.example.app"]},
+        json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]},
                   open(os.path.join(d, "adapter.json"), "w"))
         open(os.path.join(d, "adapter.py"), "w").write(code if code is not None else (
             "from adapters import Adapter, Claim\n"
             "class Mine(Adapter):\n"
-            "    def claim(self, snapshot, sessions):\n"
-            "        return Claim(self.name, 0.95, 'mine') if (snapshot.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
-            "    def context(self, snapshot, sessions):\n"
-            "        return {'session': 's', 'file': 'f', 'how': 'test', 'messages': [{'role': 'assistant', 'text': '**Hello** Kubernetes'}]}\n"
+            "    def claim(self, focus, hints):\n"
+            "        return Claim(self.name, 0.95, 'mine') if (focus.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
+            "    def context(self, focus, hints):\n"
+            "        return {'about': 'a chat with Anna', 'terms': ['Anna'], 'messages': [{'from': 'Anna', 'text': '**Hello** Kubernetes'}]}\n"
             "    def clean(self, text):\n"
             "        return text.replace('**', '')\n"))
 
@@ -149,7 +151,8 @@ class PluginTest(Fixture):
         self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
         self.assertIsNone(adapters.context(snap, enabled=["claude"]))
         c = adapters.context(snap, enabled=["mine"])
-        self.assertEqual((c["adapter"], c["messages"][0]["text"], c["terms"]), ("mine", "Hello Kubernetes", ["Kubernetes", "Hello"]))
+        self.assertEqual((c["adapter"], c["about"], c["messages"][0], c["terms"]),
+                         ("mine", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"}, ["Anna", "Kubernetes", "Hello"]))
         self.assertEqual(registry.plugins()["mine"].info({"mine"})["apps"], ["com.example.app"])
 
     def test_a_broken_plugin_stops_only_itself_and_says_why(self):
@@ -164,7 +167,7 @@ class PluginTest(Fixture):
         self.assertFalse(found["crash"].info({"crash"})["enabled"])
 
     def test_a_users_plugin_replaces_a_built_in_one_of_the_same_name(self):
-        self.plugin("claude", {"name": "claude", "interface": 1})
+        self.plugin("claude", {"name": "claude", "interface": 2})
         self.assertFalse(registry.plugins()["claude"].builtin)
 
 
@@ -174,15 +177,16 @@ class ClaudeDesktopTest(Fixture):
         self.put("b", "other", [reply("m2", "другая сессия", entrypoint="claude-desktop")])  # newer, but not on screen
         self.desktop_record("local_abc", "cli-1", "Local Speech")
         c = adapters.context(code_tab("local_abc"))
-        self.assertEqual((c["adapter"], c["confidence"], c["how"], c["session"], c["details"]),
-                         ("claude", 1.0, "desktop store", "cli-1", {"desktopSession": "local_abc"}))
-        self.assertEqual(c["messages"], [{"role": "assistant", "text": "Готово."}])
+        d = c["details"]
+        self.assertEqual((c["adapter"], c["confidence"], d["how"], d["session"], d["desktopSession"]),
+                         ("claude", 1.0, "desktop store", "cli-1", "local_abc"))
+        self.assertEqual(c["messages"], [{"from": "Claude", "text": "Готово."}])
 
     def test_without_a_record_the_title_finds_the_transcript(self):
         self.put("a", "cli-2", [{"type": "custom-title", "customTitle": "Local Speech"}, reply("m1", "По названию.")], age=60)
         self.put("b", "other", [reply("m2", "другая", entrypoint="claude-desktop")])
         c = adapters.context(code_tab("local_missing"))
-        self.assertEqual((c["how"], c["session"]), ("title", "cli-2"))
+        self.assertEqual((c["details"]["how"], c["details"]["session"]), ("title", "cli-2"))
 
     def test_desktop_without_the_code_tab_in_focus_is_not_claimed(self):
         self.put("b", "newest", [reply("m2", "свежая", entrypoint="claude-desktop")])
@@ -197,7 +201,7 @@ class ClaudeDesktopTest(Fixture):
         self.assertNotIn("messages", c)
 
     def test_the_surest_adapter_wins(self):
-        ranked = adapters.claims(code_tab("local_abc"), ["s1"])
+        ranked = adapters.claims(code_tab("local_abc"), {"sessions": ["s1"]})
         self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one plugin: the Code tab wins over named sessions
 
     def test_a_bad_desktop_id_reads_no_file(self):

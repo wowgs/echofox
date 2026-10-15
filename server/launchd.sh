@@ -30,6 +30,7 @@ $(for a in "${@:2}"; do printf '    <string>%s</string>\n' "$a"; done)
   <key>WorkingDirectory</key><string>$SERVER</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>210</integer>
   <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>$LOG</string>
   <key>StandardErrorPath</key><string>$LOG</string>

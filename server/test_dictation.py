@@ -56,7 +56,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
         d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 20, "seed": 3})
-        await d.prepare({"messages": [{"role": "user", "text": "hello there"}], "terms": []})
+        await d.prepare({"messages": [{"from": "Anna", "text": "hello there"}], "terms": []})
         self.assertEqual(await d.piece(LOUD * 2, 1), "text from llama")
         await d.piece(LOUD, 2)
         bodies = self.fake.completions()
@@ -64,7 +64,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         for body in bodies:  # the text, then one piece's audio; never an earlier answer
             parts = body["messages"][0]["content"]
             self.assertEqual([p["type"] for p in parts], ["text", "input_audio"])
-            self.assertTrue(parts[0]["text"].endswith("---\n\nPROMPT") and "Speaker: hello there" in parts[0]["text"])
+            self.assertTrue(parts[0]["text"].endswith("---\n\nPROMPT") and "Anna: hello there" in parts[0]["text"])
             self.assertEqual(base64.b64decode(parts[1]["input_audio"]["data"])[:4], b"RIFF")
             self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
         self.assertEqual((bodies[0]["max_tokens"], bodies[0]["cache_prompt"], bodies[0]["seed"]), (52, True, 3))
@@ -73,7 +73,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_warm_sends_the_same_text_alone_to_the_slot_of_its_piece(self):
         d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 20})
-        await d.prepare({"messages": [{"role": "assistant", "text": "hello there"}], "terms": []})
+        await d.prepare({"messages": [{"from": "Claude", "text": "hello there"}], "terms": []})
         await d.warm(1)
         await d.piece(LOUD, 2, slot=1)
         warm, piece = self.fake.completions()
@@ -85,9 +85,9 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_chat_context_fits_the_token_budget_newest_kept(self):
         d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 12, "chat_terms_token_budget": 4})
-        chat = {"messages": [{"role": "assistant", "text": "new reply here"},       # 4 tokens with the role
-                             {"role": "user", "text": "a question asked"},          # 4
-                             {"role": "assistant", "text": "an old long reply that does not fit"}],
+        chat = {"messages": [{"from": "Assistant", "text": "new reply here"},       # 4 tokens with the author
+                             {"from": "Speaker", "text": "a question asked"},          # 4
+                             {"from": "Assistant", "text": "an old long reply that does not fit"}],
                 "terms": ["GitHub", "Kubernetes", "PostgreSQL"]}  # 2 tokens each with the separator
         await d.prepare(chat)
         self.assertIn("Terms: GitHub, Kubernetes\n", d.text)
@@ -98,7 +98,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_budget_of_0_turns_the_chat_history_off(self):
         d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 0})
-        await d.prepare({"messages": [{"role": "user", "text": "hello"}], "terms": ["X"]})
+        await d.prepare({"messages": [{"from": "Anna", "text": "hello"}], "terms": ["X"]})
         self.assertEqual(d.text, "PROMPT")
 
     async def test_the_text_is_limited_by_the_length_of_the_audio(self):

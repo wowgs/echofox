@@ -4,11 +4,11 @@ app; server/try_wav.py).
 Clients are thin: they send the audio and show the text. The server has the rest: the model registry with each
 model's prompt and options, the adapters that give the chat context, and the recordings. The protocol, on one WebSocket:
   client → server  {"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le",
-                   "client":"<name>","snapshot":{…},"sessions":["<session id>",…]}, then binary audio (16-bit
+                   "client":"<name>","snapshot":{…},"hints":{…}}, then binary audio (16-bit
                    little-endian PCM, 16 kHz, mono), then {"type":"stop","reason":"user"|"silence"|"max_duration"}.
                    "snapshot": the focus at the start of the dictation (adapters/__init__.py has its fields); the
-                   adapter that claims it gives the context. "sessions": session ids the client knows, which an
-                   adapter may use. Clients from before snapshots send "app": a bundle id. An experiment may also send "prompt"
+                   adapter that claims it gives the context. "hints": what the client knows, passed to the
+                   adapters as it is (an old client's "sessions" become hints["sessions"]). Clients from before snapshots send "app": a bundle id. An experiment may also send "prompt"
                    and "options", which override the model's.
   server → client  {"type":"speech"} while it hears speech; {"type":"text","text":…} for each finished piece,
                    in order; {"type":"error","message":…}; {"type":"done"} after the last piece, then it closes
@@ -43,6 +43,7 @@ import argparse
 import asyncio
 import json
 import logging
+import signal
 
 from websockets.asyncio.server import serve
 
@@ -52,6 +53,9 @@ from audio import MODEL_MAX_SECONDS
 from llama import Models
 
 log = logging.getLogger("gemma_voice")
+
+
+STOP_WAIT_S = 200  # a recording waits up to 180 s for its text (the app's limit)
 
 
 async def main():
@@ -95,10 +99,22 @@ async def main():
     log.info("settings: %s", json.dumps(current, ensure_ascii=False))
     stop = asyncio.get_running_loop().create_future()
     watcher = asyncio.create_task(settings.watch_config(cli, models, st, current, path, stop, follow=not cli.ignore_selection))
-    async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"], max_size=None):
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: stop.done() or stop.set_result(None))
+    async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"],
+                     max_size=None) as server:
         log.info("listening on ws://%s:%d, models: %s (default %s), config %s", current["host"], current["port"],
                  ", ".join(current["models"]), next(iter(current["models"])), path)
         await stop
+        # A restart (launchd, a changed host or port) lets the running recordings end: no new connections, the open
+        # ones go on until their text is sent. launchd waits for it (ExitTimeOut in server/launchd.sh).
+        server.close(close_connections=False)
+        try:
+            await asyncio.wait_for(server.wait_closed(), STOP_WAIT_S)
+        except TimeoutError:
+            log.warning("recordings still running after %d s: the server ends anyway", STOP_WAIT_S)
+        log.info("the server ends")
     watcher.cancel()
 
 

@@ -77,11 +77,19 @@ The server reads this file at each recording, so a change by hand also takes eff
 
 `version` is the format of the file; the server reads only version 3.
 
-## The chat context
+## The context
 
-Without an enabled adapter, dictation runs in the base mode: the model gets only the prompt. With one, and unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts the assistant's replies in the conversation that the dictation goes into before the prompt, so the model knows the names and terms of the conversation. Adapters find that conversation, one adapter per target app.
+Without an enabled adapter, dictation runs in the base mode: the model gets only the prompt. With one, and unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts the messages of the place the dictation goes into (a session with an assistant, a messenger chat, a mail thread) before the prompt, so the model knows the names and terms used there. Adapters find that place and read it.
 
-An adapter is a plugin: a folder with `adapter.json`, its manifest (`name`, `version`, `author`, `source`, `description`, `interface`: 1, `apps`: the bundle ids whose focus it reads, `electronTree`: whether the app builds its accessibility tree only on request, `reads`: the files it reads), and `adapter.py`, a module with one subclass of `adapters.Adapter` (`claim`, `context`, `clean`). The built-in plugins are in `server/plugins/`; your own go to `~/Library/Application Support/Local Voice/adapters/` (`LOCAL_VOICE_PLUGINS` sets another folder), and one with the name of a built-in plugin replaces it. A plugin works only when the config enables it: `"adapters": {"claude": {"enabled": true}}`. A plugin's folder is a Python package, so `adapter.py` can import its other modules. The server checks only that the manifest reads, that its interface is 1 and that the module has its class; a plugin you add is yours to trust. The server loads the plugins again when a plugin's files change. The menu bar app asks the server which adapters are enabled, and takes the full focus snapshot and builds an Electron app's tree only for their apps.
+An adapter is a plugin: a folder with `adapter.json`, its manifest (`name`, `version`, `author`, `source`, `description`, `interface`: 2, `apps`: the bundle ids whose focus it reads, `electronTree`: whether the app builds its accessibility tree only on request, `reads`: the files it reads), and `adapter.py`, a module with one subclass of `adapters.Adapter`. An adapter serves any app whose content tells what you write about: a chat with an assistant, a messenger, mail, a document. Its interface (version 2):
+
+```
+claim(focus, hints)   -> Claim(adapter, confidence 0..1, reason) | None
+context(focus, hints) -> {about, messages: [{from, text}] newest first, terms?, source?, details?} | None
+clean(text)           -> str   ("" drops the message)
+```
+
+`focus` is the snapshot, `hints` what the client sent. `about` says to the model where you write ("a Telegram chat with Anna"), `from` who wrote each message, `terms` the place's own names and words; `source` and `details` go only to the record (`adapter.json`, `chat`). The built-in plugins are in `server/plugins/`; your own go to `~/Library/Application Support/Local Voice/adapters/` (`LOCAL_VOICE_PLUGINS` sets another folder), and one with the name of a built-in plugin replaces it. A plugin works only when the config enables it: `"adapters": {"claude": {"enabled": true}}`. A plugin's folder is a Python package, so `adapter.py` can import its other modules. The server checks only that the manifest reads, that its interface is 2 and that the module has its class; a plugin you add is yours to trust. The server loads the plugins again when a plugin's files change. The menu bar app asks the server which adapters are enabled, and takes the full focus snapshot and builds an Electron app's tree only for their apps.
 
 The client sends a focus snapshot in the start message: the frontmost app, its window, the element with the cursor and its ancestors, the nearest web area's URL and title, and the app's child processes with their working folders. It holds service fields only, never the text of input fields. `macos/` builds it (the `FocusSnapshot` library). The server asks every adapter whether the snapshot is its own and how sure it is, and the surest one finds the conversation. If none claims it, the dictation runs without context.
 
@@ -125,7 +133,7 @@ At the first start, macOS asks for two permissions: Microphone, and Accessibilit
 The server keeps every recording and never deletes one. Each recording gets a folder `~/speech/recordings/<YYYY-MM-DD>/<HHMMSS>-<id>/` (the server's `recordings` setting sets another root):
 
 - `mic.wav`: the whole recording as the client sent it (16 kHz, 16-bit, mono), before it is cut into pieces.
-- `adapter.json`: the model, the client, the stop reason, the errors, each piece's text and the whole text, the Claude Code session the text went to (its transcript file), the chat context, and the Mac's input volume and input device at the start of the recording. The text you correct and send is your next message in that transcript; `~/speech/tools/link_corrections.py` writes it to `correction.json` in the recording folder.
+- `adapter.json`: the model, the client, the stop reason, the errors, each piece's text and the whole text, the context (`chat`: the adapter, what it read, its details, the number of messages and terms), and the Mac's input volume and input device at the start of the recording. With the Claude plugin, `chat.details` has the Claude Code session and its transcript file; the text you correct and send is your next message in that transcript, and `~/speech/tools/link_corrections.py` writes it to `correction.json` in the recording folder.
 - `text-before-audio.txt`, `piece-N.wav`, `pieces.jsonl` and `audio.json`: the text the model got before the audio, each piece's audio as the model got it, each piece's text and tokens, and the levels.
 
 Speech takes about 115 MB per hour. `"saveRecordings": false` turns this off.
@@ -134,7 +142,7 @@ Speech takes about 115 MB per hour. `"saveRecordings": false` turns this off.
 
 A client speaks this protocol with `server/gemma_voice.py`, on one WebSocket, `ws://127.0.0.1:8090`:
 
-- It sends `{"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le","client":"<name>","snapshot":{…},"sessions":["<session id>",…]}`. `snapshot` is the focus snapshot (see the chat context); `sessions` are Claude Code sessions, if the client knows them. Clients from before snapshots send `"app":"<bundle id>"`. Without `model`, the server takes the registry's first model. An experiment may also send `prompt` and `options`, which override the model's.
+- It sends `{"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le","client":"<name>","snapshot":{…},"hints":{…}}`. `snapshot` is the focus snapshot (see the context); `hints` is what the client knows, and goes to the adapters as it is (a client that sends `"sessions"` gets them as `hints["sessions"]`). Clients from before snapshots send `"app":"<bundle id>"`. Without `model`, the server takes the registry's first model. An experiment may also send `prompt` and `options`, which override the model's.
 - Then it sends binary messages of audio: 16-bit little-endian PCM, 16 kHz, mono. When the recording stops, it sends `{"type":"stop","reason":"user"}` (or `silence`, `max_duration`, `error`).
-- Instead of a start message, a client may send `{"type":"adapters"}`: the server answers `{"type":"adapters","interface":1,"adapters":[{"name","enabled","builtin","version","author","source","description","apps","electronTree","reads","error"}]}` and closes the connection.
+- Instead of a start message, a client may send `{"type":"adapters"}`: the server answers `{"type":"adapters","interface":2,"adapters":[{"name","enabled","builtin","version","author","source","description","apps","electronTree","reads","error"}]}` and closes the connection.
 - The server sends `{"type":"speech"}` while it hears speech, `{"type":"text","text":"…"}` for each finished piece of text, in order, and `{"type":"error","message":"…"}` for errors. After the last piece it sends `{"type":"done"}` and closes the connection.

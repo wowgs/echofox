@@ -83,7 +83,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 await ws.send(json.dumps({"type": "adapters"}))
                 got = json.loads(await ws.recv())
         by = {a["name"]: a for a in got["adapters"]}
-        self.assertEqual((got["type"], got["interface"]), ("adapters", 1))
+        self.assertEqual((got["type"], got["interface"]), ("adapters", 2))
         self.assertTrue(by["claude"]["enabled"] and by["claude"]["electronTree"] and by["claude"]["builtin"])
         self.assertEqual(by["claude"]["apps"], ["com.anthropic.claudefordesktop"])
         self.args.adapters = []
@@ -109,7 +109,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((a["model"], a["client"], a["language"], a["stopReason"], a["text"], a["audioSeconds"]),
                          ("gemma-12b", "vscode", "ru", "silence", "gemma-12b piece 1", 2.0))
         self.assertEqual(a["input"], {"inputVolume": 50, "device": None})
-        self.assertIsNone(a["session"])  # no sessions named and no app: no chat context
+        self.assertIsNone(a["chat"])  # no sessions named and no app: no chat context
         self.args.save_recordings = False
         stub, got = await self.run_stream({"type": "start", "language": "ru"}, LOUD)
         self.assertIsNone(stub.save_dir)
@@ -160,12 +160,13 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                         os.environ.pop(k, None)
                     else:
                         os.environ[k] = v
-        self.assertEqual(stub.contexts[0]["messages"], [{"role": "assistant", "text": "Готово."}])
-        self.assertEqual(stub2.contexts[0]["session"], "s1")
+        self.assertEqual(stub.contexts[0]["messages"], [{"from": "Claude", "text": "Готово."}])
+        self.assertEqual(stub2.contexts[0]["details"]["session"], "s1")  # an old client's "sessions" are hints
         a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))
-        self.assertEqual(a["session"], {"id": "s1", "file": os.path.join(d, "projects", "p", "s1.jsonl")})
-        self.assertEqual((a["chat"]["adapter"], a["chat"]["how"], a["chat"]["details"]),
-                         ("claude", "desktop store", {"desktopSession": "local_abc"}))
+        self.assertEqual((a["chat"]["details"]["session"], a["chat"]["details"]["file"]),
+                         ("s1", os.path.join(d, "projects", "p", "s1.jsonl")))
+        self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"]),
+                         ("claude", "desktop store", "local_abc"))
 
     async def test_a_recording_writes_its_metrics(self):
         saved = metrics.METRICS

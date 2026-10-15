@@ -1,6 +1,6 @@
 """The adapter plugins: the built-in ones in server/plugins/, the user's in ~/Library/Application Support/Local Voice/
 adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
-  adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 1,
+  adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 2,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads]}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import adapters
 
-INTERFACE = 1
+INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
 BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins")
 log = logging.getLogger("gemma_voice")
 
