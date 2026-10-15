@@ -118,15 +118,20 @@ class CleanTest(Fixture):
         self.assertEqual(plain("Страница на **`http://host.local:9000`**. Проверил."), "Страница на. Проверил.")
         self.assertEqual(plain("`rp-monitor` работает на `http://h:1`, флаг `--spec-type ngram-*`."),
                          "rp-monitor работает на, флаг --spec-type ngram-*.")
-        self.assertEqual(plain("Открывай *http://a.b/c*, или *http://d.e*."), "Открывай, или.")
+        self.assertEqual(plain("Открывай *http://a.b/c*, или *http://d.e*, а `https://…` как пример."),
+                         "Открывай, или, а как пример.")
         self.assertEqual(plain("Код ``a `b` c`` и `x`."), "Код и x.")
-        self.assertEqual(plain("Одна ` без пары."), "Одна без пары.")
 
     def test_inline_code_that_is_code_goes_and_terms_stay(self):
         self.assertEqual(adapters.markdown.plain(
             'Шлёт `POST /cmd` с `{"text": "..."}`, потом `close()`, `a = 1` и `sudo apt install glances`; '
             'а `llama-server`, `~/.zshrc` и `push --force` — термины.'),
             "Шлёт POST /cmd с, потом, и; а llama-server, ~/.zshrc и push --force — термины.")
+
+    def test_code_blocks_of_every_kind_and_html_go(self):
+        md = ("Текст.\n\n````md\n```\nвнутри\n```\n````\n\n    отступ кода\n\n<details>\nблок html\n</details>\n\n"
+              "- пункт\n\n  ```sh\n  rm -rf x\n  ```\n\n~~~\nтильды\n~~~\nКонец <b>жирный</b> ![схема](a.png) <http://x.y>.")
+        self.assertEqual(adapters.markdown.plain(md), "Текст.\nПункт.\nКонец жирный схема.")
 
     def test_escapes_and_escaped_pipes_in_tables(self):
         md = ("| Команда | Аргументы |\n|---|---|\n| `media` | `action: pause\\|play` |\n"

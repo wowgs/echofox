@@ -3,77 +3,68 @@
 The model that transcribes reads the chat context before the audio. With Markdown in it (lists, **bold**, `code`,
 tables), the model wrote the transcription without punctuation and capital letters: one recording, five runs each,
 text with punctuation in 1 of 5 runs with this session's Markdown replies, 5 of 5 without context, 5 of 5 with a
-session whose replies had little Markdown (2026-10-15, Claude Code transcripts, Gemma 4 E4B Q8_0 in llama.cpp). So the context gets plain
-prose: the words stay, the marks go, and each heading, list item and table row becomes a sentence.
+session whose replies had little Markdown (2026-10-15, Claude Code transcripts, Gemma 4 E4B Q8_0 in llama.cpp). So the
+context gets plain prose: the words stay, the marks go, and each heading, list item and table row becomes a sentence.
 
-Code blocks go (code is not speech). Inline code keeps its text when it is a term: an identifier, a file, a flag, a
-short command (the terms the speaker says). It goes when it is code: a URL, more than CODE_WORDS words, or any of
-CODE_CHARS (JSON, calls, assignments, shell pipes), or only marks such as `**`. Its content is set aside before the
-other rules, so a URL or a mark in it never eats the backticks around it. Links keep their text, bare URLs go.
-Backslash escapes give their character. A table's header row goes; each other row becomes "first cell: the other
-cells." (a pipe escaped as \\| stays in its cell). Each sentence made from a heading, list item or table row starts
-with a capital letter, as prose does, unless its first word is written with a small one on purpose (iPhone, macOS,
-a.py, snake_case).
+markdown-it-py parses the text (CommonMark with GitHub's tables, strikethrough and bare links), so what is code, a
+link or a mark is the parser's answer, escapes included. Code blocks and HTML go (code is not speech). Inline code
+keeps its text when it is a term: an identifier, a file, a flag, a short command (the terms the speaker says). It goes
+when it is code: a URL, more than CODE_WORDS words, any of CODE_CHARS (JSON, calls, assignments, shell pipes), or
+no letter or digit at all (`**`). Links keep their text, bare URLs (with their scheme) and e-mail addresses go, images keep their alt text. A table's header
+row goes; each other row becomes "first cell: the other cells." Each sentence made from a heading, list item or table
+row starts with a capital letter, as prose does, unless its first word is written with a small one on purpose
+(iPhone, macOS, a.py, snake_case).
 """
 import re
 
-FENCE = re.compile(r"^\s*(```|~~~)")
-RULE = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
-HEADING = re.compile(r"^\s{0,3}#{1,6}\s+")
-ITEM = re.compile(r"^\s*(?:[-*+]|\d{1,3}[.)])\s+")
-QUOTE = re.compile(r"^\s*(?:>\s?)+")
-TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
-IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
-URL = re.compile(r"<?\bhttps?://[^\s()`]*[^\s().,;:!?`*>]>?")  # a backtick or a mark after it is not the URL's
-CODE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")  # a code span ends with as many backticks as it began
-CODE_CHARS = re.compile(r"[{}\[\]();=<>\"'|\\$`]")
+from markdown_it import MarkdownIt
+
+MD = MarkdownIt("gfm-like")
+MD.linkify.set({"fuzzy_link": False})  # a link needs its scheme: a.py, github.com are words a speaker says
+CODE_CHARS = set("{}[]();=<>\"'|\\$`")
 CODE_WORDS = 3
-WORDLESS = re.compile(r"[^\w]*")
-ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")  # a backslash before ASCII punctuation (CommonMark)
-CELL = re.compile(r"(?<!\\)\|")
-KEPT = re.compile("\ue000(\\d+)\ue001")  # a set-aside piece; private-use characters, not in chat text
-STRONG = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
-EM = re.compile(r"(?<![\w*])([*_])(?=\S)(.+?)(?<=\S)\1(?![\w*])")
-STRIKE = re.compile(r"~~(.+?)~~")
-MARKS = re.compile(r"(?<![\w*_~])(?:\*+|_+|~~)(?![\w*_~])")  # marks left without a pair
-HTML = re.compile(r"</?[A-Za-z][\w-]*(?:\s[^<>]*)?/?>")
+BARE_LINKS = {"linkify", "autolink"}  # the markup of a link the text did not name
 END = re.compile(r"[.!?…:;,]$")
 
 
 def code_text(content):
     """An inline code span's text: kept if it is a term, "" if it is code."""
     t = content.strip()
-    if URL.search(t) or CODE_CHARS.search(t) or len(t.split()) > CODE_WORDS or WORDLESS.fullmatch(t):
+    if ("://" in t or MD.linkify.test(t) or CODE_CHARS & set(t) or len(t.split()) > CODE_WORDS
+            or not any(c.isalnum() for c in t)):
         return ""
     return t
 
 
-def inline(s):
-    kept = []
-
-    def keep(text):
-        kept.append(text)
-        return f"\ue000{len(kept) - 1}\ue001"
-
-    s = CODE.sub(lambda m: keep(code_text(m.group(2))), s)
-    s = ESCAPE.sub(lambda m: keep(m.group(1)), s)
-    s = s.replace("`", "")  # a backtick without a pair
-    s = IMAGE.sub(r"\1", s)
-    s = LINK.sub(r"\1", s)
-    s = URL.sub("", s)
-    s = STRONG.sub(r"\2", s)
-    s = EM.sub(r"\2", s)
-    s = STRIKE.sub(r"\1", s)
-    s = HTML.sub("", s)
-    s = MARKS.sub("", s)
-    s = KEPT.sub(lambda m: kept[int(m.group(1))], s)
-    s = re.sub(r"\(\s*(?:[,;]\s*)*\)", "", s)  # brackets left empty
+def tidy(s):
+    """The prose around what went: no brackets left empty, no space before a stop."""
+    s = re.sub(r"\(\s*(?:[,;]\s*)*\)", "", s)
     s = re.sub(r"\(\s*[,;]\s*", "(", s)
     s = re.sub(r"(?:\s*[,;])+\s*\)", ")", s)
-    s = re.sub(r"\s+([.,;:!?])", r"\1", s)  # the space left where a URL was
+    s = re.sub(r"\s+([.,;:!?])", r"\1", s)
     s = re.sub(r"[,;:]+([.!?])", r"\1", s)
     return re.sub(r"\s{2,}", " ", s).strip()
+
+
+def text_of(inline):
+    """The words of an inline token."""
+    out, in_bare_link = [], False
+    for c in inline.children or []:
+        if c.type == "link_open":
+            in_bare_link = c.markup in BARE_LINKS
+        elif c.type == "link_close":
+            in_bare_link = False
+        elif in_bare_link:
+            continue
+        elif c.type == "text":
+            out.append(c.content)
+        elif c.type == "code_inline":
+            out.append(code_text(c.content))
+        elif c.type in ("softbreak", "hardbreak"):
+            out.append(" ")
+        elif c.type == "image":
+            out.append(c.content)  # its alt text
+    return tidy("".join(out))
 
 
 def sentence(s):
@@ -89,43 +80,31 @@ def sentence(s):
 
 def plain(text):
     """Markdown text → paragraphs of plain prose, one per line."""
-    paragraphs, current, in_code = [], [], False
-
-    def flush():
-        if current:
-            paragraphs.append(" ".join(current))
-            current.clear()
-
-    lines = text.splitlines()
-    for i, raw in enumerate(lines):
-        if FENCE.match(raw):
-            in_code = not in_code
-            flush()
-            continue
-        if in_code:
-            continue
-        if not raw.strip() or RULE.match(raw) or TABLE_RULE.match(raw):
-            flush()
-            continue
-        line = QUOTE.sub("", raw)
-        if HEADING.match(line):
-            flush()
-            current.append(sentence(inline(HEADING.sub("", line))))
-            flush()
-        elif line.strip().startswith("|"):
-            flush()
-            if i + 1 < len(lines) and TABLE_RULE.match(lines[i + 1]):
-                continue  # the header row
-            row = line.strip()[1:]
-            row = row[:-1] if row.endswith("|") and not row.endswith("\\|") else row
-            cells = [c for c in (inline(c.replace("\\|", "|")) for c in CELL.split(row)) if c]
-            row = cells[0] + (": " + ", ".join(cells[1:]) if len(cells) > 1 else "") if cells else ""
-            current.append(sentence(row))
-            flush()
-        elif ITEM.match(line):
-            flush()
-            current.append(sentence(inline(ITEM.sub("", line))))
-        else:
-            current.append(inline(line))
-    flush()
+    paragraphs, row, header, items, parent = [], None, False, 0, None
+    for t in MD.parse(text):
+        if t.type == "list_item_open":
+            items += 1
+        elif t.type == "list_item_close":
+            items -= 1
+        elif t.type == "thead_open":
+            header = True
+        elif t.type == "thead_close":
+            header = False
+        elif t.type == "tr_open":
+            row = []
+        elif t.type == "tr_close":
+            cells = [c for c in row if c]
+            if cells and not header:
+                paragraphs.append(sentence(cells[0] + (": " + ", ".join(cells[1:]) if len(cells) > 1 else "")))
+            row = None
+        elif t.type == "inline":
+            s = text_of(t)
+            if row is not None:
+                row.append(s)
+            elif parent == "heading_open" or items:
+                paragraphs.append(sentence(s))
+            else:
+                paragraphs.append(s)
+        if t.type != "inline":
+            parent = t.type
     return "\n".join(p for p in paragraphs if p.strip(" ."))
