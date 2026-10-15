@@ -34,23 +34,52 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Permissions
 
+    /// One system prompt at a time: two at once showed on top of each other, and answering the Microphone one closed
+    /// the Accessibility one without adding the app to the list (macOS 27.0.1, 2026-10-15). So the Microphone first,
+    /// then Accessibility.
     private func askPermissions() {
-        let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        if AXIsProcessTrustedWithOptions(prompt) {
-            accessibilityGranted()
-        } else {
-            Log.write("waiting for the Accessibility permission")
-            trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] t in
-                guard AXIsProcessTrusted() else { return }
-                t.invalidate()
-                self?.accessibilityGranted()
-            }
-        }
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             AVCaptureDevice.requestAccess(for: .audio) { ok in
                 Log.write("microphone permission: \(ok)")
-                DispatchQueue.main.async { self.update() }
+                DispatchQueue.main.async {
+                    self.askAccessibility()
+                    self.update()
+                }
             }
+        } else {
+            askAccessibility()
+        }
+    }
+
+    /// Shows the system's Accessibility prompt if the app is not trusted, and watches for the permission.
+    private func askAccessibility() {
+        let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        if AXIsProcessTrustedWithOptions(prompt) {
+            accessibilityGranted()
+            return
+        }
+        Log.write("asked for the Accessibility permission")
+        guard trustTimer == nil else { return }
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] t in
+            guard AXIsProcessTrusted() else { return }
+            t.invalidate()
+            self?.trustTimer = nil
+            self?.accessibilityGranted()
+        }
+    }
+
+    @objc private func allowAccessibility() {
+        askAccessibility()
+        openSettings("Privacy_Accessibility")
+    }
+
+    @objc private func allowMicrophone() {
+        openSettings("Privacy_Microphone")
+    }
+
+    private func openSettings(_ anchor: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -156,6 +185,16 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             status = "Ready. Tap the right Option to dictate."
         }
         menu.addItem(disabled(status))
+        if !AXIsProcessTrusted() {
+            let a = NSMenuItem(title: "Allow Accessibility…", action: #selector(allowAccessibility), keyEquivalent: "")
+            a.target = self
+            menu.addItem(a)
+        }
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .denied {
+            let m = NSMenuItem(title: "Allow the Microphone…", action: #selector(allowMicrophone), keyEquivalent: "")
+            m.target = self
+            menu.addItem(m)
+        }
         if let t = lastText {
             let shown = t.count > 60 ? String(t.prefix(60)) + "…" : t
             let copy = NSMenuItem(title: "Copy the last text: “\(shown)”", action: #selector(copyLast), keyEquivalent: "")
