@@ -7,6 +7,9 @@
    "name": "Dictation terms"
   },
   "docs/design": "8341d27e-60e1-45f1-977b-492a36109cba",
-  "docs/adapters": null
+  "docs/adapters": {
+   "id": "cc42f860-9fff-4014-b278-6a578cd6856f",
+   "name": "Local Voice: optional adapters"
+  }
  }
 }
