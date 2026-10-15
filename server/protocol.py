@@ -30,11 +30,13 @@ log = logging.getLogger("gemma_voice")
 
 
 def info(args):
-    """What a client needs to know of this server: the protocol, the audio, the waits, the adapters."""
+    """What a client needs to know of this server: the protocol, the audio, the waits, the languages the prompt names,
+    the adapters."""
     enabled = set(getattr(args, "adapters", None) or [])
     return {"type": "info", "interface": INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
             "sampleRate": constants.RATE, "encoding": constants.ENCODING,
             "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
+            "languages": [{"code": c, "name": n} for c, n in sorted(LANGUAGES.items(), key=lambda i: i[1])],
             "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()]}
 
 

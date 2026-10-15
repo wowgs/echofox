@@ -18,7 +18,7 @@ class ContractTest(unittest.TestCase):
         info = protocol.info(args())
         example = EXAMPLES["info"]
         self.assertEqual(set(info), set(example))
-        for k in ("type", "interface", "sampleRate", "encoding", "textWaitSeconds"):
+        for k in ("type", "interface", "sampleRate", "encoding", "textWaitSeconds", "languages"):
             self.assertEqual(info[k], example[k], k)
         self.assertEqual(set(info["adapters"][0]), set(example["adapters"][0]))
         self.assertEqual((protocol.INTERFACE, constants.RATE, constants.TEXT_WAIT_S),

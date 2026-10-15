@@ -145,12 +145,31 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
     }
 
     func choose(model: String) {
+        write(["model"], model, "model chosen: \(model)")
+    }
+
+    func choose(language: String) {
+        write(["language"], language, "language chosen: \(language.isEmpty ? "the speech's own" : language)")
+    }
+
+    func enable(adapter: String, _ on: Bool) {
+        guard write(["adapters", adapter, "enabled"], on, "adapter \(adapter): \(on ? "on" : "off")") else { return }
+        // The server applies the change at its next look at the file; then the snapshots and trees follow its info.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.serverConfigApplySeconds) { [weak self] in
+            self?.server.refresh(Config.load().serverURL)
+        }
+    }
+
+    @discardableResult
+    private func write(_ path: [String], _ value: Any, _ done: String) -> Bool {
         do {
-            try Config.choose(model: model)
-            Log.write("model chosen: \(model)")
+            try Config.set(path, to: value)
+            Log.write(done)
+            return true
         } catch {
             lastError = "cannot write the config: \(error)"
             menu.update()
+            return false
         }
     }
 

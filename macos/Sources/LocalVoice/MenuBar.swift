@@ -18,6 +18,8 @@ protocol MenuActions: AnyObject {
     func allowMicrophone()
     func copyLastText()
     func choose(model: String)
+    func choose(language: String)
+    func enable(adapter: String, _ on: Bool)
     func openLog()
 }
 
@@ -80,25 +82,70 @@ final class MenuBar: NSObject, NSMenuDelegate {
         if let e = s.lastError { menu.addItem(disabled("Last error: " + cut(e, Tuning.menuErrorChars))) }
         if let p = s.serverProblem { menu.addItem(disabled("Server: " + cut(p, Tuning.menuErrorChars))) }
         menu.addItem(.separator())
-        let models = NSMenu()
-        for name in s.config.models {
-            let m = action(name) { $0.choose(model: name) }
-            m.state = name == s.config.model ? .on : .off
-            models.addItem(m)
-        }
-        if let e = s.config.error { models.addItem(disabled(e)) }
-        let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
-        modelItem.submenu = models
-        menu.addItem(modelItem)
-        menu.addItem(disabled("Language: \(s.config.language.isEmpty ? "the speech's own" : s.config.language)"))
-        let on = (s.server?.adapters ?? []).filter(\.enabled).map(\.name)
-        menu.addItem(disabled("Adapters: " + (on.isEmpty ? "none (dictation without context)" : on.joined(separator: ", "))))
-        for a in s.server?.adapters ?? [] {
-            if let e = a.error { menu.addItem(disabled("Adapter \(a.name): \(cut(e, Tuning.menuErrorChars))")) }
-        }
+        menu.addItem(submenu("Model: " + (s.config.model ?? "none"), modelItems(s)))
+        menu.addItem(submenu("Language: " + languageName(s), languageItems(s)))
+        let on = (s.server?.adapters ?? []).filter { s.config.adapters[$0.name] == true }
+        let failing = on.contains { $0.error != nil } ? " (one does not work)" : ""
+        menu.addItem(submenu("Adapters: " + (on.isEmpty ? "none" : on.map(\.name).joined(separator: ", ")) + failing,
+                             adapterItems(s)))
         menu.addItem(.separator())
         menu.addItem(action("Open the Log") { $0.openLog() })
         menu.addItem(NSMenuItem(title: "Quit Local Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    private func modelItems(_ s: MenuState) -> [NSMenuItem] {
+        var items = s.config.models.map { name in checked(action(name) { $0.choose(model: name) }, name == s.config.model) }
+        if let e = s.config.error { items.append(disabled(e)) }
+        return items
+    }
+
+    /// The config's language without a region ("ru" of "ru-RU"), as the server reads it.
+    private func code(_ s: MenuState) -> String { String(s.config.language.prefix(while: { $0 != "-" })) }
+
+    private func languageName(_ s: MenuState) -> String {
+        if s.config.language.isEmpty { return "the speech's own" }
+        return s.server?.languages.first { $0.code == code(s) }?.name ?? s.config.language
+    }
+
+    private func languageItems(_ s: MenuState) -> [NSMenuItem] {
+        var items = [checked(action("The Speech's Own Language") { $0.choose(language: "") }, s.config.language.isEmpty),
+                     .separator()]
+        let languages = s.server?.languages ?? []
+        items += languages.map { l in checked(action(l.name) { $0.choose(language: l.code) }, l.code == code(s)) }
+        if !s.config.language.isEmpty, !languages.contains(where: { $0.code == code(s) }) {
+            let note = s.server == nil ? "the server has not answered yet" : "the server's prompt does not name it"
+            items.append(checked(disabled("\(s.config.language) (\(note))"), true))
+        }
+        return items
+    }
+
+    private func adapterItems(_ s: MenuState) -> [NSMenuItem] {
+        guard let server = s.server else { return [disabled("The server has not answered yet.")] }
+        guard !server.adapters.isEmpty else { return [disabled("The server has no adapters.")] }
+        var items: [NSMenuItem] = []
+        for a in server.adapters {
+            let on = s.config.adapters[a.name] == true
+            let item = checked(action(a.name) { $0.enable(adapter: a.name, !on) }, on)
+            item.toolTip = a.description
+            items.append(item)
+            if let e = a.error { items.append(disabled("  " + cut(e, Tuning.menuErrorChars))) }
+        }
+        items += [.separator(), disabled("An adapter gives the model the chat of the app you dictate into."),
+                  disabled("With none on, dictation has no context.")]
+        return items
+    }
+
+    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+        let m = NSMenu()
+        items.forEach(m.addItem)
+        let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        i.submenu = m
+        return i
+    }
+
+    private func checked(_ i: NSMenuItem, _ on: Bool) -> NSMenuItem {
+        i.state = on ? .on : .off
+        return i
     }
 
     private func cut(_ s: String, _ n: Int) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }

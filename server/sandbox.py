@@ -4,7 +4,7 @@ test can touch the working setup:
   _DESKTOP_SESSIONS) point into a new temporary folder: the config, the recordings, the metrics, the adapter plugins,
   ~/.claude and Claude Desktop's session records there are empty and the tests' own;
 - launchctl is a fake that only notes its arguments ($LOCAL_VOICE_LAUNCHCTL), so no launchd agent starts or stops;
-- connections to the ports of the working and the test servers (places.py) are refused, so a test never reaches a
+- connections to the ports of the working and the test servers (constants.py) are refused, so a test never reaches a
   real dictation server or llama-server."""
 import os
 import socket

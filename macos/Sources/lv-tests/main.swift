@@ -21,6 +21,8 @@ do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     check(info.sampleRate == 16000 && info.textWaitSeconds == 180, "info: the audio and the wait")
     check(info.snapshotApps == ["com.anthropic.claudefordesktop"] && info.treeApps == info.snapshotApps, "info: apps")
+    check(info.languages.first.map { [$0.code, $0.name] } == ["cs", "Czech"] && info.languages.count == 20,
+          "info: the languages")
     var other = examples["info"] as! [String: Any]
     other["interface"] = 99
     check((try? ServerInfo.decode(data(other))) == nil, "info: another interface is refused")
@@ -78,11 +80,41 @@ try text.write(to: file, atomically: true, encoding: .utf8)
 var c = Config.load(from: file, systemLanguage: "en-GB")
 check(c.models == ["a", "b"] && c.model == "a" && c.language == "ru" && c.silenceStopSeconds == 30 && c.port == 8099
       && c.error == nil, "config: read \(c)")
-try Config.choose(model: "b", in: file)
-let after = try String(contentsOf: file, encoding: .utf8)
+try Config.set(["model"], to: "b", in: file)
+var after = try String(contentsOf: file, encoding: .utf8)
 check(after == text.replacingOccurrences(of: #""model": "a""#, with: #""model": "b""#), "config: only the model changed")
 c = Config.load(from: file)
 check(c.model == "b", "config: the new model reads back")
+// An adapter the file does not name yet: added after the last member, with its indentation; the rest stays.
+try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
+after = try String(contentsOf: file, encoding: .utf8)
+check(after.hasSuffix("""
+  "version": 3,
+  "adapters": {"enabled": true}
+}
+
+""".replacingOccurrences(of: #""adapters": {"enabled": true}"#, with: #""adapters": {"chat": {"enabled": true}}"#)),
+      "config: a new object at the end: \(after)")
+try Config.set(["adapters", "chat", "enabled"], to: false, in: file)
+try Config.set(["adapters", "other", "enabled"], to: true, in: file)
+try Config.set(["language"], to: "", in: file)
+c = Config.load(from: file, systemLanguage: "en-GB")
+check(c.adapters == ["chat": false, "other": true] && c.language == "" && c.models == ["a", "b"] && c.port == 8099,
+      "config: the adapters and the language read back: \(c)")
+after = try String(contentsOf: file, encoding: .utf8)
+check(after.contains(#""adapters": {"chat": {"enabled": false}, "other": {"enabled": true}}"#)
+      && after.hasPrefix("{\n  \"model\": \"b\",\n  \"language\": \"\",\n  \"models\": {"),
+      "config: the order and the layout stay: \(after)")
+
+// JSONEdit by itself: nested, empty objects, strings with braces and escapes, arrays, a key that is not an object.
+func edit(_ path: [String], _ value: Any, _ text: String) -> String? { try? JSONEdit.set(path, to: value, in: text) }
+check(edit(["a"], 1, "{}") == #"{"a": 1}"#, "edit: into an empty object")
+check(edit(["a", "b"], true, #"{"x": [1, {"a": 2}], "a": {}}"#) == #"{"x": [1, {"a": 2}], "a": {"b": true}}"#,
+      "edit: the right a, into its empty object")
+check(edit(["k"], "v", #"{"s": "a\"}{,", "k": null}"#) == #"{"s": "a\"}{,", "k": "v"}"#, "edit: past a tricky string")
+check(edit(["s", "x"], 1, #"{"s": "text"}"#) == nil, "edit: through a string: an error")
+check(edit(["a"], 1, "[1]") == nil && edit(["a"], 1, #"{"a" 1}"#) == nil, "edit: not an object, or bad JSON: an error")
+check(edit(["n"], "ü/", "{\n\t\"m\": 1\n}") == "{\n\t\"m\": 1,\n\t\"n\": \"ü/\"\n}", "edit: a tab's indentation")
 try #"{"version": 2}"#.write(to: file, atomically: true, encoding: .utf8)
 check(Config.load(from: file).error != nil, "config: another version is an error")
 check(Config.load(from: dir.appendingPathComponent("none.json"), systemLanguage: "de-DE").language == "de",

@@ -12,13 +12,20 @@ public struct ServerInfo: Decodable, Equatable {
         public let enabled: Bool
         public let apps: [String]
         public let electronTree: Bool
+        public let description: String?
         public let error: String?
+    }
+    /// A language the server's prompt names (server/dictation.py LANGUAGES).
+    public struct Language: Decodable, Equatable {
+        public let code: String
+        public let name: String
     }
     public let interface: Int
     public let sampleRate: Int
     public let encoding: String
     public let textWaitSeconds: Double
     public let maxRecordingSeconds: Double
+    public let languages: [Language]
     public let adapters: [Adapter]
 
     /// Apps whose focus an enabled adapter reads.
