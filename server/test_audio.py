@@ -1,4 +1,5 @@
 """Tests of audio.py: levels and cutting. Run: server/.venv/bin/python -m unittest discover -s server"""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import array
 import unittest
 

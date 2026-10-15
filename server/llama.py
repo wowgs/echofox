@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -18,6 +19,11 @@ from audio import wav
 from dictation import Dictation, sampler_of
 
 log = logging.getLogger("gemma_voice")
+REQUEST_TIMEOUT_S = 200  # one piece's request; the client waits 180 s for the whole text (Dictation.swift)
+
+
+class Cancelled(Exception):
+    """A request of a cancelled recording."""
 
 
 def llama_post(url, path, body, timeout):
@@ -58,15 +64,21 @@ class LlamaModel:
     def __init__(self, name, entry):
         self.name, self.url = name, entry["llamaServer"].rstrip("/")
         self.connections, self.pid, self.n_slots = set(), None, None  # the running requests; llama-server's process
+        self.cancelled = False  # set by cancel(); a recording's requests that have not connected yet do not start
+        self.lock = threading.Lock()
         log.info("model %s: llama-server at %s", name, self.url)
 
     def cancel(self):
-        """Stops the running requests: closing a request's connection makes llama-server stop decoding it
+        """Stops the recording's requests: closing a request's connection makes llama-server stop decoding it
         (llama-server 0.6.0, build 11429: with the connection closed after 1 s, the next request got its answer 0.2 s
-        later; without, 136 s later)."""
-        for conn in list(self.connections):
-            if conn.sock is not None:
-                with contextlib.suppress(OSError):
+        later; without, 136 s later). A request that has not connected yet does not start (_chat). One recording at a
+        time uses the model (Models.recording), so these are all its requests."""
+        with self.lock:
+            self.cancelled = True
+            conns = list(self.connections)
+        for conn in conns:
+            with contextlib.suppress(OSError):
+                if conn.sock is not None:
                     conn.sock.shutdown(2)
 
     def slots(self):
@@ -98,8 +110,11 @@ class LlamaModel:
     def _chat(self, body):
         """One /v1/chat/completions request on a connection of its own, which cancel() can close."""
         url = urllib.parse.urlparse(self.url)
-        conn = http.client.HTTPConnection(url.hostname, url.port or 80, timeout=300)
-        self.connections.add(conn)
+        conn = http.client.HTTPConnection(url.hostname, url.port or 80, timeout=REQUEST_TIMEOUT_S)
+        with self.lock:
+            if self.cancelled:
+                raise Cancelled("the recording was cancelled before this request")
+            self.connections.add(conn)
         try:
             conn.request("POST", "/v1/chat/completions", json.dumps(body).encode("utf-8"),
                          {"Content-Type": "application/json"})
@@ -147,6 +162,9 @@ class LlamaModel:
         return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
 
     def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
+        """A new recording on this model; a cancel of the recording before it does not reach this one."""
+        with self.lock:
+            self.cancelled = False
         return Dictation(self, text_prompt, options or {}, meta or {}, save_dir, **kw)
 
 

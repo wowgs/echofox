@@ -135,15 +135,22 @@ async def handle(ws, models, args):
                     text_prompt, options, meta, save_dir, limits=(args.output_tokens_per_second, args.output_tokens_base))
                 chat = None
                 if options.get("chat_history_token_budget", CHAT_HISTORY_TOKEN_BUDGET) > 0:
-                    found = await asyncio.to_thread(adapters.context, snapshot, hints, args.adapters)
+                    try:
+                        found = await asyncio.wait_for(asyncio.to_thread(adapters.context, snapshot, hints,
+                                                                         args.adapters), adapters.CONTEXT_TIMEOUT_S)
+                    except TimeoutError:  # a plugin hangs: the dictation goes on without context
+                        log.error("recording %s: the adapters gave no context in %.0f s", recording,
+                                  adapters.CONTEXT_TIMEOUT_S)
+                        found = {"errors": [f"no context in {adapters.CONTEXT_TIMEOUT_S:.0f} s"]}
                     if found:
                         chat_info.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source",
-                                                                "details") if found.get(k)})
+                                                                "details", "errors") if found.get(k)})
                     if found and found.get("messages"):
                         chat = found
                         chat_info.update(messages=len(found["messages"]), terms=len(found["terms"]))
                     log.info("recording %s: adapter %s (%s), context %s", recording,
-                             found["adapter"] if found else "none", found["reason"] if found else "no adapter claims it",
+                             (found or {}).get("adapter", "none"),
+                             (found or {}).get("reason", "no adapter claims it"),
                              f"{found.get('source') or found.get('about')}, {len(found['messages'])} messages"
                              if chat else "none")
                 await dictation.prepare(chat)

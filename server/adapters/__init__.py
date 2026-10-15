@@ -21,8 +21,11 @@ FOCUS, the snapshot the client sends (only service fields, never the text of inp
 Any part may be missing.
 """
 import abc
+import logging
 import re
 from dataclasses import dataclass
+
+log = logging.getLogger("gemma_voice")
 
 MAX_TERMS = 500
 # Latin-script words: product names, identifiers, file names. A word joined by . _ + # - / stays one term.
@@ -97,32 +100,65 @@ def snapshot_of(start):
 from . import registry  # noqa: E402
 
 
-def claims(focus, hints=None, enabled=None):
-    """The claims of the enabled adapters (`enabled`: names; None: every working plugin), the surest first."""
+CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s with Claude Code's transcript (2026-10-15)
+
+
+def _guarded(adapter, what, fn, *args):
+    """A plugin's call: its exception is logged and becomes ("error", text), so one plugin cannot stop the others or
+    the dictation."""
+    try:
+        return "ok", fn(*args)
+    except Exception as e:  # noqa: BLE001: a plugin is anyone's code
+        log.exception("adapter %s: %s failed", adapter.name, what)
+        return "error", f"{adapter.name}.{what}: {type(e).__name__}: {e}"
+
+
+def claims(focus, hints=None, enabled=None, errors=None):
+    """The claims of the enabled adapters (`enabled`: names; None: every working plugin), the surest first. A plugin
+    whose claim fails is left out; its error goes to `errors`."""
     names = enabled if enabled is not None else list(registry.plugins())
     out = []
     for a in registry.enabled(names):
-        c = a.claim(focus or {}, hints or {})
-        if c is not None:
-            out.append((a, c))
+        status, c = _guarded(a, "claim", a.claim, focus or {}, hints or {})
+        if status == "error":
+            if errors is not None:
+                errors.append(c)
+            continue
+        if isinstance(c, Claim):
+            out.append((a, Claim(a.name, min(1.0, max(0.0, float(c.confidence))), str(c.reason))))
     return sorted(out, key=lambda ac: -ac[1].confidence)
 
 
 def context(focus, hints=None, enabled=None):
     """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
-    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages}; without
-    "messages" if the surest adapter found nothing; None if no enabled adapter claims the focus (with none enabled: the
-    base mode, no context)."""
-    ranked = claims(focus, hints, enabled)
+    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages,
+    "errors": what failed in the plugins}; without "messages" if the surest adapter found nothing or failed; None if no
+    enabled adapter claims the focus (with none enabled: the base mode, no context)."""
+    errors = []
+    ranked = claims(focus, hints, enabled, errors)
     if not ranked:
-        return None
+        return {"errors": errors} if errors else None
     a, c = ranked[0]
-    found = dict(a.context(focus or {}, hints or {}) or {})
-    out = {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason,
-           **{k: found[k] for k in ("about", "source", "details") if found.get(k)}}
+    out = {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason}
+    status, found = _guarded(a, "context", a.context, focus or {}, hints or {})
+    if status == "error":
+        return {**out, "errors": errors + [found]}
+    found = dict(found or {})
+    out.update({k: found[k] for k in ("about", "source", "details") if found.get(k)})
     if isinstance(found.get("messages"), list):
-        out["messages"] = [{"from": str(m.get("from") or ""), "text": t} for m in found["messages"]
-                           if isinstance(m, dict) and (t := a.clean(str(m.get("text") or "")))]
+        messages = []
+        for m in found["messages"]:
+            if not isinstance(m, dict):
+                continue
+            status, t = _guarded(a, "clean", a.clean, str(m.get("text") or ""))
+            if status == "error":
+                errors.append(t)
+                break  # a clean that fails once fails for all; the context goes without the rest
+            if t:
+                messages.append({"from": str(m.get("from") or ""), "text": t})
+        out["messages"] = messages
         own = [t for t in found.get("terms") or [] if isinstance(t, str)]
-        out["terms"] = own + [t for t in terms(m["text"] for m in reversed(out["messages"])) if t not in own]
+        out["terms"] = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
+    if errors:
+        out["errors"] = errors
     return out

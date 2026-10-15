@@ -1,4 +1,5 @@
 """Tests of protocol.py: the client protocol, with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import json
 import os
@@ -92,6 +93,18 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 await ws.send(json.dumps({"type": "adapters"}))
                 got = json.loads(await ws.recv())
         self.assertFalse(any(a["enabled"] for a in got["adapters"]))
+
+    async def test_a_plugin_that_hangs_costs_the_context_not_the_dictation(self):
+        import adapters
+        import time as t
+        saved = adapters.context, adapters.CONTEXT_TIMEOUT_S
+        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: t.sleep(2)), 0.2
+        try:
+            stub, got = await self.run_stream({"type": "start"}, LOUD)
+        finally:
+            adapters.context, adapters.CONTEXT_TIMEOUT_S = saved
+        self.assertEqual([m["type"] for m in got if m["type"] != "speech"], ["text", "done"])
+        self.assertEqual(stub.contexts, [None])
 
     async def test_without_warm_text_nothing_is_warmed(self):
         self.args.warm_text = False

@@ -1,4 +1,5 @@
 """Tests of settings.py and llama.Models: the config file, its changes, and one model in memory. Run: server/.venv/bin/python -m unittest discover -s server"""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import json
 import os

@@ -5,6 +5,7 @@ import logging
 import os
 
 import metrics
+import places
 from audio import MODEL_MAX_SECONDS
 from dictation import MAX_PROMPT, parse_options
 
@@ -26,7 +27,8 @@ log = logging.getLogger("gemma_voice")
 #   "process" settings (host, port) end the process after the running recording; launchd starts it again.
 # config key → (command-line name, kind, check, default, level, where in the file); command-line name None: only in
 # the file.
-MODEL_DEFAULT = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:8092", "launchd": "local-voice.llama-server"}}
+MODEL_DEFAULT = {"gemma-e4b": {"llamaServer": f"http://{places.HOST}:{places.WORKING_LLAMA_PORT}",
+                              "launchd": "local-voice.llama-server"}}
 
 
 CONFIG_VERSION = 3
@@ -77,8 +79,8 @@ def good_model(m):
 
 
 SETTINGS = {
-    "host": ("host", str, lambda v: bool(v), "127.0.0.1", "process", "server"),
-    "port": ("port", int, lambda v: 0 < v < 65536, 8090, "process", "server"),
+    "host": ("host", str, lambda v: bool(v), places.HOST, "process", "server"),
+    "port": ("port", int, lambda v: 0 < v < 65536, places.WORKING_PORT, "process", "server"),
     "models": (None, dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT, "model", None),
     "saveRecordings": (None, bool, lambda v: True, True, "recording", None),
     "adapters": (None, dict, good_adapters, {}, "recording", None),

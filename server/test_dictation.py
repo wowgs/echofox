@@ -1,4 +1,5 @@
 """Tests of dictation.py and llama.LlamaModel against a fake llama-server. Run: server/.venv/bin/python -m unittest discover -s server"""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import base64
 import json
@@ -153,6 +154,17 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             fake.close()
         self.assertLess(took, 1.0)  # the connection was closed, not waited for (the fake answers after 2 s)
         self.assertEqual(len(self.metrics("cancelled")), 1)
+
+    async def test_a_cancel_stops_requests_that_have_not_connected_yet(self):
+        import llama
+        m = self.fake.model()
+        d = m.dictation("PROMPT", {})
+        m.cancel()  # before the piece's request connects
+        with self.assertRaises(llama.Cancelled):
+            await d.piece(LOUD, 1)
+        self.assertEqual(self.fake.completions(), [])  # it never reached llama-server
+        m.dictation("PROMPT", {})  # the next recording starts clean
+        self.assertEqual(await m.dictation("PROMPT", {}).piece(LOUD, 1), "text from llama")
 
     async def test_the_metrics_have_llama_servers_memory(self):
         m = self.fake.model()

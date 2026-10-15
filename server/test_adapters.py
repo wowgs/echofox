@@ -1,5 +1,6 @@
 """Tests of the adapters (adapters/): Claude Code transcripts, Claude Desktop, and the choice of an adapter.
 Run: server/.venv/bin/python -m unittest discover -s server"""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import json
 import os
 import tempfile
@@ -165,6 +166,28 @@ class PluginTest(Fixture):
         self.assertIn("boom", found["crash"].error)
         self.assertIsNotNone(found["claude"].adapter)
         self.assertFalse(found["crash"].info({"crash"})["enabled"])
+
+    def test_a_plugin_that_fails_stops_only_itself_and_the_error_is_kept(self):
+        base = ("from adapters import Adapter, Claim\n"
+                "class P(Adapter):\n"
+                "    def claim(self, focus, hints):\n        {claim}\n"
+                "    def context(self, focus, hints):\n        {context}\n"
+                "    def clean(self, text):\n        {clean}\n")
+        ok = "return Claim(self.name, 0.5, 'x')"
+        msgs = "return {'about': 'a', 'messages': [{'from': 'A', 'text': 'one'}, {'from': 'A', 'text': 'two'}]}"
+        self.plugin("badclaim", code=base.format(claim="raise RuntimeError('claim')", context=msgs, clean="return text"))
+        self.plugin("good", code=base.format(claim="return Claim(self.name, 2.0, 'sure')", context=msgs, clean="return text"))
+        c = adapters.context({}, enabled=["badclaim", "good"])
+        self.assertEqual((c["adapter"], c["confidence"], len(c["messages"])), ("good", 1.0, 2))  # clamped to 1
+        self.assertIn("badclaim.claim: RuntimeError: claim", c["errors"])
+        self.plugin("badcontext", code=base.format(claim=ok, context="raise KeyError('k')", clean="return text"))
+        c = adapters.context({}, enabled=["badcontext"])
+        self.assertNotIn("messages", c)
+        self.assertIn("badcontext.context: KeyError", c["errors"][0])
+        self.plugin("badclean", code=base.format(claim=ok, context=msgs, clean="raise ValueError('v')"))
+        c = adapters.context({}, enabled=["badclean"])
+        self.assertEqual(c["messages"], [])
+        self.assertIn("badclean.clean: ValueError: v", c["errors"])
 
     def test_a_users_plugin_replaces_a_built_in_one_of_the_same_name(self):
         self.plugin("claude", {"name": "claude", "interface": 2})

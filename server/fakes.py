@@ -1,7 +1,9 @@
 """Shared pieces of the server's tests: audio, stub models and a fake llama-server. Not a test module."""
+import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import array
 import asyncio
 import json
+import os
 import tempfile
 import threading
 import time
@@ -15,7 +17,7 @@ from audio import RATE
 # No test waits for a real llama-server, touches the real launchd agents or asks macOS about the microphone.
 llama.wait_healthy = lambda url, seconds=180: True
 recordings.input_info = lambda: None
-metrics.METRICS = tempfile.mkdtemp(prefix="gemma-voice-test-metrics-") + "/metrics.jsonl"  # never the real metrics
+metrics.METRICS = os.path.join(sandbox.ROOT, "metrics.jsonl")  # never the real metrics
 
 LOUD = array.array("h", [8000, -8000] * (RATE // 2)).tobytes()  # 1 s, about -12 dBFS
 QUIET = b"\0\0" * RATE  # 1 s of silence
@@ -26,7 +28,7 @@ def args(**over):
     """The recording settings protocol.handle() gets; recordings never go to the real ~/speech/recordings."""
     return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20, "warm_text": True, "adapters": ["claude"],
                                     "cut_search_seconds": 3, "output_tokens_per_second": 10, "output_tokens_base": 32,
-                                    "recordings": tempfile.mkdtemp(prefix="gemma-voice-test-recordings-"),
+                                    "recordings": tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT),
                                     "save_recordings": True, **over})
 
 
