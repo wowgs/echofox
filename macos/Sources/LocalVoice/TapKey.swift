@@ -1,17 +1,15 @@
-// The hotkey: one tap of a modifier key alone (the right Option by default), pressed and released with no other
-// key, modifier or click in between. Watching keys in other apps needs the Accessibility permission.
+// The hotkey's event monitors; the logic of a tap is TapLogic (LocalVoiceCore). Watching keys in other apps needs the
+// Accessibility permission; when it is taken away the monitors stop (stop()) and start again when it is back.
 import AppKit
+import LocalVoiceCore
 
 final class TapKey {
-    static let rightOption: UInt16 = 61  // kVK_RightOption
-    static let rightOptionMask: UInt = 0x40  // NX_DEVICERALTKEYMASK: the right Option is down
-    static let leftOptionMask: UInt = 0x20  // NX_DEVICELALTKEYMASK
-    static let longestTap: TimeInterval = 0.6
-
     var onTap: () -> Void = {}
-    private var downAt: TimeInterval?
-    private var spoiled = false
+    private var logic = TapLogic()
     private var monitors: [Any] = []
+
+    var keyName: String { logic.keyName }
+    var running: Bool { !monitors.isEmpty }
 
     func start() {
         guard monitors.isEmpty else { return }
@@ -24,23 +22,14 @@ final class TapKey {
         }
     }
 
+    func stop() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+    }
+
     private func handle(_ e: NSEvent) {
-        guard e.type == .flagsChanged else {
-            if downAt != nil { spoiled = true }
-            return
-        }
-        let raw = e.modifierFlags.rawValue
-        if e.keyCode == TapKey.rightOption {
-            if raw & TapKey.rightOptionMask != 0 {
-                downAt = e.timestamp
-                spoiled = !e.modifierFlags.intersection([.command, .control, .shift]).isEmpty
-                    || raw & TapKey.leftOptionMask != 0
-            } else if let d = downAt {
-                downAt = nil
-                if !spoiled && e.timestamp - d <= TapKey.longestTap { onTap() }
-            }
-        } else if downAt != nil {
-            spoiled = true
-        }
+        let event: TapLogic.Event = e.type == .flagsChanged
+            ? .flags(keyCode: e.keyCode, raw: e.modifierFlags.rawValue, timestamp: e.timestamp) : .keyOrClick
+        if logic.feed(event) { onTap() }
     }
 }

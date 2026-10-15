@@ -10,7 +10,8 @@
 # processed all its 2311 tokens again although 83 % of them matched. Log: ~/Library/Logs/local-voice/llama-server.log.
 set -euo pipefail
 # The shared numbers and names come from server/constants.py.
-c() { PYTHONPATH=${0:A:h} ${0:A:h}/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+HERE=${0:A:h}  # here, not in c(): inside a function $0 is the function's name
+c() { PYTHONPATH=$HERE $HERE/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
 LABEL=$(c LLAMA_LABEL)
 PLIST=$(c LAUNCH_AGENTS)/$LABEL.plist
 LOG=$(c LOGS)/llama-server.log

@@ -2,7 +2,8 @@
 import Foundation
 
 enum Log {
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/local-voice/app.log")
+    static let folder = "Library/Logs/local-voice"  // the server's logs are there too (server/constants.py LOGS)
+    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(folder)/app.log")
     private static let queue = DispatchQueue(label: "local-voice.log")
     private static let stamp: DateFormatter = {
         let f = DateFormatter()

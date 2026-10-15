@@ -3,25 +3,32 @@
 // the silence stop and where the server listens; it writes only the chosen model.
 import Foundation
 
-struct Config {
-    static var url: URL {
+public struct Config: Equatable {
+    public static let version = 3
+    public static let defaultHost = "127.0.0.1"
+    public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
+
+    public static var url: URL {
         if let p = ProcessInfo.processInfo.environment["LOCAL_VOICE_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local-voice/config.json")
     }
 
-    var models: [String] = []
-    var model: String?
-    var language = ""
-    var silenceStopSeconds = 60.0
-    var host = "127.0.0.1"
-    var port = 8090
-    var error: String?
+    public var models: [String] = []
+    public var model: String?
+    public var language = ""
+    public var silenceStopSeconds = Tuning.silenceStopSeconds
+    public var host = Config.defaultHost
+    public var port = Config.defaultPort
+    public var error: String?
 
-    var serverURL: URL { URL(string: "ws://\(host):\(port)")! }
+    public var serverURL: URL { URL(string: "ws://\(host):\(port)")! }
 
-    static func load() -> Config {
+    public init() {}
+
+    public static func load(from url: URL = Config.url,
+                            systemLanguage: String? = Locale.preferredLanguages.first) -> Config {
         var c = Config()
-        c.language = Locale.preferredLanguages.first.map { String($0.prefix(while: { $0 != "-" })) } ?? ""
+        c.language = systemLanguage.map { String($0.prefix(while: { $0 != "-" })) } ?? ""
         guard let data = try? Data(contentsOf: url) else {
             c.error = "cannot read \(url.path)"
             return c
@@ -30,7 +37,7 @@ struct Config {
             c.error = "\(url.path) is not a JSON object"
             return c
         }
-        if let v = d["version"] as? Int, v != 2, v != 3 { c.error = "\(url.path) is version \(v); the app reads 2 and 3" }
+        if let v = d["version"] as? Int, v != version { c.error = "\(url.path) is version \(v); the app reads \(version)" }
         c.models = ((d["models"] as? [String: Any]) ?? [:]).keys.sorted()
         c.model = d["model"] as? String
         if let l = d["language"] as? String { c.language = l }
@@ -44,15 +51,16 @@ struct Config {
 
     /// Makes `name` the chosen model. Only the value of the top-level "model" changes, so the file keeps its order
     /// and layout; if that cannot be done safely, the file is written again from its parsed contents.
-    static func choose(model name: String) throws {
+    public static func choose(model name: String, in url: URL = Config.url) throws {
         let text = try String(contentsOf: url, encoding: .utf8)
         guard var parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
-            throw NSError(domain: "LocalVoice", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(url.path) is not a JSON object"])
+            throw MessageError("\(url.path) is not a JSON object")
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         let value = String(decoding: try encoder.encode(name), as: UTF8.self)
-        // The top-level key, as Python's json.dump(indent=2) writes it: two spaces in.
+        // The top-level key, as the server writes the file (Python's json.dumps(indent=2)): two spaces in. The edit is
+        // kept only if the file then parses to the same contents with the new model.
         let re = try NSRegularExpression(pattern: #"^(  "model"\s*:\s*)"(?:[^"\\]|\\.)*""#, options: .anchorsMatchLines)
         let range = NSRange(text.startIndex..., in: text)
         if re.numberOfMatches(in: text, range: range) == 1 {

@@ -12,7 +12,8 @@
 set -euo pipefail
 cd "${0:A:h}"
 # The shared numbers and names come from server/constants.py.
-c() { PYTHONPATH=${0:A:h} ${0:A:h}/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+HERE=${0:A:h}  # here, not in c(): inside a function $0 is the function's name
+c() { PYTHONPATH=$HERE $HERE/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
 PORT=$(c TEST_PORT)
 LLAMA_PORT=$(c TEST_LLAMA_PORT)
 LABEL=$(c LLAMA_LABEL)

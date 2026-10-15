@@ -16,7 +16,10 @@ public enum FocusSnapshot {
     static let maxAncestors = 80
     static let maxDomClasses = 12
     static let maxProcesses = 40
-    public static var electronWaitSeconds = 3.0
+    /// How long take() waits for an Electron app's tree after asking for it (it took 2.1 s in Claude Desktop).
+    public static let electronWaitSeconds = 3.0
+    static let electronPollSeconds = 0.05
+    static let maxPids = 8192  // proc_listallpids' buffer: more processes than a Mac runs
 
     /// A snapshot and the element it was taken of: the element with the keyboard focus, where the text goes later.
     public struct Capture {
@@ -47,8 +50,8 @@ public enum FocusSnapshot {
         if focused == nil, enableElectron, hasAttribute(app, "AXManualAccessibility") {
             AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
             out["electronTreeEnabled"] = true
-            for _ in 0..<Int(electronWaitSeconds * 20) where focused == nil {
-                usleep(50_000)
+            for _ in 0..<Int(electronWaitSeconds / electronPollSeconds) where focused == nil {
+                Thread.sleep(forTimeInterval: electronPollSeconds)
                 focused = element(app, "AXFocusedUIElement")
             }
         }
@@ -133,7 +136,7 @@ public enum FocusSnapshot {
 
     /// The app's descendant processes: [{pid, name, cwd}], breadth first, at most maxProcesses.
     static func descendants(of root: pid_t) -> [[String: Any]] {
-        var pids = [pid_t](repeating: 0, count: 8192)
+        var pids = [pid_t](repeating: 0, count: maxPids)
         let n = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
         var children: [pid_t: [pid_t]] = [:]
         for p in pids.prefix(max(0, n)) where p > 0 {

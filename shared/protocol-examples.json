@@ -1,0 +1,14 @@
+{
+  "about": "Examples of the messages between the menu bar app and the dictation server. server/test_contract.py checks that the server reads and writes them; macos lv-tests checks that the app does.",
+  "info": {"type": "info", "interface": 2, "adapterInterface": 2, "sampleRate": 16000, "encoding": "pcm_s16le",
+           "textWaitSeconds": 180, "maxRecordingSeconds": 1800.0,
+           "adapters": [{"name": "claude", "enabled": true, "builtin": true, "version": "1.0", "author": "local-voice",
+                         "source": "https://github.com/wowgs/local-voice", "description": "…",
+                         "apps": ["com.anthropic.claudefordesktop"], "electronTree": true, "reads": [], "error": null}]},
+  "start": {"type": "start", "model": "gemma-e4b", "language": "ru", "sampleRate": 16000, "encoding": "pcm_s16le",
+            "client": "local-voice-mac", "snapshot": {"app": {"bundleId": "com.example.app", "pid": 1, "name": "Example"}},
+            "hints": {}},
+  "stop": {"type": "stop", "reason": "user"},
+  "server": [{"type": "speech"}, {"type": "text", "text": "Привет"}, {"type": "error", "message": "boom"},
+             {"type": "stopped", "reason": "max_duration"}, {"type": "done"}]
+}

@@ -1,28 +1,48 @@
-// The microphone, converted to what the server takes: 16 kHz, 16-bit little-endian PCM, mono.
+// The microphone, converted to what the server takes: 16-bit little-endian PCM, mono, at the server's sample rate.
+// When the input device changes during a recording (AirPods connected or gone), AVAudioEngine stops and posts
+// AVAudioEngineConfigurationChange; the recorder then starts again on the new device, and says so if it cannot.
 import AVFoundation
+import LocalVoiceCore
 
 final class Recorder {
-    static let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private let engine = AVAudioEngine()
+    private let format: AVAudioFormat
     private var running = false
+    private var onPCM: (Data) -> Void = { _ in }
+    private var onLost: (String) -> Void = { _ in }
+    private var observer: NSObjectProtocol?
 
-    /// Starts the microphone; `onPCM` gets each converted buffer, on an audio thread.
-    func start(onPCM: @escaping (Data) -> Void) throws {
+    init(sampleRate: Double) {
+        format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+    }
+
+    /// Starts the microphone; `onPCM` gets each converted buffer (on an audio thread), `onLost` why the microphone
+    /// stopped for good.
+    func start(onPCM: @escaping (Data) -> Void, onLost: @escaping (String) -> Void) throws {
+        self.onPCM = onPCM
+        self.onLost = onLost
+        try tap()
+        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
+                                                          queue: .main) { [weak self] _ in self?.deviceChanged() }
+        running = true
+    }
+
+    private func tap() throws {
         let input = engine.inputNode
         let from = input.outputFormat(forBus: 0)
-        guard from.sampleRate > 0, from.channelCount > 0 else {
-            throw NSError(domain: "LocalVoice", code: 2, userInfo: [NSLocalizedDescriptionKey: "no microphone input"])
+        guard from.sampleRate > 0, from.channelCount > 0 else { throw MessageError("no microphone input") }
+        guard let converter = AVAudioConverter(from: from, to: format) else {
+            throw MessageError("cannot convert \(from) to \(format.sampleRate) Hz")
         }
-        guard let converter = AVAudioConverter(from: from, to: Recorder.format) else {
-            throw NSError(domain: "LocalVoice", code: 3, userInfo: [NSLocalizedDescriptionKey: "cannot convert \(from) to 16 kHz"])
-        }
-        input.installTap(onBus: 0, bufferSize: 4096, format: from) { buffer, _ in
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * 16000 / from.sampleRate) + 64
-            guard let out = AVAudioPCMBuffer(pcmFormat: Recorder.format, frameCapacity: capacity) else { return }
+        let out = format, emit = onPCM
+        input.installTap(onBus: 0, bufferSize: Tuning.recorderBufferFrames, format: from) { buffer, _ in
+            let ratio = out.sampleRate / from.sampleRate
+            let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 1
+            guard let converted = AVAudioPCMBuffer(pcmFormat: out, frameCapacity: capacity) else { return }
             var given = false
             var error: NSError?
             // .noDataNow, not .endOfStream: the converter keeps its resampling state between buffers.
-            converter.convert(to: out, error: &error) { _, status in
+            converter.convert(to: converted, error: &error) { _, status in
                 if given {
                     status.pointee = .noDataNow
                     return nil
@@ -31,8 +51,8 @@ final class Recorder {
                 status.pointee = .haveData
                 return buffer
             }
-            if error == nil, out.frameLength > 0, let samples = out.int16ChannelData {
-                onPCM(Data(bytes: samples[0], count: Int(out.frameLength) * 2))
+            if error == nil, converted.frameLength > 0, let samples = converted.int16ChannelData {
+                emit(Data(bytes: samples[0], count: Int(converted.frameLength) * MemoryLayout<Int16>.size))
             }
         }
         engine.prepare()
@@ -42,12 +62,26 @@ final class Recorder {
             input.removeTap(onBus: 0)
             throw error
         }
-        running = true
+    }
+
+    private func deviceChanged() {
+        guard running else { return }
+        Log.write("the audio input changed: the microphone starts again")
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        do {
+            try tap()
+        } catch {
+            stop()
+            onLost(error.localizedDescription)
+        }
     }
 
     func stop() {
         guard running else { return }
         running = false
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }

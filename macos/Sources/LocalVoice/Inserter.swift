@@ -41,7 +41,7 @@ final class Inserter {
     static let typedChunk = 16  // characters per keyboard event when typing (a keyboard event carries only a few)
 
     private let queue = DispatchQueue(label: "local-voice.insert")
-    private let clipboard = Clipboard()
+    private lazy var clipboard = Clipboard(restoreAfter: Wait.restore) { [weak self] body in self?.queue.async(execute: body) }
 
     private init() {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Wait.accessibility)
@@ -269,65 +269,4 @@ final class Inserter {
             if let pid { e?.postToPid(pid) } else { e?.post(tap: .cghidEventTap) }
         }
     }
-}
-
-/// The clipboard, lent for a paste and given back. The speaker's own contents come back Wait.restore after the last
-/// paste, and only if nobody changed the clipboard meanwhile (the speaker may copy something in that second). Lent
-/// text is marked transient (org.nspasteboard.TransientType), so clipboard managers do not keep it. Used only on the
-/// insertion queue.
-final class Clipboard {
-    static let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
-    private let pb = NSPasteboard.general
-    private var saved: [[(NSPasteboard.PasteboardType, Data)]]?
-    private var ours = -1  // the clipboard's changeCount right after our text went in
-    private var turn = 0
-
-    /// Runs `body` (a paste) with `text` on the clipboard; the speaker's contents come back later.
-    func lend(_ text: String, _ body: () -> Void) {
-        if saved == nil || pb.changeCount != ours {  // the first lend, or the speaker copied something since
-            saved = (pb.pasteboardItems ?? []).map { item in
-                item.types.compactMap { t in item.data(forType: t).map { (t, $0) } }
-            }
-        }
-        put(text, transient: true)
-        body()
-        turn += 1
-        let mine = turn
-        DispatchQueue.global().asyncAfter(deadline: .now() + Inserter.Wait.restore) { [weak self] in
-            Inserter.shared.run { self?.restore(mine) }
-        }
-    }
-
-    /// Leaves `text` on the clipboard for the speaker to paste: no restore after it.
-    func keep(_ text: String) {
-        turn += 1
-        saved = nil
-        put(text, transient: false)
-    }
-
-    private func put(_ text: String, transient: Bool) {
-        pb.clearContents()
-        let item = NSPasteboardItem()
-        item.setString(text, forType: .string)
-        if transient { item.setData(Data(), forType: Self.transient) }
-        pb.writeObjects([item])
-        ours = pb.changeCount
-    }
-
-    private func restore(_ mine: Int) {
-        guard mine == turn, let saved else { return }
-        self.saved = nil
-        guard pb.changeCount == ours else { return }  // somebody else wrote the clipboard: theirs stays
-        pb.clearContents()
-        pb.writeObjects(saved.map { pairs -> NSPasteboardItem in
-            let item = NSPasteboardItem()
-            for (t, d) in pairs { item.setData(d, forType: t) }
-            return item
-        })
-    }
-}
-
-extension Inserter {
-    /// Runs `body` on the insertion queue, after any insertion that runs now.
-    func run(_ body: @escaping () -> Void) { queue.async(execute: body) }
 }
