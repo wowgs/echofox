@@ -1,7 +1,0 @@
-{
- "dia": {
-  "type": "embed",
-  "ref": "node/0f3efb9d-039d",
-  "caption": "dictation · webview → extension host → server → model, text back"
- }
-}

@@ -2,14 +2,10 @@
  "schema": 1,
  "name": "local-voice",
  "docs": {
-  "docs/dictation": {
-   "id": "8c82f321-7382-486e-aeb8-6600b7c32f42",
-   "name": "Dictation with a local model"
-  },
   "docs/dictation-terms": {
    "id": "NPqnqAUHX8Rr7DjYnsfqHW",
    "name": "Dictation terms"
   },
-  "docs/design": null
+  "docs/design": "8341d27e-60e1-45f1-977b-492a36109cba"
  }
 }
