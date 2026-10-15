@@ -152,9 +152,11 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastError = d.errors.isEmpty ? nil : d.errors.joined(separator: "; ")
         if !text.isEmpty {
             lastText = text
-            let (how, why) = Inserter.insert(text, into: d.capture)
-            Log.write("text: \(text.count) characters, inserted: \(how.rawValue) (\(why))")
-            lastNote = how == .clipboard ? "The text is in the clipboard: \(why)." : nil
+            Inserter.shared.insert(text, into: d.capture) { [weak self] how, why in
+                Log.write("text: \(text.count) characters, inserted: \(how.rawValue) (\(why))")
+                self?.lastNote = how == .clipboard ? "The text is in the clipboard: \(why)." : nil
+                self?.update()
+            }
         } else {
             Log.write("no text")
         }
