@@ -18,17 +18,17 @@ import json
 import os
 import re
 
-from . import Adapter, Claim, bundle, claude_code, markdown
+from adapters import Adapter, Claim, bundle, claude_transcripts as claude_code, markdown
 
 BUNDLE = "com.anthropic.claudefordesktop"
-STORE = os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS") or os.path.expanduser(
-    "~/Library/Application Support/Claude/claude-code-sessions")
 CODE_URL = re.compile(r"^https://claude\.ai/epitaxy/(local_[0-9A-Za-z-]+)")
 TITLE_SUFFIX = " - Claude Code"
 
 
 def store():
-    return STORE
+    """Desktop's session records, or $LOCAL_VOICE_DESKTOP_SESSIONS (read at each call, so that tests can set it)."""
+    return os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS") or os.path.expanduser(
+        "~/Library/Application Support/Claude/claude-code-sessions")
 
 
 def web_area(snapshot):
@@ -49,8 +49,6 @@ def record(desktop_id, root=None):
 
 
 class ClaudeDesktop(Adapter):
-    name = "claude-desktop"
-
     def clean(self, text):
         """The Code tab shows Claude's Markdown replies: plain prose for the model."""
         return markdown.plain(text)

@@ -81,6 +81,7 @@ async def main():
     cli = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     path = cli.config or settings.config_file()
+    settings.migrate(path)
     current = settings.resolve(cli, settings.file_settings(path) or {})
     if not 5 <= current["pieceSeconds"] <= MODEL_MAX_SECONDS:
         p.error(f"pieceSeconds: from 5 to {MODEL_MAX_SECONDS}")

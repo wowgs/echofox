@@ -11,12 +11,13 @@ from dictation import MAX_PROMPT, parse_options
 log = logging.getLogger("gemma_voice")
 
 
-# The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 2, shared with the menus:
-#   {"version": 2, "model": "<name>" | "anthropic", "language": "ru",
+# The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 3, shared with the menus:
+#   {"version": 3, "model": "<name>" | "anthropic", "language": "ru", "adapters": {"<plugin>": {"enabled": true}},
 #    "models": {"<name>": {"llamaServer": "http://127.0.0.1:8092", "launchd": "<label>", "prompt": "…", "options": {…}}},
 #    "silenceStopSeconds": 60, "saveRecordings": true,
 #    "server": {"host": …, "port": …, "pieceSeconds": …, …}}
-# language: the clients' dictation language; the server does not read it. models: the registry; each a llama.cpp llama-server, started and stopped through its launchd agent. Only the model
+# language: the clients' dictation language; the server does not read it. adapters: the adapter plugins that work
+# (adapters/registry.py); none: the base mode, dictation without context. models: the registry; each a llama.cpp llama-server, started and stopped through its launchd agent. Only the model
 # chosen in the menus ("model") is in memory; Anthropic chosen: none. The server's settings: built-in defaults, then
 # the file, then the command line, which wins (the test server keeps its own port, log and metrics). The server
 # watches the file:
@@ -28,7 +29,35 @@ log = logging.getLogger("gemma_voice")
 MODEL_DEFAULT = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:8092", "launchd": "local-voice.llama-server"}}
 
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
+
+
+def good_adapters(v):
+    return all(isinstance(k, str) and isinstance(e, dict) and isinstance(e.get("enabled", False), bool)
+               for k, e in v.items())
+
+
+def migrate(path):
+    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had both built-in adapters
+    working, so the upgrade enables them; a new config has none (the base mode). The file keeps its order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(c, dict) or c.get("version") != 2:
+        return
+    out = {}
+    for k, v in c.items():
+        out[k] = 3 if k == "version" else v
+        if k == "language" or (k == "model" and "language" not in c):
+            out["adapters"] = {"claude-desktop": {"enabled": True}, "claude-code": {"enabled": True}}
+    out.setdefault("adapters", {"claude-desktop": {"enabled": True}, "claude-code": {"enabled": True}})
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    log.info("config %s: version 2 → 3; the built-in adapters claude-desktop and claude-code are enabled", path)
 
 
 def good_model(m):
@@ -49,6 +78,7 @@ SETTINGS = {
     "port": ("port", int, lambda v: 0 < v < 65536, 8090, "process", "server"),
     "models": (None, dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT, "model", None),
     "saveRecordings": (None, bool, lambda v: True, True, "recording", None),
+    "adapters": (None, dict, good_adapters, {}, "recording", None),
     "thresholdDb": ("threshold_db", float, lambda v: v < 0, -45.0, "recording", "server"),
     "speechAboveNoiseDb": ("speech_above_noise_db", float, lambda v: v >= 0, 12.0, "recording", "server"),
     "pieceSeconds": ("piece_seconds", float, lambda v: 5 <= v <= MODEL_MAX_SECONDS, 20.0, "recording", "server"),
@@ -81,7 +111,7 @@ def file_settings(path):
         log.error("config %s: cannot read it (%s); the server keeps its settings", path, e)
         return None
     if not isinstance(c, dict) or c.get("version") != CONFIG_VERSION:
-        log.error("config %s: version %s, the server reads version %d; install.sh migrates the file", path,
+        log.error("config %s: version %s, the server reads version %d", path,
                   c.get("version") if isinstance(c, dict) else None, CONFIG_VERSION)
         return None
     server = c.get("server") if isinstance(c.get("server"), dict) else {}
@@ -130,6 +160,7 @@ def apply_recording_settings(st, now):
     st.output_tokens_per_second, st.output_tokens_base = now["outputTokensPerSecond"], now["outputTokensBase"]
     st.recordings, st.save_recordings = os.path.expanduser(now["recordings"]), now["saveRecordings"]
     st.warm_text = now["warmText"]
+    st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     metrics.METRICS = os.path.expanduser(now["metrics"])
 
 

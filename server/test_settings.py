@@ -31,7 +31,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         return types.SimpleNamespace(**{**{n: None for n in names}, **given})
 
     def write(self, f, **c):
-        json.dump({"version": 2, **c}, open(f, "w"))
+        json.dump({"version": 3, **c}, open(f, "w"))
         os.utime(f, ns=(time.time_ns(), time.time_ns()))
 
     def test_the_command_line_wins_then_the_file_then_the_defaults(self):
@@ -65,7 +65,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             json.dump({"version": 1, "gemmaVoice": {"pieceSeconds": 25}}, open(f, "w"))
             with self.assertLogs("gemma_voice", "ERROR") as logs:
                 self.assertIsNone(s.file_settings(f))
-        self.assertIn("install.sh migrates", logs.output[0])
+        self.assertIn("the server reads version 3", logs.output[0])
 
     async def test_changes_of_the_file_take_effect_by_their_level(self):
         s.CONFIG_CHECK_S = 0.02
@@ -106,7 +106,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            choose = lambda model: json.dump({"version": 2, "model": model}, open(f, "w"))
+            choose = lambda model: json.dump({"version": 3, "model": model}, open(f, "w"))
             models = llama.Models({"e4b": {"llamaServer": "http://127.0.0.1:8093", "launchd": "x.e4b"},
                                "llama": {"llamaServer": "http://127.0.0.1:8092", "launchd": "x.llama"}}, make=StubModel)
             chosen = [object()]
@@ -123,6 +123,21 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             n = len(agents.calls)
             await models.get("llama")
             self.assertEqual(len(agents.calls), n)
+
+
+class MigrateTest(unittest.TestCase):
+    def test_version_2_becomes_3_with_the_built_in_adapters_enabled_and_the_order_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump({"model": "m", "language": "ru", "models": {}, "version": 2}, fh, indent=2)
+            s.migrate(f)
+            c = json.load(open(f, encoding="utf-8"))
+            self.assertEqual(list(c), ["model", "language", "adapters", "models", "version"])
+            self.assertEqual((c["version"], c["adapters"]["claude-desktop"], c["adapters"]["claude-code"]),
+                             (3, {"enabled": True}, {"enabled": True}))
+            s.migrate(f)  # a version-3 file stays as it is
+            self.assertEqual(json.load(open(f, encoding="utf-8")), c)
 
 
 if __name__ == "__main__":

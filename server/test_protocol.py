@@ -9,7 +9,6 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-from adapters import claude_code, claude_desktop
 import metrics
 import protocol
 import recordings
@@ -77,6 +76,18 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order[:2], [("start", 1, 0), ("start", 2, 1)])  # both at once, one per slot
         self.assertEqual(order[2:], [("end", 2), ("end", 1)])
 
+    async def test_the_app_asks_which_adapters_there_are(self):
+        self.args.adapters = ["claude-desktop"]
+        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
+            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(json.dumps({"type": "adapters"}))
+                got = json.loads(await ws.recv())
+        by = {a["name"]: a for a in got["adapters"]}
+        self.assertEqual((got["type"], got["interface"]), ("adapters", 1))
+        self.assertTrue(by["claude-desktop"]["enabled"] and by["claude-desktop"]["electronTree"])
+        self.assertEqual(by["claude-desktop"]["apps"], ["com.anthropic.claudefordesktop"])
+        self.assertFalse(by["claude-code"]["enabled"])
+
     async def test_without_warm_text_nothing_is_warmed(self):
         self.args.warm_text = False
         stub, got = await self.run_stream({"type": "start"}, LOUD)
@@ -130,15 +141,20 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = claude_code.PROJECTS, claude_desktop.STORE
-            claude_code.PROJECTS, claude_desktop.STORE = os.path.join(d, "projects"), os.path.join(d, "store")
+            saved = os.environ.get("LOCAL_VOICE_PROJECTS"), os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS")
+            os.environ.update(LOCAL_VOICE_PROJECTS=os.path.join(d, "projects"),
+                              LOCAL_VOICE_DESKTOP_SESSIONS=os.path.join(d, "store"))
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             try:
                 stub, got = await self.run_stream({"type": "start", "language": "ru", "snapshot": snapshot}, LOUD)
                 stub2, got = await self.run_stream({"type": "start", "language": "ru", "sessions": ["s1"]}, LOUD)
             finally:
-                claude_code.PROJECTS, claude_desktop.STORE = saved
+                for k, v in zip(("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS"), saved):
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
         self.assertEqual(stub.contexts[0]["messages"], [{"role": "assistant", "text": "Готово."}])
         self.assertEqual(stub2.contexts[0]["session"], "s1")
         a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))

@@ -2,7 +2,7 @@
 
 Usage: server/.venv/bin/python server/which_session.py [SNAPSHOT.json]   (default: read the snapshot from stdin)
        macos/.build/release/lv-snapshot | server/.venv/bin/python server/which_session.py
-Prints every adapter's claim, the surest first, then what the surest one found: how, session, title, transcript,
+Prints the claim of every adapter plugin (enabled or not), the surest first, then what the surest one found: how, session, title, transcript,
 the number of Claude's replies and the first terms. It never prints the replies themselves.
 """
 import json

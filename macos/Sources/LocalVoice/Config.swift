@@ -1,5 +1,5 @@
 // The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
-// version 2 (server/settings.py has its fields). The app reads the model registry, the chosen model, the language,
+// version 3 (server/settings.py has its fields). The app reads the model registry, the chosen model, the language,
 // the silence stop and where the server listens; it writes only the chosen model.
 import Foundation
 
@@ -30,7 +30,7 @@ struct Config {
             c.error = "\(url.path) is not a JSON object"
             return c
         }
-        if let v = d["version"] as? Int, v != 2 { c.error = "\(url.path) is version \(v); the app reads version 2" }
+        if let v = d["version"] as? Int, v != 2, v != 3 { c.error = "\(url.path) is version \(v); the app reads 2 and 3" }
         c.models = ((d["models"] as? [String: Any]) ?? [:]).keys.sorted()
         c.model = d["model"] as? String
         if let l = d["language"] as? String { c.language = l }

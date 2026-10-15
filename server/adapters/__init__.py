@@ -1,5 +1,7 @@
 """Adapters: one per target app (the app with the input box). They give the model the context of the conversation
-the dictation goes into.
+the dictation goes into. Each adapter is a plugin (adapters/registry.py), and works only when the config enables it;
+with none enabled, dictation runs in the base mode, without context. Plugins import this module for Adapter, Claim,
+bundle, terms, and the libraries markdown and claude_transcripts.
 
 The core (protocol.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
@@ -38,8 +40,10 @@ class Claim:
 
 
 class Adapter(abc.ABC):
-    """An adapter: `name`, claim, context, clean. An adapter without one of them cannot be made."""
+    """An adapter: claim, context, clean. An adapter without one of them cannot be made. The registry sets `name` and
+    `manifest` from the plugin's adapter.json."""
     name = ""
+    manifest = {}
 
     @abc.abstractmethod
     def claim(self, snapshot, sessions):
@@ -80,27 +84,26 @@ def snapshot_of(start):
     return {"app": {"bundleId": start["app"]}} if isinstance(start.get("app"), str) else {}
 
 
-from . import claude_code, claude_desktop  # noqa: E402
-
-# The adapters, in the order that breaks a tie of confidence.
-ADAPTERS = [claude_desktop.ClaudeDesktop(), claude_code.ClaudeCode()]
+from . import registry  # noqa: E402
 
 
-def claims(snapshot, sessions=()):
-    """Every adapter's claim on the snapshot, the surest first."""
+def claims(snapshot, sessions=(), enabled=None):
+    """The claims of the enabled adapters (`enabled`: names; None: every working plugin), the surest first."""
+    names = enabled if enabled is not None else list(registry.plugins())
     out = []
-    for a in ADAPTERS:
+    for a in registry.enabled(names):
         c = a.claim(snapshot, sessions)
         if c is not None:
             out.append((a, c))
     return sorted(out, key=lambda ac: -ac[1].confidence)
 
 
-def context(snapshot, sessions=()):
+def context(snapshot, sessions=(), enabled=None):
     """The context of the conversation the dictation goes into: {"adapter", "confidence", "reason", "session", "file",
-    "how", "title", "messages": newest first and cleaned, "terms": from the cleaned messages}, or with no "messages" if the surest adapter found no
-    conversation, or None if no adapter claims the snapshot."""
-    ranked = claims(snapshot, sessions)
+    "how", "title", "messages": newest first and cleaned, "terms": from the cleaned messages}, or with no "messages"
+    if the surest adapter found no conversation, or None if no enabled adapter claims the snapshot (with none enabled:
+    the base mode, no context)."""
+    ranked = claims(snapshot, sessions, enabled)
     if not ranked:
         return None
     a, c = ranked[0]

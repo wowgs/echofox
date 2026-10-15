@@ -1,0 +1,13 @@
+{
+  "name": "claude-code",
+  "version": "1.0",
+  "author": "local-voice",
+  "source": "https://github.com/wowgs/local-voice",
+  "description": "Claude Code sessions that the client names in the start message.",
+  "interface": 1,
+  "apps": [],
+  "electronTree": false,
+  "reads": [
+    "~/.claude/projects"
+  ]
+}

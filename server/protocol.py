@@ -49,6 +49,13 @@ async def handle(ws, models, args):
         start = json.loads(await ws.recv())
     except (ValueError, TypeError):
         start = {}
+    if isinstance(start, dict) and start.get("type") == "adapters":
+        # The app asks which adapters there are: which apps to take the focus of, which to build the tree of.
+        enabled = set(getattr(args, "adapters", None) or [])
+        await send(type="adapters", interface=adapters.registry.INTERFACE,
+                   adapters=[p.info(enabled) for p in (await asyncio.to_thread(adapters.registry.plugins)).values()])
+        await ws.close()
+        return
     if not isinstance(start, dict) or start.get("type") != "start" or start.get("sampleRate", 16000) != RATE \
             or start.get("encoding", "pcm_s16le") != "pcm_s16le":
         await send(type="error", message=f"expected a start message for 16 kHz pcm_s16le, got {start}")
@@ -126,7 +133,7 @@ async def handle(ws, models, args):
                     text_prompt, options, meta, save_dir, limits=(args.output_tokens_per_second, args.output_tokens_base))
                 chat = None
                 if options.get("chat_history_token_budget", CHAT_HISTORY_TOKEN_BUDGET) > 0:
-                    found = await asyncio.to_thread(adapters.context, snapshot, sessions)
+                    found = await asyncio.to_thread(adapters.context, snapshot, sessions, args.adapters)
                     if found:
                         chat_info.update({k: found[k] for k in ("adapter", "confidence", "reason", "how", "session",
                                                                 "file", "title", "desktopSession") if found.get(k)})

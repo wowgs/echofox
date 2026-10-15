@@ -7,7 +7,7 @@ import time
 import unittest
 
 import adapters
-from adapters import claude_code, claude_desktop, markdown  # noqa: F401
+from adapters import claude_transcripts, markdown, registry  # noqa: F401
 
 DESKTOP = "com.anthropic.claudefordesktop"
 
@@ -25,11 +25,17 @@ class Fixture(unittest.TestCase):
         for p in ("a", "b"):
             os.makedirs(os.path.join(self.projects, p))
         os.makedirs(os.path.join(self.store, "org", "account"))
-        self.saved = claude_code.PROJECTS, claude_desktop.STORE
-        claude_code.PROJECTS, claude_desktop.STORE = self.projects, self.store
+        self.saved = {k: os.environ.get(k) for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS",
+                                                      "LOCAL_VOICE_PLUGINS")}
+        os.environ.update(LOCAL_VOICE_PROJECTS=self.projects, LOCAL_VOICE_DESKTOP_SESSIONS=self.store,
+                          LOCAL_VOICE_PLUGINS=os.path.join(self.dir.name, "plugins"))
 
     def tearDown(self):
-        claude_code.PROJECTS, claude_desktop.STORE = self.saved
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         self.dir.cleanup()
 
     def put(self, project, session, lines, age=0, tail=""):
@@ -109,8 +115,8 @@ class CleanTest(Fixture):
         c = adapters.context({}, ["s"])
         self.assertEqual(c["messages"], [{"role": "assistant", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
         self.assertEqual(c["terms"], ["FocusSnapshot"])
-        for a in adapters.ADAPTERS:
-            self.assertIsInstance(a, adapters.Adapter)
+        for p in registry.plugins().values():
+            self.assertIsInstance(p.adapter, adapters.Adapter)
 
     def test_an_adapter_without_clean_cannot_be_made(self):
         class NoClean(adapters.Adapter):
@@ -118,6 +124,47 @@ class CleanTest(Fixture):
             def context(self, snapshot, sessions): return None
         with self.assertRaises(TypeError):
             NoClean()
+
+
+class PluginTest(Fixture):
+    def plugin(self, name, manifest=None, code=None):
+        d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], name)
+        os.makedirs(d, exist_ok=True)
+        json.dump(manifest if manifest is not None else {"name": name, "interface": 1, "apps": ["com.example.app"]},
+                  open(os.path.join(d, "adapter.json"), "w"))
+        open(os.path.join(d, "adapter.py"), "w").write(code if code is not None else (
+            "from adapters import Adapter, Claim\n"
+            "class Mine(Adapter):\n"
+            "    def claim(self, snapshot, sessions):\n"
+            "        return Claim(self.name, 0.95, 'mine') if (snapshot.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
+            "    def context(self, snapshot, sessions):\n"
+            "        return {'session': 's', 'file': 'f', 'how': 'test', 'messages': [{'role': 'assistant', 'text': '**Hello** Kubernetes'}]}\n"
+            "    def clean(self, text):\n"
+            "        return text.replace('**', '')\n"))
+
+    def test_a_users_plugin_in_the_folder_works_once_enabled(self):
+        self.plugin("mine")
+        snap = {"app": {"bundleId": "com.example.app"}}
+        self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
+        self.assertIsNone(adapters.context(snap, enabled=["claude-desktop"]))
+        c = adapters.context(snap, enabled=["mine"])
+        self.assertEqual((c["adapter"], c["messages"][0]["text"], c["terms"]), ("mine", "Hello Kubernetes", ["Kubernetes", "Hello"]))
+        self.assertEqual(registry.plugins()["mine"].info({"mine"})["apps"], ["com.example.app"])
+
+    def test_a_broken_plugin_stops_only_itself_and_says_why(self):
+        self.plugin("old", {"name": "old", "interface": 0})
+        self.plugin("twice", code="from adapters import Adapter\n")
+        self.plugin("crash", code="raise RuntimeError('boom')\n")
+        found = registry.plugins()
+        self.assertIn("interface 0", found["old"].error)
+        self.assertIn("0 subclasses", found["twice"].error)
+        self.assertIn("boom", found["crash"].error)
+        self.assertIsNotNone(found["claude-desktop"].adapter)
+        self.assertFalse(found["crash"].info({"crash"})["enabled"])
+
+    def test_a_users_plugin_replaces_a_built_in_one_of_the_same_name(self):
+        self.plugin("claude-code", {"name": "claude-code", "interface": 1})
+        self.assertFalse(registry.plugins()["claude-code"].builtin)
 
 
 class ClaudeDesktopTest(Fixture):
@@ -153,7 +200,7 @@ class ClaudeDesktopTest(Fixture):
         self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude-desktop", 1.0), ("claude-code", 0.9)])
 
     def test_a_bad_desktop_id_reads_no_file(self):
-        self.assertIsNone(claude_desktop.record("local_../../etc"))
+        self.assertIsNone(registry.plugins()["claude-desktop"].module.record("local_../../etc"))
 
     def test_old_clients_send_a_bundle_id(self):
         self.assertEqual(adapters.snapshot_of({"app": DESKTOP}), {"app": {"bundleId": DESKTOP}})

@@ -4,7 +4,7 @@ Local dictation on a Mac: speech to text by Gemma 4 E4B in llama.cpp, on this Ma
 
 ## The dictation server
 
-The server's code, in `server/`: `gemma_voice.py` starts it; `protocol.py` is one client connection; `audio.py` the levels, the cutting and WAV; `dictation.py` the prompt, the options, the text before the audio and each piece's request; `llama.py` the models in `llama-server` and their launchd agents; `settings.py` the config file; `adapters/` the adapters that find the chat context; `recordings.py` the recordings; `metrics.py` writes the metrics and, run as a script, sums them up.
+The server's code, in `server/`: `gemma_voice.py` starts it; `protocol.py` is one client connection; `audio.py` the levels, the cutting and WAV; `dictation.py` the prompt, the options, the text before the audio and each piece's request; `llama.py` the models in `llama-server` and their launchd agents; `settings.py` the config file; `adapters/` the core of the adapters that find the chat context, their plugin loader (`registry.py`) and the libraries for plugins (`markdown.py`, `claude_transcripts.py`); `plugins/` the built-in adapter plugins; `recordings.py` the recordings; `metrics.py` writes the metrics and, run as a script, sums them up.
 
 `server/gemma_voice.py` is the dictation server. It sends the audio to Gemma 4 E4B in llama.cpp's `llama-server` on this Mac, so the audio does not leave the computer.
 
@@ -28,7 +28,7 @@ Gemma 4 takes at most 30 seconds of audio per request (model card; 25 tokens per
 
 A piece's text is limited to 10 tokens per second of its audio plus 32 (`outputTokensPerSecond`, `outputTokensBase`; `maxOutputTokens` overrides it), so a model that never ends its text stops. If the client leaves before the last piece, the server closes the running request, and `llama-server` stops decoding it.
 
-The server's settings are in the section `server` of the config file: `pieceSeconds`, `cutSearchSeconds`, `thresholdDb`, `speechAboveNoiseDb`, `outputTokensPerSecond`, `outputTokensBase`, `warmText`, `recordings`, `metrics`, `host`, `port`; `models` and `saveRecordings` are at the top of the file. A command-line flag of the same name (`--piece-seconds` and so on) wins over the file. The server reads only version 2 of the file. It watches the file: a change of a recording setting takes effect at the next recording, a change of `models` after the running recording, and a change of `host` or `port` ends the server after the running recording, so that launchd starts it again.
+The server's settings are in the section `server` of the config file: `pieceSeconds`, `cutSearchSeconds`, `thresholdDb`, `speechAboveNoiseDb`, `outputTokensPerSecond`, `outputTokensBase`, `warmText`, `recordings`, `metrics`, `host`, `port`; `models` and `saveRecordings` are at the top of the file. A command-line flag of the same name (`--piece-seconds` and so on) wins over the file. The server reads only version 3 of the file, and turns a version-2 file into version 3 at its start. It watches the file: a change of a recording setting takes effect at the next recording, a change of `models` after the running recording, and a change of `host` or `port` ends the server after the running recording, so that launchd starts it again.
 
 The server writes its metrics to `~/Library/Logs/local-voice/gemma-voice-metrics.jsonl`, one JSON object per line: each model request (prefill, cached and decode tokens and speeds from `llama-server`, time to the first token, wall time, audio length, `llama-server`'s physical footprint as macOS counts it), each recording (audio length, the wait after the stop) and each recording's levels. `server/metrics.py` prints a summary per model and the last requests.
 
@@ -52,9 +52,10 @@ server/.venv/bin/python -m unittest discover -s server
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "model": "Gemma E4B llama.cpp",
   "language": "ru",
+  "adapters": {"claude-desktop": {"enabled": true}, "claude-code": {"enabled": true}},
   "models": {
     "Gemma E4B llama.cpp": {"llamaServer": "http://127.0.0.1:8092", "launchd": "local-voice.llama-server",
                             "prompt": "Transcribe … in {LANGUAGE} …", "options": {"chatHistoryTokenBudget": 2000}}
@@ -74,11 +75,13 @@ server/.venv/bin/python -m unittest discover -s server
 
 The server reads this file at each recording, so a change by hand also takes effect with the next recording.
 
-`version` is the format of the file; the server reads only version 2.
+`version` is the format of the file; the server reads only version 3.
 
 ## The chat context
 
-Unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts Claude's final replies in the conversation that the dictation goes into before the prompt, so the model knows the names and terms of the conversation. Adapters find that conversation, one adapter per target app (`server/adapters/`).
+Without an enabled adapter, dictation runs in the base mode: the model gets only the prompt. With one, and unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts Claude's final replies in the conversation that the dictation goes into before the prompt, so the model knows the names and terms of the conversation. Adapters find that conversation, one adapter per target app.
+
+An adapter is a plugin: a folder with `adapter.json`, its manifest (`name`, `version`, `author`, `source`, `description`, `interface`: 1, `apps`: the bundle ids whose focus it reads, `electronTree`: whether the app builds its accessibility tree only on request, `reads`: the files it reads), and `adapter.py`, a module with one subclass of `adapters.Adapter` (`claim`, `context`, `clean`). The built-in plugins are in `server/plugins/`; your own go to `~/Library/Application Support/Local Voice/adapters/` (`LOCAL_VOICE_PLUGINS` sets another folder), and one with the name of a built-in plugin replaces it. A plugin works only when the config enables it: `"adapters": {"claude-desktop": {"enabled": true}}`. The server checks only that the manifest reads, that its interface is 1 and that the module has its class; a plugin you add is yours to trust. The server loads the plugins again when a plugin's files change. The menu bar app asks the server which adapters are enabled, and takes the full focus snapshot and builds an Electron app's tree only for their apps.
 
 The client sends a focus snapshot in the start message: the frontmost app, its window, the element with the cursor and its ancestors, the nearest web area's URL and title, and the app's child processes with their working folders. It holds service fields only, never the text of input fields. `macos/` builds it (the `FocusSnapshot` library). The server asks every adapter whether the snapshot is its own and how sure it is, and the surest one finds the conversation. If none claims it, the dictation runs without context.
 
@@ -133,4 +136,5 @@ A client speaks this protocol with `server/gemma_voice.py`, on one WebSocket, `w
 
 - It sends `{"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le","client":"<name>","snapshot":{…},"sessions":["<session id>",…]}`. `snapshot` is the focus snapshot (see the chat context); `sessions` are Claude Code sessions, if the client knows them. Clients from before snapshots send `"app":"<bundle id>"`. Without `model`, the server takes the registry's first model. An experiment may also send `prompt` and `options`, which override the model's.
 - Then it sends binary messages of audio: 16-bit little-endian PCM, 16 kHz, mono. When the recording stops, it sends `{"type":"stop","reason":"user"}` (or `silence`, `max_duration`, `error`).
+- Instead of a start message, a client may send `{"type":"adapters"}`: the server answers `{"type":"adapters","interface":1,"adapters":[{"name","enabled","builtin","version","author","source","description","apps","electronTree","reads","error"}]}` and closes the connection.
 - The server sends `{"type":"speech"}` while it hears speech, `{"type":"text","text":"…"}` for each finished piece of text, in order, and `{"type":"error","message":"…"}` for errors. After the last piece it sends `{"type":"done"}` and closes the connection.

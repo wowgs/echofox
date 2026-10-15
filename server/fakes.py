@@ -24,7 +24,7 @@ ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"ll
 
 def args(**over):
     """The recording settings protocol.handle() gets; recordings never go to the real ~/speech/recordings."""
-    return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20, "warm_text": True,
+    return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20, "warm_text": True, "adapters": ["claude-desktop", "claude-code"],
                                     "cut_search_seconds": 3, "output_tokens_per_second": 10, "output_tokens_base": 32,
                                     "recordings": tempfile.mkdtemp(prefix="gemma-voice-test-recordings-"),
                                     "save_recordings": True, **over})

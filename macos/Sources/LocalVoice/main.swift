@@ -10,6 +10,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let key = TapKey()
     private let prepareQueue = DispatchQueue(label: "local-voice.prepare")
+    private let adapters = Adapters()
     private var current: Dictation?
     private var waiting: [Dictation] = []
     private var lastText: String?
@@ -24,10 +25,13 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.menu = menu
         key.onTap = { [weak self] in self?.toggle() }
         askPermissions()
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
-            if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-                self?.prepare(app.processIdentifier)
+        adapters.onChange = { [weak self] in self?.prepareAll() }
+        adapters.refresh(Config.load().serverURL)
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
+                guard let self, let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                self.adapters.refresh(Config.load().serverURL, minimum: 30)
+                self.prepare(app)
             }
         }
         update()
@@ -87,15 +91,19 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Log.write("Accessibility permission granted")
         askMicrophone()
         key.start()
-        // Electron apps build their accessibility tree only on request, about 2 s after it (see FocusSnapshot).
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
-            prepare(app.processIdentifier)
-        }
+        prepareAll()
         update()
     }
 
-    private func prepare(_ pid: pid_t) {
-        guard AXIsProcessTrusted(), pid != ProcessInfo.processInfo.processIdentifier else { return }
+    /// Electron apps build their accessibility tree only on request, about 2 s after it (see FocusSnapshot), and forget
+    /// it when they quit. Only the apps of enabled adapters are asked: the tree costs the app CPU and memory.
+    private func prepareAll() {
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular { prepare(app) }
+    }
+
+    private func prepare(_ app: NSRunningApplication) {
+        guard AXIsProcessTrusted(), let id = app.bundleIdentifier, adapters.treeApps.contains(id) else { return }
+        let pid = app.processIdentifier
         prepareQueue.async { FocusSnapshot.prepare(pid: pid) }
     }
 
@@ -113,7 +121,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let config = Config.load()
         if let e = config.error { Log.write("config: \(e)") }
-        let d = Dictation(config: config)
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        let d = Dictation(config: config, full: adapters.snapshotApps.contains(front),
+                          tree: adapters.treeApps.contains(front))
         d.onPhase = { [weak self] d in self?.changed(d) }
         current = d
         do {
@@ -221,6 +231,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         modelItem.submenu = models
         menu.addItem(modelItem)
         menu.addItem(disabled("Language: \(config.language.isEmpty ? "the speech's own" : config.language)"))
+        let on = adapters.list.filter(\.enabled).map(\.name)
+        menu.addItem(disabled("Adapters: " + (on.isEmpty ? "none (dictation without context)" : on.joined(separator: ", "))))
+        for a in adapters.list where a.error != nil { menu.addItem(disabled("Adapter \(a.name): \(a.error!)")) }
         menu.addItem(.separator())
         let log = NSMenuItem(title: "Open the Log", action: #selector(openLog), keyEquivalent: "")
         log.target = self

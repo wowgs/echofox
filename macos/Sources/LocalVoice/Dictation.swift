@@ -26,8 +26,14 @@ final class Dictation {
     private var sendFailed = false
     let started = Date()
 
-    init(config: Config) {
+    private let full: Bool, tree: Bool
+
+    /// `full`: an enabled adapter reads the frontmost app, so the snapshot has its window, ancestors and processes.
+    /// `tree`: the app is an Electron app whose tree an enabled adapter needs.
+    init(config: Config, full: Bool, tree: Bool) {
         self.config = config
+        self.full = full
+        self.tree = tree
     }
 
     func start() throws {
@@ -35,9 +41,9 @@ final class Dictation {
         self.task = task
         task.resume()
         receive()
-        let config = self.config
+        let config = self.config, full = self.full, tree = self.tree
         queue.async { [weak self] in
-            let capture = FocusSnapshot.capture()
+            let capture = FocusSnapshot.capture(full: full, enableElectron: tree)
             DispatchQueue.main.async { self?.capture = capture }
             Log.write("snapshot: app \(capture.snapshot["app"].flatMap { ($0 as? [String: Any])?["bundleId"] } ?? "none"), "
                       + "focused \(capture.focused != nil), web area \(capture.snapshot["webArea"] != nil), "

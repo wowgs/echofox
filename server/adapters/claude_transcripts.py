@@ -1,26 +1,17 @@
-"""The adapter for Claude Code sessions that the client names, and the reading of Claude Code transcripts that other
-adapters use too.
-
-A Claude Code client (Claude Desktop's Code tab, the VS Code extension, the CLI) writes each session to
-~/.claude/projects/<project>/<session id>.jsonl. This adapter claims a snapshot only when the client named its
-sessions; then the newest of those sessions is read. It never guesses a session from the app alone: the newest
-session of an app is often another one that runs in the background.
+"""Reading Claude Code transcripts: a library for the adapters of Claude Code clients (Claude Desktop's Code tab, the
+VS Code extension, the CLI), which write each session to ~/.claude/projects/<project>/<session id>.jsonl.
 
 Kept from a transcript: only Claude's final replies, the text of each turn's last answer (stop_reason "end_turn").
 Dropped: the user's own messages (the model copied the user's previous dictation into the next transcription instead
 of transcribing it, 2026-10-14), Claude's texts between tool calls (stop_reason "tool_use"), tool calls and their
 results, thinking, attachments, meta messages (isMeta), subagents (isSidechain), and tags that Claude Code adds
-(<system-reminder>, <ide_…>, <command-…>, <task-notification>). Claude writes its replies in Markdown; clean makes
-them plain prose (adapters/markdown.py).
+(<system-reminder>, <ide_…>, <command-…>, <task-notification>).
 """
 import glob
 import json
 import os
 import re
 
-from . import Adapter, Claim, markdown
-
-PROJECTS = os.environ.get("LOCAL_VOICE_PROJECTS") or os.path.expanduser("~/.claude/projects")
 
 _TAG_NAMES = r"system-reminder|ide_[\w-]+|command-[\w-]+|local-command-[\w-]+|task-notification"
 TAGS = re.compile(rf"<({_TAG_NAMES}|user-prompt-submit-hook)\b[^>]*>[\s\S]*?</\1>")
@@ -28,7 +19,8 @@ LONE_TAG = re.compile(rf"</?({_TAG_NAMES})\b[^>]*>")
 
 
 def projects():
-    return PROJECTS
+    """~/.claude/projects, or $LOCAL_VOICE_PROJECTS (read at each call, so that tests can set it)."""
+    return os.environ.get("LOCAL_VOICE_PROJECTS") or os.path.expanduser("~/.claude/projects")
 
 
 def session_file(session_ids, root=None):
@@ -114,16 +106,3 @@ def context_of(where, how):
     if not where:
         return None
     return {**where, "how": how, **read(where["file"])}
-
-
-class ClaudeCode(Adapter):
-    name = "claude-code"
-
-    def clean(self, text):
-        return markdown.plain(text)
-
-    def claim(self, snapshot, sessions):
-        return Claim(self.name, 0.9, "the client named its Claude Code sessions") if sessions else None
-
-    def context(self, snapshot, sessions):
-        return context_of(session_file(sessions), "named sessions")

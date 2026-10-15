@@ -1,7 +1,9 @@
 // Puts the text where the speaker wants it when the text comes back (Alex's rule, 2026-10-15):
 //   1. if an input box had the focus at the tap: into that box, wherever the speaker went meanwhile;
 //   2. otherwise the input box that has the focus now (the speaker clicked into it while talking);
-//   3. otherwise the clipboard (and the menu).
+//   3. otherwise, if the app of the tap is still in front and tells nothing of its focus (an Electron app whose tree no
+//      adapter needs), a paste where its cursor is;
+//   4. otherwise the clipboard (and the menu).
 // Into a box, the ways are tried in this order, each checked by the box's text length, and the first that works wins:
 //   a. Accessibility: the box's selected text is replaced. Claude Desktop's box reports success and changes nothing
 //      (2026-10-15).
@@ -53,6 +55,13 @@ enum Inserter {
         if let (now, pid) = focusedInput() {
             if let r = setSelectedText(text, now) { return (r, "the input box focused at the end") }
             if let r = pasteInto(now, pid: pid, text) { return (r, "the input box focused at the end") }
+        }
+        // An app that tells nothing through Accessibility (an Electron app without its tree, in the base mode): the
+        // text goes where its cursor is, by a paste, if it is still the app in front.
+        if let pid = capture?.pid, capture?.focused == nil,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, focused(in: pid) == nil {
+            withText(text) { paste(to: nil) }
+            return (.pasteUnchecked, "the app of the tap, which tells nothing of its input box")
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

@@ -27,11 +27,13 @@ public enum FocusSnapshot {
 
     /// The snapshot of the frontmost app, as a JSON-ready dictionary.
     public static func take(enableElectron: Bool = true) -> [String: Any] {
-        capture(enableElectron: enableElectron).snapshot
+        capture(full: true, enableElectron: enableElectron).snapshot
     }
 
-    /// The snapshot of the frontmost app, with its focused element and pid.
-    public static func capture(enableElectron: Bool = true) -> Capture {
+    /// The snapshot of the frontmost app, with its focused element and pid. `full`: the window, the focused element's
+    /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
+    /// the text goes into later.
+    public static func capture(full: Bool = true, enableElectron: Bool = true) -> Capture {
         let started = Date()
         guard let front = NSWorkspace.shared.frontmostApplication else {
             return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
@@ -49,6 +51,11 @@ public enum FocusSnapshot {
                 usleep(50_000)
                 focused = element(app, "AXFocusedUIElement")
             }
+        }
+        guard full else {
+            if let f = focused { out["focused"] = describe(f) }
+            out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
+            return Capture(snapshot: out, focused: focused, pid: pid)
         }
         if let w = element(app, "AXFocusedWindow") {
             out["window"] = compact(["title": string(w, "AXTitle"), "document": string(w, "AXDocument")])
