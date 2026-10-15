@@ -34,20 +34,19 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Permissions
 
-    /// One system prompt at a time: two at once showed on top of each other, and answering the Microphone one closed
-    /// the Accessibility one without adding the app to the list (macOS 27.0.1, 2026-10-15). So the Microphone first,
-    /// then Accessibility.
+    /// One system prompt at a time, Accessibility first. The Accessibility prompt is an ordinary window: any window
+    /// clicked goes over it (macOS 27.0.1, 2026-10-15). Two prompts at once showed on top of each other, and after the
+    /// Microphone one was answered, the Accessibility one stayed open under the other windows. So the Microphone is
+    /// asked only once Accessibility is granted.
     private func askPermissions() {
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-            AVCaptureDevice.requestAccess(for: .audio) { ok in
-                Log.write("microphone permission: \(ok)")
-                DispatchQueue.main.async {
-                    self.askAccessibility()
-                    self.update()
-                }
-            }
-        } else {
-            askAccessibility()
+        askAccessibility()
+    }
+
+    private func askMicrophone() {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
+        AVCaptureDevice.requestAccess(for: .audio) { ok in
+            Log.write("microphone permission: \(ok)")
+            DispatchQueue.main.async { self.update() }
         }
     }
 
@@ -85,6 +84,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func accessibilityGranted() {
         Log.write("Accessibility permission granted")
+        askMicrophone()
         key.start()
         // Electron apps build their accessibility tree only on request, about 2 s after it (see FocusSnapshot).
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
