@@ -1,13 +1,20 @@
 """Audio of a recording: loudness per 30 ms frame, the cutting into pieces for the model, WAV."""
 import array
 import bisect
-import io
 import math
-import wave
+import struct
 
-RATE = 16000
-FRAME = RATE * 30 // 1000  # 30 ms of samples
-MODEL_MAX_SECONDS = 30  # Gemma 4: at most 30 s of audio per request (model card: 25 tokens per second, 750 tokens)
+from constants import MODEL_MAX_SECONDS, RATE, SAMPLE_BYTES
+
+FRAME_S = 0.03                      # the loudness is measured per 30 ms
+FRAME = round(RATE * FRAME_S)       # samples in a frame
+FRAME_BYTES = FRAME * SAMPLE_BYTES
+
+
+def seconds(pcm_or_bytes):
+    """Seconds of 16-bit mono audio, from the audio or its length in bytes."""
+    n = pcm_or_bytes if isinstance(pcm_or_bytes, int) else len(pcm_or_bytes)
+    return n / SAMPLE_BYTES / RATE
 
 
 def db(rms):
@@ -46,10 +53,10 @@ class Levels:
     def feed(self, pcm):
         self.heard = False
         data = self.rest + pcm
-        n = len(data) // (FRAME * 2) * FRAME * 2
+        n = len(data) // (FRAME_BYTES) * FRAME_BYTES
         self.rest = data[n:]
-        for i in range(0, n, FRAME * 2):
-            samples = array.array("h", data[i:i + FRAME * 2])
+        for i in range(0, n, FRAME_BYTES):
+            samples = array.array("h", data[i:i + FRAME_BYTES])
             rms = math.sqrt(sum(x * x for x in samples) / len(samples))
             self.rms.append(rms)
             if rms > 0:
@@ -66,15 +73,15 @@ class Levels:
         threshold, floor = self.threshold, self.noise_floor()
         speech = [r for r in self.rms if r > threshold]
         rest = sorted(r for r in self.rms if r <= threshold)
-        seconds = {}
-        for k, r in enumerate(self.rms):  # frame k starts at 0.03 k s
-            seconds.setdefault(int(k * 3 / 100), []).append(r)
-        per_second = [db(math.sqrt(sum(r * r for r in v) / len(v))) for _, v in sorted(seconds.items())]
-        return {"seconds": round(len(self.rms) * 0.03, 2), "peak_dbfs": db(self.peak),
+        by_second = {}
+        for k, r in enumerate(self.rms):  # frame k starts at FRAME_S k seconds
+            by_second.setdefault(int(k * FRAME_S), []).append(r)
+        per_second = [db(math.sqrt(sum(r * r for r in v) / len(v))) for _, v in sorted(by_second.items())]
+        return {"seconds": round(len(self.rms) * FRAME_S, 2), "peak_dbfs": db(self.peak),
                 "speech_dbfs": db(math.sqrt(sum(r * r for r in speech) / len(speech))) if speech else None,
                 "noise_dbfs": db(rest[len(rest) // 2]) if rest else None,
                 "speech_fraction": round(len(speech) / len(self.rms), 3) if self.rms else 0,
-                "clipped_samples": self.clipped, "longest_digital_silence_s": round(self.longest_zero * 0.03, 2),
+                "clipped_samples": self.clipped, "longest_digital_silence_s": round(self.longest_zero * FRAME_S, 2),
                 "noise_floor_dbfs": db(floor) if floor else None, "threshold_dbfs": db(threshold),
                 "dbfs_per_second": per_second}
 
@@ -88,9 +95,9 @@ def split(pcm, rms, threshold, piece_s, search_s):
     frames = len(rms)
     if frames == 0:
         return [pcm] if pcm else []
-    seconds = frames * 0.03
-    n = max(1, math.ceil(seconds / MODEL_MAX_SECONDS), math.floor(seconds / piece_s + 0.5))
-    most, search = int(MODEL_MAX_SECONDS / 0.03), max(1, int(search_s / 0.03))
+    total = frames * FRAME_S
+    n = max(1, math.ceil(total / MODEL_MAX_SECONDS), math.floor(total / piece_s + 0.5))
+    most, search = int(MODEL_MAX_SECONDS / FRAME_S), max(1, int(search_s / FRAME_S))
     smooth = [sum(rms[max(0, k - 5):k + 5]) / len(rms[max(0, k - 5):k + 5]) for k in range(frames)]
     cuts = [0]
     for k in range(1, n):
@@ -104,15 +111,17 @@ def split(pcm, rms, threshold, piece_s, search_s):
     pieces = []
     for a, b in zip(cuts, cuts[1:]):
         if any(r > threshold for r in rms[a:b]):
-            pieces.append(pcm[a * FRAME * 2:(b * FRAME * 2 if b < frames else len(pcm))])
+            pieces.append(pcm[a * FRAME_BYTES:(b * FRAME_BYTES if b < frames else len(pcm))])
     return pieces
 
 
+def wav_header(data_bytes):
+    """The 44-byte header of a WAV file with `data_bytes` of this audio (16 kHz, 16-bit, mono, PCM)."""
+    return (b"RIFF" + struct.pack("<I", 36 + data_bytes) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, RATE, RATE * SAMPLE_BYTES, SAMPLE_BYTES, 8 * SAMPLE_BYTES) + b"data" +
+            struct.pack("<I", data_bytes))
+
+
 def wav(pcm):
-    out = io.BytesIO()
-    with wave.open(out, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(RATE)
-        w.writeframes(pcm)
-    return out.getvalue()
+    """The audio as a WAV file."""
+    return wav_header(len(pcm)) + bytes(pcm)

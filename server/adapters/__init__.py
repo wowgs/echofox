@@ -89,14 +89,6 @@ def bundle(snapshot):
     return ((snapshot or {}).get("app") or {}).get("bundleId")
 
 
-def snapshot_of(start):
-    """The snapshot of a start message: "snapshot", or, from clients before snapshots, "app" (a bundle id)."""
-    s = start.get("snapshot")
-    if isinstance(s, dict):
-        return s
-    return {"app": {"bundleId": start["app"]}} if isinstance(start.get("app"), str) else {}
-
-
 from . import registry  # noqa: E402
 
 

@@ -5,10 +5,13 @@
 #   server/launchd.sh install --port 8090
 # Log: ~/Library/Logs/local-voice/gemma-voice.log
 set -e
-LABEL=local-voice.gemma-voice
-PLIST=~/Library/LaunchAgents/$LABEL.plist
+# The shared numbers and names come from server/constants.py.
+c() { PYTHONPATH=${0:A:h} ${0:A:h}/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+LABEL=$(c SERVER_LABEL)
+PLIST=$(c LAUNCH_AGENTS)/$LABEL.plist
 SERVER=${0:A:h}
-LOG=~/Library/Logs/local-voice/gemma-voice.log
+LOG=$(c LOGS)/gemma-voice.log
+EXIT_TIMEOUT=$(c LAUNCHD_EXIT_TIMEOUT_S)
 DOMAIN=gui/$(id -u)
 
 case $1 in
@@ -30,7 +33,7 @@ $(for a in "${@:2}"; do printf '    <string>%s</string>\n' "$a"; done)
   <key>WorkingDirectory</key><string>$SERVER</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ExitTimeOut</key><integer>210</integer>
+  <key>ExitTimeOut</key><integer>$EXIT_TIMEOUT</integer>
   <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>$LOG</string>
   <key>StandardErrorPath</key><string>$LOG</string>

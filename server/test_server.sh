@@ -5,22 +5,25 @@
 # (local-voice.llama-server), so that nothing starts the working model again meanwhile, and starts a test
 # llama-server with the working one's arguments; `stop` ends both test processes and starts the working dictation
 # server again, which starts the llama-server of the model chosen in the menu. Meanwhile, your dictation is off.
-# The ports are in places.py. It reads the same config (~/.local-voice/config.json) through a
+# The ports, labels and folders are in constants.py. It reads the same config (~/.local-voice/config.json) through a
 # copy in which every model's llamaServer is the test llama-server and no model has a launchd agent; its log,
 # metrics and recordings folder are its own.
 # Usage: server/test_server.sh [start|stop|status]
 set -euo pipefail
 cd "${0:A:h}"
-PORT=$(.venv/bin/python -c 'import places; print(places.TEST_PORT)')
-LLAMA_PORT=$(.venv/bin/python -c 'import places; print(places.TEST_LLAMA_PORT)')
-LABEL=local-voice.llama-server
-SERVER_LABEL=local-voice.gemma-voice
-SERVER_PLIST=~/Library/LaunchAgents/$SERVER_LABEL.plist
+# The shared numbers and names come from server/constants.py.
+c() { PYTHONPATH=${0:A:h} ${0:A:h}/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+PORT=$(c TEST_PORT)
+LLAMA_PORT=$(c TEST_LLAMA_PORT)
+LABEL=$(c LLAMA_LABEL)
+SERVER_LABEL=$(c SERVER_LABEL)
+SERVER_PLIST=$(c LAUNCH_AGENTS)/$SERVER_LABEL.plist
 DOMAIN=gui/$(id -u)
-LLAMA_PLIST=~/Library/LaunchAgents/$LABEL.plist
-LOGS=~/Library/Logs/local-voice
+LLAMA_PLIST=$(c LAUNCH_AGENTS)/$LABEL.plist
+LOGS=$(c LOGS)
 STATE=${TMPDIR:-/tmp}/local-voice-test-server
-CONFIG=${LOCAL_VOICE_CONFIG:-$HOME/.local-voice/config.json}
+CONFIG=${LOCAL_VOICE_CONFIG:-$(c CONFIG)}
+EXIT_WAIT=$(c LAUNCHD_EXIT_TIMEOUT_S)
 pids() { pgrep -f "gemma_voice.py.*--port $PORT" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
 stop_tests() { for p in $(pids); do kill $p; done; for i in {1..50}; do [[ -z $(pids) ]] && break; sleep 0.1; done; }
 case ${1:-start} in
@@ -59,7 +62,7 @@ json.dump(fix(json.load(open(src))), open(dst, "w"), indent=1)
 PY
     # The working dictation server first: it ends after its running recording (ExitTimeOut in launchd.sh).
     launchctl bootout $DOMAIN/$SERVER_LABEL 2>/dev/null || true
-    for i in {1..220}; do launchctl print $DOMAIN/$SERVER_LABEL >/dev/null 2>&1 || break; sleep 1; done
+    for i in {1..$EXIT_WAIT}; do launchctl print $DOMAIN/$SERVER_LABEL >/dev/null 2>&1 || break; sleep 1; done
     launchctl bootout $DOMAIN/$LABEL 2>/dev/null || true
     nohup "${llama[@]}" > $LOGS/llama-server-test.log 2>&1 &
     nohup .venv/bin/python gemma_voice.py --config $STATE/config.json --ignore-selection --port $PORT \

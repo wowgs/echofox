@@ -1,6 +1,6 @@
 #!/bin/zsh
 # llama.cpp's llama-server with Gemma 4 E4B (GGUF) as a launchd agent of this user, for the dictation server's
-# models of the kind {"llamaServer": "http://127.0.0.1:8092"} (gemma_voice.py, LlamaServer).
+# models of the kind {"llamaServer": "http://127.0.0.1:8092"} (llama.LlamaModel).
 # Usage: server/llama_launchd.sh install [MODEL.gguf [MMPROJ.gguf]] | uninstall | status
 #   defaults: ~/models/gemma-4-E4B-gguf/gemma-4-E4B-it-Q8_0.gguf and mmproj-gemma-4-E4B-it-BF16.gguf
 # llama-server runs on 127.0.0.1:8092 with a 16384-token context in two slots (8192 tokens each: the two pieces of a
@@ -9,9 +9,13 @@
 # not the audio of the one before cannot take the text from the cache: on 2026-10-15 the second piece of a recording
 # processed all its 2311 tokens again although 83 % of them matched. Log: ~/Library/Logs/local-voice/llama-server.log.
 set -euo pipefail
-LABEL=local-voice.llama-server
-PLIST=~/Library/LaunchAgents/$LABEL.plist
-LOG=~/Library/Logs/local-voice/llama-server.log
+# The shared numbers and names come from server/constants.py.
+c() { PYTHONPATH=${0:A:h} ${0:A:h}/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+LABEL=$(c LLAMA_LABEL)
+PLIST=$(c LAUNCH_AGENTS)/$LABEL.plist
+LOG=$(c LOGS)/llama-server.log
+HOST=$(c HOST)
+PORT=$(c WORKING_LLAMA_PORT)
 DIR=~/models/gemma-4-E4B-gguf
 case ${1:-status} in
   install)
@@ -28,7 +32,7 @@ case ${1:-status} in
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array>
     <string>$bin</string><string>-m</string><string>$model</string><string>--mmproj</string><string>$mmproj</string>
-    <string>--host</string><string>127.0.0.1</string><string>--port</string><string>8092</string>
+    <string>--host</string><string>$HOST</string><string>--port</string><string>$PORT</string>
     <string>-c</string><string>16384</string><string>-np</string><string>2</string><string>-ngl</string><string>999</string>
     <string>--swa-full</string>
   </array>

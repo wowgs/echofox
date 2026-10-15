@@ -5,27 +5,29 @@
                                                   each piece's text and the whole text, the context
                                                   (adapter, what it read, its details), and the Mac's input
                                                   volume and input device at the start
-gemma_voice.py also writes each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the
-levels (audio.json) into the folder. ~/speech/tools/link_corrections.py reads chat.details (session, file) and "text" of adapter.json.
+The recording also gets each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the
+levels (audio.json), all through Recording.save. ~/speech/tools/link_corrections.py reads chat.details (session,
+file) and "text" of adapter.json.
 16 kHz 16-bit mono is 32 KB per second, about 115 MB per hour of speech.
 """
+import contextlib
 import datetime
 import json
+import logging
 import os
-import struct
 import subprocess
 
-RATE = 16000
+from audio import seconds, wav_header
+from constants import RATE, SAMPLE_BYTES
 
-
-def header(data_bytes):
-    return (b"RIFF" + struct.pack("<I", 36 + data_bytes) + b"WAVEfmt " +
-            struct.pack("<IHHIIHH", 16, 1, 1, RATE, RATE * 2, 2, 16) + b"data" + struct.pack("<I", data_bytes))
+HEADER_EVERY_BYTES = 5 * RATE * SAMPLE_BYTES  # the WAV header is brought up to date every 5 s of audio
+log = logging.getLogger("gemma_voice")
 
 
 class Recording:
-    """A new recording folder: `id` ("YYYY-MM-DD/HHMMSS-xxxxxx", relative to the root), `dir`, write(pcm),
-    finish(info)."""
+    """A new recording folder: `id` ("YYYY-MM-DD/HHMMSS-xxxxxx", relative to the root; the metrics name the
+    recording by it too), `dir`; write(pcm) appends audio, save(name, data) writes any other file of the recording,
+    finish(info) closes it. A file that cannot be written is logged and given up; the dictation goes on."""
 
     def __init__(self, root, now=None):
         now = now or datetime.datetime.now()
@@ -34,25 +36,50 @@ class Recording:
         self.dir = os.path.join(root, *self.id.split("/"))
         os.makedirs(self.dir, exist_ok=True)
         self.wav = open(os.path.join(self.dir, "mic.wav"), "wb")
-        self.wav.write(header(0))
-        self.bytes = 0
+        self.wav.write(wav_header(0))
+        self.bytes, self.header_at = 0, 0
 
     def write(self, pcm):
-        if self.wav:
-            self.wav.write(pcm)
-            self.bytes += len(pcm)
-
-    def finish(self, info):
         if not self.wav:
             return
+        try:
+            self.wav.write(pcm)
+            self.bytes += len(pcm)
+            if self.bytes - self.header_at >= HEADER_EVERY_BYTES:  # a server that dies leaves a playable file
+                self._header()
+        except (OSError, ValueError):  # a full disk, a file that went away
+            log.exception("cannot write the audio of recording %s; it is not saved from here on", self.id)
+            self._close_wav()
+
+    def _header(self):
+        pos = self.wav.tell()
         self.wav.seek(0)
-        self.wav.write(header(self.bytes))
-        self.wav.close()
+        self.wav.write(wav_header(self.bytes))
+        self.wav.seek(pos)
+        self.header_at = self.bytes
+
+    def _close_wav(self):
+        with contextlib.suppress(OSError, ValueError):
+            self._header()
+        with contextlib.suppress(OSError, ValueError):
+            self.wav.close()
         self.wav = None
-        with open(os.path.join(self.dir, "adapter.json"), "w", encoding="utf-8") as f:
-            json.dump({"id": self.id, "started": self.started.astimezone().isoformat(),
-                       "audioSeconds": self.bytes / 2 / RATE, **info}, f, ensure_ascii=False, indent=2)
-            f.write("\n")
+
+    def save(self, name, data, append=False):
+        """Writes (or appends to) one more file of the recording: bytes, or an object as JSON."""
+        if not isinstance(data, (bytes, bytearray)):
+            data = (json.dumps(data, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
+        try:
+            with open(os.path.join(self.dir, name), "ab" if append else "wb") as f:
+                f.write(data)
+        except OSError:
+            log.exception("cannot save %s of recording %s", name, self.id)
+
+    def finish(self, info):
+        if self.wav:
+            self._close_wav()
+        self.save("adapter.json", {"id": self.id, "started": self.started.astimezone().isoformat(),
+                                   "audioSeconds": seconds(self.bytes), **info})
 
 
 def _run(cmd, timeout):

@@ -1,76 +1,98 @@
 """Shared pieces of the server's tests: audio, stub models and a fake llama-server. Not a test module."""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
+import argparse
 import array
-import asyncio
 import json
-import os
 import tempfile
 import threading
 import time
-import types
 
+import audio
 import llama
 import metrics
 import recordings
+import settings
 from audio import RATE
 
 # No test waits for a real llama-server, touches the real launchd agents or asks macOS about the microphone.
-llama.wait_healthy = lambda url, seconds=180: True
+llama.wait_healthy = lambda url, seconds=0: True
 recordings.input_info = lambda: None
-metrics.METRICS = os.path.join(sandbox.ROOT, "metrics.jsonl")  # never the real metrics
-
 LOUD = array.array("h", [8000, -8000] * (RATE // 2)).tobytes()  # 1 s, about -12 dBFS
 QUIET = b"\0\0" * RATE  # 1 s of silence
 ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"llamaServer": "http://127.0.0.1:9"}}
 
 
 def args(**over):
-    """The recording settings protocol.handle() gets; recordings never go to the real ~/speech/recordings."""
-    return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20, "warm_text": True, "adapters": ["claude"],
-                                    "cut_search_seconds": 3, "output_tokens_per_second": 10, "output_tokens_base": 32,
-                                    "recordings": tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT),
-                                    "save_recordings": True, **over})
+    """The recording settings protocol.handle() gets: the defaults, with the recordings in the sandbox and the
+    built-in adapter enabled."""
+    st = settings.recording_settings(settings.resolve(argparse.Namespace(), {}))
+    st.recordings = tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT)
+    st.adapters = ["claude"]
+    for k, v in over.items():
+        setattr(st, k, v)
+    return st
 
 
 def seconds(pcm):
-    return len(pcm) / 2 / RATE
+    return audio.seconds(pcm)
 
 
-class StubDictation:
-    def __init__(self, stub, text_prompt, options):
-        self.stub, self.prompt, self.options = stub, text_prompt, options
+class StubModel(llama.Model):
+    """A model without llama-server: a token per word; each piece's text is "<name> piece N". It notes every call.
+    `delays`: seconds each piece takes, by piece number (in its request's thread); `slots_n`: its slots."""
 
-    async def prepare(self, context=None):
-        self.stub.contexts.append(context)
+    def __init__(self, name="gemma-e4b", entry=None, slots_n=1, delays=None):
+        self.name, self.slots_n, self.delays = name, slots_n, delays or {}
+        self.calls, self.warmed, self.order, self.begun, self.cancelled = [], [], [], 0, False
+        self.lock = threading.Lock()
+        self.stop = threading.Event()
+
+    def begin(self):
+        self.begun += 1
+        self.stop.clear()
+
+    def cancel(self):
+        self.cancelled = True
+        self.stop.set()
 
     def slots(self):
-        return self.stub.slots
+        return self.slots_n
 
-    async def warm(self, slot=None):
-        self.stub.warmed.append(slot)
+    def tokenize(self, text):
+        return list(range(len(text.split())))
 
-    async def piece(self, pcm, piece, slot=None):
-        self.stub.calls.append((round(seconds(pcm), 1), self.prompt, self.options))
-        return f"{self.stub.name} piece {len(self.stub.calls)}"
+    def detokenize(self, ids):
+        return " ".join("w" for _ in ids)
 
-    def close(self):
-        self.stub.dictations_closed += 1
+    def warm(self, text, options, slot=None):
+        with self.lock:
+            self.warmed.append(slot)
+        return {}
+
+    def complete(self, text, pcm, limit, options, slot=None):
+        with self.lock:
+            self.calls.append((round(seconds(pcm), 1), text, options))
+            n = len(self.calls)
+            self.order.append(("start", n, slot))
+        if self.stop.wait(self.delays.get(n, 0)):
+            raise llama.Cancelled("cancelled")
+        with self.lock:
+            self.order.append(("end", n))
+        return f"{self.name} piece {n}", {}
 
 
-class StubModel:
-    def __init__(self, name="gemma-e4b", entry=None):
-        self.name, self.calls, self.contexts, self.dictations_closed = name, [], [], 0
-        self.slots, self.warmed = 1, []
+class HangingStub(StubModel):
+    """A model request that never ends unless cancelled."""
 
-    def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
-        self.save_dir = save_dir
-        return StubDictation(self, text_prompt, options or {})
+    def complete(self, text, pcm, limit, options, slot=None):
+        with self.lock:
+            self.calls.append(round(seconds(pcm), 1))
+        self.stop.wait(3600)
+        raise llama.Cancelled("cancelled")
 
 
 def stub_models(entries=ENTRIES, make=None):
-    models = llama.Models(entries, make=make or StubModel)
-    models.manage = False
-    return models
+    return llama.Models(entries, make=make or StubModel, manage=False)
 
 
 class FakeAgents:
@@ -88,9 +110,9 @@ class FakeAgents:
 
 class FakeLlamaServer:
     """llama-server's /health, /tokenize, /detokenize and /v1/chat/completions, in a thread; a token per word.
-    A completion decodes `decode` tokens and takes `delay` seconds."""
+    A completion decodes `decode` tokens and takes `delay` seconds; /props says `slots` slots."""
 
-    def __init__(self, decode=5, delay=0.0):
+    def __init__(self, decode=5, delay=0.0, slots=1):
         import http.server
         self.seen, self.finished = [], []
         seen, finished = self.seen, self.finished
@@ -99,11 +121,12 @@ class FakeLlamaServer:
             def log_message(self, *a):
                 pass
 
-            def do_GET(self):  # /health
+            def do_GET(self):  # /health, /props
+                data = json.dumps({"total_slots": slots} if self.path == "/props" else {}).encode()
                 self.send_response(200)
-                self.send_header("Content-Length", "2")
+                self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(b"{}")
+                self.wfile.write(data)
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -136,20 +159,3 @@ class FakeLlamaServer:
 
     def close(self):
         self.httpd.shutdown()
-
-
-class HangingDictation(StubDictation):
-    """A model request that never ends unless cancelled."""
-
-    async def piece(self, pcm, piece, slot=None):
-        self.stub.calls.append(round(seconds(pcm), 1))
-        try:
-            await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            self.stub.cancelled = True
-            raise
-
-
-class HangingStub(StubModel):
-    def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
-        return HangingDictation(self, text_prompt, options or {})

@@ -1,19 +1,25 @@
 """Tests of protocol.py: the client protocol, with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
+import glob
 import json
 import os
 import tempfile
+import time
 import unittest
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+import adapters
+import dictation
 import metrics
 import protocol
 import recordings
-from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubDictation, StubModel, args, seconds, stub_models
+from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, stub_models
+
+START = {"type": "start", "language": "ru"}
 
 
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
@@ -25,17 +31,18 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         recordings.input_info = self.saved
 
-    async def run_stream(self, start, audio, path="", entries=ENTRIES, stop=None, model=StubModel):
+    async def run_stream(self, start, audio, entries=ENTRIES, stop=None, model=StubModel, between=None):
         stubs = {}
         models = stub_models(entries, make=lambda name, entry: stubs.setdefault(name, model(name)))
         async with serve(lambda ws: protocol.handle(ws, models, self.args), "127.0.0.1", 0, max_size=None) as server:
-            port = server.sockets[0].getsockname()[1]
             got = []
-            async with connect(f"ws://127.0.0.1:{port}{path}") as ws:
+            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                 try:  # a server that refuses the stream closes it while the client still sends
                     await ws.send(json.dumps(start))
                     for i in range(0, len(audio), 3200):
                         await ws.send(audio[i:i + 3200])
+                        if between and i == 0:
+                            await ws.send(between)
                     await ws.send(json.dumps(stop or {"type": "stop"}))
                 except ConnectionClosed:
                     pass
@@ -44,163 +51,154 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             self.loaded = sorted(stubs)
             return next(iter(stubs.values()), StubModel("none")), got
 
+    def latest(self):
+        """The newest recording folder and its adapter.json."""
+        d = max(glob.glob(os.path.join(self.args.recordings, "*", "*")), key=os.path.getmtime)
+        return d, json.load(open(os.path.join(d, "adapter.json"), encoding="utf-8"))
+
+    async def ask_info(self):
+        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
+            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(json.dumps({"type": "info"}))
+                return json.loads(await ws.recv())
+
     async def test_speech_then_pieces_in_order_then_done(self):
-        stub, got = await self.run_stream({"type": "start", "language": "ru", "sampleRate": 16000,
-                                           "encoding": "pcm_s16le"}, LOUD + QUIET + LOUD)
+        stub, got = await self.run_stream({**START, "sampleRate": 16000, "encoding": "pcm_s16le"}, LOUD + QUIET + LOUD)
         self.assertEqual(got[0], {"type": "speech"})
         self.assertEqual([m for m in got if m["type"] != "speech"],
                          [{"type": "text", "text": "gemma-e4b piece 1"}, {"type": "done"}])  # 3 s: one piece
-        self.assertTrue(all(c[1].startswith("Transcribe the following speech segment in Russian") for c in stub.calls))
+        self.assertTrue(stub.calls[0][1].startswith("Transcribe the following speech segment in Russian"))
+        self.assertEqual(stub.begun, 1)
 
     async def test_the_text_is_warmed_while_the_speaker_talks_and_pieces_run_at_once_in_order(self):
-        order = []
-
-        class Unordered(StubDictation):
-            async def piece(self, pcm, piece, slot=None):
-                order.append(("start", piece, slot))
-                await asyncio.sleep(0.3 if piece == 1 else 0.05)  # the first piece ends last
-                order.append(("end", piece))
-                return f"p{piece}"
-
         class TwoSlots(StubModel):
             def __init__(self, name):
-                super().__init__(name)
-                self.slots = 2
+                super().__init__(name, slots_n=2)
 
-            def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
-                return Unordered(self, text_prompt, options or {})
+            def complete(self, text, pcm, limit, options, slot=None):
+                with self.lock:
+                    self.order.append(("start", slot))
+                time.sleep(0.3 if slot == 0 else 0.05)  # the first piece ends last
+                with self.lock:
+                    self.order.append(("end", slot))
+                return f"slot {slot}", {}
 
         self.args.piece_seconds = 5  # 12 s: two pieces; the second slot is warmed once 5 s are heard
-        stub, got = await self.run_stream({"type": "start"}, (LOUD + QUIET) * 6, model=TwoSlots)
-        self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["p1", "p2"])
+        stub, got = await self.run_stream(START, (LOUD + QUIET) * 6, model=TwoSlots)
+        self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["slot 0", "slot 1"])  # the pieces' order
         self.assertEqual(stub.warmed, [0, 1])
-        self.assertEqual(order[:2], [("start", 1, 0), ("start", 2, 1)])  # both at once, one per slot
-        self.assertEqual(order[2:], [("end", 2), ("end", 1)])
+        self.assertEqual(sorted(stub.order[:2]), [("start", 0), ("start", 1)])  # both at once, one per slot
+        self.assertEqual(stub.order[2:], [("end", 1), ("end", 0)])
 
-    async def test_the_app_asks_which_adapters_there_are(self):
+    async def test_a_client_asks_what_the_server_offers(self):
         self.args.adapters = ["claude"]
-        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
-            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
-                await ws.send(json.dumps({"type": "adapters"}))
-                got = json.loads(await ws.recv())
+        got = await self.ask_info()
+        self.assertEqual((got["type"], got["interface"], got["sampleRate"], got["encoding"], got["textWaitSeconds"]),
+                         ("info", protocol.INTERFACE, 16000, "pcm_s16le", 180))
         by = {a["name"]: a for a in got["adapters"]}
-        self.assertEqual((got["type"], got["interface"]), ("adapters", 2))
         self.assertTrue(by["claude"]["enabled"] and by["claude"]["electronTree"] and by["claude"]["builtin"])
         self.assertEqual(by["claude"]["apps"], ["com.anthropic.claudefordesktop"])
         self.args.adapters = []
-        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
-            async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
-                await ws.send(json.dumps({"type": "adapters"}))
-                got = json.loads(await ws.recv())
-        self.assertFalse(any(a["enabled"] for a in got["adapters"]))
+        self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
     async def test_a_plugin_that_hangs_costs_the_context_not_the_dictation(self):
-        import adapters
-        import time as t
         saved = adapters.context, adapters.CONTEXT_TIMEOUT_S
-        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: t.sleep(2)), 0.2
+        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: time.sleep(2)), 0.2
         try:
-            stub, got = await self.run_stream({"type": "start"}, LOUD)
+            stub, got = await self.run_stream(START, LOUD)
         finally:
             adapters.context, adapters.CONTEXT_TIMEOUT_S = saved
         self.assertEqual([m["type"] for m in got if m["type"] != "speech"], ["text", "done"])
-        self.assertEqual(stub.contexts, [None])
+        self.assertIn("no context", self.latest()[1]["chat"]["errors"][0])
 
     async def test_without_warm_text_nothing_is_warmed(self):
         self.args.warm_text = False
-        stub, got = await self.run_stream({"type": "start"}, LOUD)
-        self.assertEqual(stub.warmed, [])
-        self.assertEqual(stub.calls and len(stub.calls), 1)
+        stub, got = await self.run_stream(START, LOUD)
+        self.assertEqual((stub.warmed, len(stub.calls)), ([], 1))
 
     async def test_each_recording_gets_a_folder_with_the_audio_and_adapter_json(self):
-        stub, got = await self.run_stream({"type": "start", "model": "gemma-12b", "language": "ru", "client": "vscode"},
-                                          LOUD * 2, stop={"type": "stop", "reason": "silence"})
-        self.assertTrue(stub.save_dir.startswith(self.args.recordings))
-        self.assertEqual(sorted(os.listdir(stub.save_dir)), ["adapter.json", "audio.json", "mic.wav"])
-        self.assertEqual(os.path.getsize(os.path.join(stub.save_dir, "mic.wav")), 44 + 2 * 32000)
-        a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))
+        stub, got = await self.run_stream({**START, "model": "gemma-12b", "client": "menubar"}, LOUD * 2,
+                                          stop={"type": "stop", "reason": "silence"})
+        d, a = self.latest()
+        self.assertTrue(d.startswith(self.args.recordings))
+        self.assertEqual(sorted(os.listdir(d)), ["adapter.json", "audio.json", "mic.wav", "piece-1.wav", "pieces.jsonl",
+                                                 "text-before-audio.txt"])
+        self.assertEqual(os.path.getsize(os.path.join(d, "mic.wav")), 44 + 2 * 32000)
         self.assertEqual((a["model"], a["client"], a["language"], a["stopReason"], a["text"], a["audioSeconds"]),
-                         ("gemma-12b", "vscode", "ru", "silence", "gemma-12b piece 1", 2.0))
+                         ("gemma-12b", "menubar", "ru", "silence", "gemma-12b piece 1", 2.0))
         self.assertEqual(a["input"], {"inputVolume": 50, "device": None})
-        self.assertIsNone(a["chat"])  # no sessions named and no app: no chat context
+        self.assertIsNone(a["chat"])  # no hints and no app: no context
         self.args.save_recordings = False
-        stub, got = await self.run_stream({"type": "start", "language": "ru"}, LOUD)
-        self.assertIsNone(stub.save_dir)
+        n = len(glob.glob(os.path.join(self.args.recordings, "*", "*")))
+        await self.run_stream(START, LOUD)
+        self.assertEqual(len(glob.glob(os.path.join(self.args.recordings, "*", "*"))), n)
 
     async def test_the_models_prompt_reaches_the_model_and_a_clients_prompt_overrides_it(self):
         entries = {"g": {"llamaServer": "http://127.0.0.1:9", "prompt": "Write {LANGUAGE} words."}}
-        stub, got = await self.run_stream({"type": "start", "language": "ru"}, LOUD, entries=entries)
-        stub2, got = await self.run_stream({"type": "start", "language": "ru", "prompt": "Mine in {LANGUAGE}."}, LOUD,
-                                           entries=entries)
+        stub, got = await self.run_stream(START, LOUD, entries=entries)
+        stub2, got = await self.run_stream({**START, "prompt": "Mine in {LANGUAGE}."}, LOUD, entries=entries)
         self.assertEqual([c[1] for c in stub.calls + stub2.calls], ["Write Russian words.", "Mine in Russian."])
 
     async def test_the_start_message_chooses_the_model(self):
-        start = {"type": "start", "language": "ru"}
-        stub, got = await self.run_stream({**start, "model": "gemma-12b"}, LOUD)
+        stub, got = await self.run_stream({**START, "model": "gemma-12b"}, LOUD)
         self.assertEqual(got[-2:], [{"type": "text", "text": "gemma-12b piece 1"}, {"type": "done"}])
         self.assertEqual(self.loaded, ["gemma-12b"])
-        stub, got = await self.run_stream(start, LOUD, "/gemma-12b")  # the URL path of earlier clients
-        self.assertEqual(got[-2]["text"], "gemma-12b piece 1")
-        for legacy in ("", "/voice_stream"):  # no name: the default model
-            stub, got = await self.run_stream(start, LOUD, legacy)
-            self.assertEqual(got[-2]["text"], "gemma-e4b piece 1")
-        stub, got = await self.run_stream({**start, "model": "gemma-99b"}, LOUD)
+        stub, got = await self.run_stream(START, LOUD)  # no name: the default model
+        self.assertEqual(got[-2]["text"], "gemma-e4b piece 1")
+        stub, got = await self.run_stream({**START, "model": "gemma-99b"}, LOUD)
         self.assertEqual(got[0]["type"], "error")
         self.assertIn("gemma-e4b, gemma-12b", got[0]["message"])
         self.assertEqual(self.loaded, [])
 
-    async def test_the_chat_context_comes_from_the_adapter_that_claims_the_snapshot(self):
+    async def test_the_context_comes_from_the_adapter_that_claims_the_snapshot(self):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "projects", "p"))
             os.makedirs(os.path.join(d, "store", "o", "a"))
-            reply = {"type": "assistant", "entrypoint": "claude-desktop",
+            reply = {"type": "assistant",
                      "message": {"id": "m1", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Готово."}]}}
             with open(os.path.join(d, "projects", "p", "s1.jsonl"), "w") as f:
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = os.environ.get("LOCAL_VOICE_PROJECTS"), os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS")
+            saved = {k: os.environ[k] for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS")}
             os.environ.update(LOCAL_VOICE_PROJECTS=os.path.join(d, "projects"),
                               LOCAL_VOICE_DESKTOP_SESSIONS=os.path.join(d, "store"))
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             try:
-                stub, got = await self.run_stream({"type": "start", "language": "ru", "snapshot": snapshot}, LOUD)
-                stub2, got = await self.run_stream({"type": "start", "language": "ru", "sessions": ["s1"]}, LOUD)
+                stub, got = await self.run_stream({**START, "snapshot": snapshot}, LOUD)
+                a = self.latest()[1]
+                stub2, got = await self.run_stream({**START, "hints": {"sessions": ["s1"]}}, LOUD)
+                a2 = self.latest()[1]
             finally:
-                for k, v in zip(("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS"), saved):
-                    if v is None:
-                        os.environ.pop(k, None)
-                    else:
-                        os.environ[k] = v
-        self.assertEqual(stub.contexts[0]["messages"], [{"from": "Claude", "text": "Готово."}])
-        self.assertEqual(stub2.contexts[0]["details"]["session"], "s1")  # an old client's "sessions" are hints
-        a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))
-        self.assertEqual((a["chat"]["details"]["session"], a["chat"]["details"]["file"]),
-                         ("s1", os.path.join(d, "projects", "p", "s1.jsonl")))
-        self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"]),
-                         ("claude", "desktop store", "local_abc"))
+                os.environ.update(saved)
+        self.assertIn("Claude: Готово.", stub.calls[0][1])
+        self.assertTrue(stub.calls[0][1].endswith("---\n\n" + dictation.prompt("ru")))  # the context, then the prompt
+        self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],
+                          a["chat"]["details"]["session"]), ("claude", "desktop store", "local_abc", "s1"))
+        self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the plugin
 
-    async def test_a_recording_writes_its_metrics(self):
-        saved = metrics.METRICS
+    async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):
+        saved = metrics.path()
         with tempfile.TemporaryDirectory() as d:
-            metrics.METRICS = os.path.join(d, "metrics.jsonl")
+            metrics.configure(os.path.join(d, "metrics.jsonl"))
             try:
-                await self.run_stream({"type": "start", "language": "ru", "client": "menubar"}, LOUD + QUIET + LOUD)
-                lines = [json.loads(l) for l in open(metrics.METRICS, encoding="utf-8")]
+                await self.run_stream({**START, "client": "menubar"}, LOUD + QUIET + LOUD)
+                lines = [json.loads(l) for l in open(metrics.path(), encoding="utf-8")]
             finally:
-                metrics.METRICS = saved
-        self.assertEqual([l["event"] for l in lines], ["audio", "recording"])
-        self.assertEqual(lines[0]["speech_fraction"], 0.68)
-        self.assertEqual(lines[1]["audio_seconds"], 3.0)
-        self.assertEqual((lines[1]["model"], lines[1]["client"], lines[1]["prompt"], lines[1]["stop_reason"]),
-                         ("gemma-e4b", "menubar", "default", "user"))
-        self.assertGreaterEqual(lines[1]["done_after_stop_seconds"], 0)
+                metrics.configure(saved)
+        by = {l["event"]: l for l in lines}
+        self.assertEqual(sorted(by), ["audio", "piece", "prepare", "recording", "warm"])
+        self.assertEqual(by["audio"]["speech_fraction"], 0.68)
+        r = by["recording"]
+        self.assertEqual((r["audio_seconds"], r["model"], r["client"], r["prompt"], r["stop_reason"]),
+                         (3.0, "gemma-e4b", "menubar", "default", "user"))
+        self.assertGreaterEqual(r["done_after_stop_seconds"], 0)
+        self.assertEqual(r["recording"], self.latest()[1]["id"])
 
     async def test_the_models_options_reach_the_model_and_a_clients_options_override_them(self):
         entries = {"g": {"llamaServer": "http://127.0.0.1:9", "options": {"temperature": 0.5, "pieceSeconds": 5}}}
-        stub, got = await self.run_stream({"type": "start", "language": "ru", "options": {"topK": 1, "temperature": 0}},
-                                          LOUD * 12, entries=entries)
+        stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0}}, LOUD * 12, entries=entries)
         self.assertEqual([c[0] for c in stub.calls], [6.0, 6.0])  # pieceSeconds 5: round(12 / 5) = 2 equal pieces
         self.assertEqual(stub.calls[0][2], {"temperature": 0.0, "top_k": 1, "piece_seconds": 5.0})
         stub, got = await self.run_stream({"type": "start", "options": {"topK": 0}}, LOUD)
@@ -209,8 +207,20 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_another_audio_format_is_refused(self):
         stub, got = await self.run_stream({"type": "start", "sampleRate": 48000}, LOUD)
-        self.assertEqual(got[0]["type"], "error")
-        self.assertEqual(stub.calls, [])
+        self.assertEqual((got[0]["type"], stub.calls), ("error", []))
+
+    async def test_the_server_stops_a_recording_at_the_longest_length_and_says_so(self):
+        self.args.max_recording_seconds = 2
+        stub, got = await self.run_stream(START, LOUD * 4)
+        types = [m["type"] for m in got if m["type"] != "speech"]
+        self.assertEqual(types, ["stopped", "text", "done"])
+        self.assertEqual(got[[m["type"] for m in got].index("stopped")]["reason"], "max_duration")
+        self.assertEqual((stub.calls[0][0], self.latest()[1]["stopReason"]), (2.0, "max_duration"))
+
+    async def test_a_message_that_is_not_json_is_an_error_and_the_recording_goes_on(self):
+        stub, got = await self.run_stream(START, LOUD * 2, between="not json")
+        self.assertEqual([m["type"] for m in got if m["type"] != "speech"], ["error", "text", "done"])
+        self.assertIn("not a JSON object", got[[m["type"] for m in got].index("error")]["message"])
 
 
 class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
@@ -227,42 +237,49 @@ class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
 
         async with asyncio.timeout(10):  # a server that keeps waiting for the model would hang the test
             async with serve(handler, "127.0.0.1", 0, max_size=None) as server:
-                port = server.sockets[0].getsockname()[1]
-                async with connect(f"ws://127.0.0.1:{port}") as ws:
-                    await ws.send(json.dumps({"type": "start", "language": "ru"}))
+                async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
+                    await ws.send(json.dumps(START))
                     await ws.send(LOUD)
                     await ws.send(json.dumps({"type": "stop"}))
                     while not stub.calls:
                         await asyncio.sleep(0.01)
                 await handled.wait()
-        self.assertTrue(getattr(stub, "cancelled", False))
+        self.assertTrue(stub.cancelled)
+
+    async def test_a_connection_that_ends_without_a_stop_is_recorded_and_frees_the_model(self):
+        stub = StubModel()
+        models = stub_models({"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}}, make=lambda *a: stub)
+        a = args()
+        async with asyncio.timeout(10):
+            async with serve(lambda ws: protocol.handle(ws, models, a), "127.0.0.1", 0, max_size=None) as server:
+                async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
+                    await ws.send(json.dumps(START))
+                    await ws.send(LOUD)
+                while models.recording.locked():
+                    await asyncio.sleep(0.01)
+        d = max(glob.glob(os.path.join(a.recordings, "*", "*")), key=os.path.getmtime)
+        rec = json.load(open(os.path.join(d, "adapter.json")))
+        self.assertEqual(rec["stopReason"], "connection closed")
+        self.assertIn("before the stop", rec["error"])
 
 
 class OneRecordingAtATimeTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_second_recording_waits_until_the_first_is_closed(self):
         events = []
 
-        class SlowDictation(StubDictation):
-            async def prepare(self, context=None):
-                events.append(("prepare", self.prompt))
+        class Slow(StubModel):
+            def complete(self, text, pcm, limit, options, slot=None):
+                events.append(("start", text))
+                time.sleep(0.2)
+                events.append(("end", text))
+                return text, {}
 
-            async def piece(self, pcm, piece, slot=None):
-                await asyncio.sleep(0.2)
-                return self.prompt
-
-            def close(self):
-                events.append(("close", self.prompt))
-
-        class Stub(StubModel):
-            def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
-                return SlowDictation(self, text_prompt, options or {})
-
-        stub = Stub()
+        stub = Slow()
         models = stub_models({"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}}, make=lambda *a: stub)
 
         async def record(prompt, port):
             async with connect(f"ws://127.0.0.1:{port}") as ws:
-                await ws.send(json.dumps({"type": "start", "language": "ru", "prompt": prompt}))
+                await ws.send(json.dumps({**START, "prompt": prompt}))
                 await ws.send(LOUD)
                 await ws.send(json.dumps({"type": "stop"}))
                 return [json.loads(m) async for m in ws]
@@ -274,7 +291,7 @@ class OneRecordingAtATimeTest(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.05)
                 second = asyncio.create_task(record("two", port))
                 await asyncio.gather(first, second)
-        self.assertEqual(events, [("prepare", "one"), ("close", "one"), ("prepare", "two"), ("close", "two")])
+        self.assertEqual(events, [("start", "one"), ("end", "one"), ("start", "two"), ("end", "two")])
 
 
 if __name__ == "__main__":

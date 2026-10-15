@@ -1,29 +1,17 @@
-"""One recording on one model: the prompt, the text before the audio (chat context within the token budget), and
-each piece as a request of its own. The model is duck-typed: name, tokenize(), detokenize(), complete(), and
-optionally cancel() and footprint_mb() (llama.LlamaModel)."""
+"""One recording on one model: the prompt, the text before the audio (the context within the token budget), and
+each piece as a request of its own. The model is any object with the interface of llama.Model."""
 import asyncio
 import contextlib
 import json
 import logging
 import math
-import os
 import time
 
 import metrics
-from audio import MODEL_MAX_SECONDS, RATE, wav
+import tuning
+from audio import seconds, wav
 
-MAX_PROMPT = 4000  # the menu allows the same
-# The default limit of a piece's text: tokens per second of audio, plus a base. The densest piece in the metrics so
-# far had 95 tokens for 20.6 s (4.6 per second); 10 per second leaves twice that.
-OUTPUT_TOKENS_PER_SECOND = 10
-OUTPUT_TOKENS_BASE = 32
-# Tokens of the chat history before the audio, when the options do not set chatHistoryTokenBudget.
-CHAT_HISTORY_TOKEN_BUDGET = 1000
-# The sampler when the options do not set it: Google's for Gemma 4 (generation_config.json of google/gemma-4-E4B-it
-# and google/gemma-4-12B-it: do_sample, temperature 1.0, top_k 64, top_p 0.95; the model card: "Use the following
-# standardized sampling configuration across all use cases"). It goes with every request, so llama-server's own
-# defaults never apply.
-SAMPLER = {"temperature": 1.0, "top_k": 64, "top_p": 0.95}
+MAX_PROMPT = 4000  # characters of a prompt, the model's or a client's
 LANGUAGES = {"cs": "Czech", "da": "Danish", "nl": "Dutch", "en": "English", "fr": "French", "de": "German",
              "el": "Greek", "hi": "Hindi", "id": "Indonesian", "it": "Italian", "ja": "Japanese", "ko": "Korean",
              "no": "Norwegian", "pl": "Polish", "pt": "Portuguese", "ru": "Russian", "es": "Spanish",
@@ -34,6 +22,7 @@ FORMAT = ("Follow these specific instructions for formatting the answer:\n"
           "* Only output the transcription, with no newlines.\n"
           "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, "
           "and write 3 instead of three.")
+NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
 log = logging.getLogger("gemma_voice")
 
 
@@ -47,50 +36,13 @@ def prompt(language, custom=""):
     return f"Transcribe the following speech segment in its original language.\n{FORMAT}"
 
 
-OPTIONS = {
-    "temperature": ("temperature", float, lambda v: v >= 0),
-    "topK": ("top_k", int, lambda v: v > 0),
-    "topP": ("top_p", float, lambda v: 0 <= v <= 1),
-    "seed": ("seed", int, lambda v: True),
-    "maxOutputTokens": ("max_output_tokens", int, lambda v: v > 0),
-    "pieceSeconds": ("piece_seconds", float, lambda v: 5 <= v <= MODEL_MAX_SECONDS),
-    "cutSearchSeconds": ("cut_search_seconds", float, lambda v: 0 < v <= 10),
-    "thresholdDb": ("threshold_db", float, lambda v: v < 0),
-    "speechAboveNoiseDb": ("speech_above_noise_db", float, lambda v: v >= 0),
-    "chatHistoryTokenBudget": ("chat_history_token_budget", int, lambda v: v >= 0),
-    "chatTermsTokenBudget": ("chat_terms_token_budget", int, lambda v: v >= 0),
-}
-
-
-def parse_options(raw):
-    """The options, checked: {server name: value}. Raises ValueError for an unknown or wrong one."""
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise ValueError("options must be an object")
-    out = {}
-    for key, value in raw.items():
-        if key not in OPTIONS:
-            raise ValueError(f"unknown option {key}; known: {', '.join(OPTIONS)}")
-        name, kind, ok = OPTIONS[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or (kind is int and value != int(value)):
-            raise ValueError(f"option {key} must be a{'n integer' if kind is int else ' number'}")
-        value = kind(value)
-        if not ok(value):
-            raise ValueError(f"option {key}: {value} is out of range")
-        out[name] = value
-    return out
-
-
-def sampler_of(options):
-    """The sampler of a recording: SAMPLER, with temperature, top_k, top_p and seed from the options."""
-    return {**SAMPLER, **{k: options[k] for k in ("temperature", "top_k", "top_p", "seed") if k in options}}
-
-
-def output_limit(audio_seconds, options, per_second=OUTPUT_TOKENS_PER_SECOND, base=OUTPUT_TOKENS_BASE):
-    if "max_output_tokens" in options:
-        return options["max_output_tokens"]
-    return math.ceil(per_second * audio_seconds) + base
+def output_limit(audio_seconds, options, server):
+    """The limit of a piece's text, in tokens."""
+    fixed = tuning.value("max_output_tokens", options, server)
+    if fixed is not None:
+        return fixed
+    return math.ceil(tuning.value("output_tokens_per_second", options, server) * audio_seconds) \
+        + tuning.value("output_tokens_base", options, server)
 
 
 async def run_blocking(fn, *args, cancel=None):
@@ -118,99 +70,104 @@ class Dictation:
     then the piece's audio. The model never sees its answers to earlier pieces: in one conversation for the whole
     recording, a piece often began by repeating the earlier piece's text (2026-10-14, Gemma 4 E4B). So the pieces do
     not depend on each other, and llama-server can run them at once, one per slot. While the speaker talks, warm()
-    puts the text into a slot's cache, so that after the stop a piece processes only its audio."""
+    puts the text into a slot's cache, so that after the stop a piece processes only its audio.
+    `server`: the server's recording settings; `recording`: where its files go (recordings.Recording), or None."""
 
-    def __init__(self, model, text_prompt, options, meta, save_dir=None, limits=(OUTPUT_TOKENS_PER_SECOND, OUTPUT_TOKENS_BASE)):
-        self.m, self.prompt, self.options, self.meta, self.save_dir = model, text_prompt, options, meta, save_dir
-        self.limits = limits  # a piece's text: tokens per second of its audio, plus a base
+    def __init__(self, model, text_prompt, options, server, meta, recording=None):
+        self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
+        self.recording = recording
         self.text, self.chat_tokens = text_prompt, 0
+        model.begin()
+
+    def _fit(self, items, budget, render):
+        """The longest start of `items` whose rendering fits `budget` tokens: (count, tokens), by bisection, so it
+        takes a few tokenize calls, not one per item."""
+        lo, hi, used = 0, len(items), 0
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            n = len(self.m.tokenize(render(items[:mid])))
+            if n <= budget:
+                lo, used = mid, n
+            else:
+                hi = mid - 1
+        return lo, used
 
     def _build(self, context):
-        """The text before the audio: the chat context within the token budget, then the prompt."""
-        budget = self.options.get("chat_history_token_budget", CHAT_HISTORY_TOKEN_BUDGET)
+        """The text before the audio: the context within the token budget, then the prompt."""
+        budget = tuning.value("chat_history_token_budget", self.options, self.server)
         if not context or budget <= 0:
             return
-        tokens = lambda s: len(self.m.tokenize(s))
-        terms_budget = self.options.get("chat_terms_token_budget", budget // 10)
-        terms, used = [], 0
-        for term in context.get("terms") or []:
-            n = tokens(term) + 1
-            if used + n > terms_budget:
-                break
-            terms.append(term)
-            used += n
-        lines, left = [], budget - used
-        for m in context.get("messages") or []:  # newest first
-            line = f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}"
-            ids = self.m.tokenize(line)
-            if len(ids) > left:
-                if not lines and left > 32:  # the newest message alone is too long: its end
-                    lines.append("…" + self.m.detokenize(ids[-(left - 2):]))
-                    left = 0
-                break
-            lines.append(line)
-            left -= len(ids)
-        if not lines and not terms:
+        terms_budget = tuning.value("chat_terms_token_budget", self.options, self.server)
+        terms_budget = budget // 10 if terms_budget is None else terms_budget
+        all_terms = [t for t in context.get("terms") or [] if isinstance(t, str)]
+        n_terms, used = self._fit(all_terms, terms_budget, lambda ts: "Terms: " + ", ".join(ts))
+        terms = all_terms[:n_terms]
+        lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}"
+                 for m in context.get("messages") or []]  # newest first
+        left = budget - used
+        n_lines, _ = self._fit(lines, left, lambda ls: "\n\n".join(ls))
+        kept = lines[:n_lines]
+        if not kept and lines and left > NEWEST_TAIL_MIN_TOKENS:  # the newest message alone is too long: its end
+            ids = self.m.tokenize(lines[0])
+            kept = ["…" + self.m.detokenize(ids[-(left - 2):])]
+        if not kept and not terms:
             return
         parts = [context_header(context.get("about"))]
         if terms:
             parts.append("Terms: " + ", ".join(terms))
-        parts += reversed(lines)
+        parts += reversed(kept)
         self.text = "\n\n".join(parts) + "\n\n---\n\n" + self.prompt
-        self.chat_tokens = tokens(self.text) - tokens(self.prompt)
-        self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(lines),
+        self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
+        self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
                      "chat_terms": len(terms)}
 
     async def prepare(self, context=None):
         """Builds the text before the audio."""
         t = time.monotonic()
         await run_blocking(self._build, context)
-        seconds = time.monotonic() - t
+        took = time.monotonic() - t
         log.info("%s: text before the audio ready in %.2f s, %d tokens of chat history and terms", self.m.name,
-                 seconds, self.chat_tokens)
-        metrics.metric("prepare", model=self.m.name, **self.meta, seconds=round(seconds, 3))
+                 took, self.chat_tokens)
+        metrics.metric("prepare", model=self.m.name, **self.meta, seconds=round(took, 3))
         self._save("text-before-audio.txt", self.text.encode("utf-8"))
 
     def slots(self):
         """How many pieces the model runs at once."""
-        return self.m.slots() if hasattr(self.m, "slots") else 1
+        return self.m.slots()
 
     async def warm(self, slot=None):
         """The text before the audio into the cache of llama-server's slot `slot`, before any audio."""
-        if not hasattr(self.m, "warm"):
-            return
         t = time.monotonic()
-        timings = await run_blocking(self.m.warm, self.text, self.options, slot, cancel=getattr(self.m, "cancel", None))
-        seconds = time.monotonic() - t
+        timings = await run_blocking(self.m.warm, self.text, self.options, slot, cancel=self.m.cancel)
+        took = time.monotonic() - t
         log.info("%s: text before the audio warmed in slot %s in %.2f s, %s prefill (%s cached)", self.m.name, slot,
-                 seconds, timings.get("prefill_tokens"), timings.get("cached_tokens"))
-        metrics.metric("warm", model=self.m.name, **self.meta, slot=slot, wall_seconds=round(seconds, 3), **timings)
+                 took, timings.get("prefill_tokens"), timings.get("cached_tokens"))
+        metrics.metric("warm", model=self.m.name, **self.meta, slot=slot, wall_seconds=round(took, 3), **timings)
 
     async def piece(self, pcm, piece, slot=None):
-        t, audio = time.monotonic(), len(pcm) / 2 / RATE
-        limit = output_limit(audio, self.options, *self.limits)
+        t, audio = time.monotonic(), seconds(pcm)
+        limit = output_limit(audio, self.options, self.server)
         meta = {**self.meta, "piece": piece, "slot": slot}
         try:
             text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                               cancel=getattr(self.m, "cancel", None))
+                                               cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)
             metrics.metric("cancelled", model=self.m.name, **meta, audio_seconds=round(audio, 2),
-                   wall_seconds=round(time.monotonic() - t, 3))
+                           wall_seconds=round(time.monotonic() - t, 3))
             raise
-        seconds = time.monotonic() - t
-        timings["llama_footprint_mb"] = await asyncio.to_thread(self.m.footprint_mb) if hasattr(self.m, "footprint_mb") \
-            else None
+        took = time.monotonic() - t
+        timings["llama_footprint_mb"] = await asyncio.to_thread(self.m.footprint_mb)
         hit = timings.get("decode_tokens") is not None and timings["decode_tokens"] >= limit
         log.info("%s: piece %d, %.1f s of audio in %.2f s, %s prefill (%s cached) + %s decode tokens: %r", self.m.name,
-                 piece, audio, seconds, timings.get("prefill_tokens"), timings.get("cached_tokens"),
+                 piece, audio, took, timings.get("prefill_tokens"), timings.get("cached_tokens"),
                  timings.get("decode_tokens"), text)
         if hit:
             log.warning("%s: the text reached the limit of %d tokens for %.1f s of audio and was cut", self.m.name,
                         limit, audio)
-        metrics.metric("piece", model=self.m.name, **meta, audio_seconds=round(audio, 2), wall_seconds=round(seconds, 3),
-               text_chars=len(text), output_limit=limit, output_limit_hit=hit, **timings)
+        metrics.metric("piece", model=self.m.name, **meta, audio_seconds=round(audio, 2), wall_seconds=round(took, 3),
+                       text_chars=len(text), output_limit=limit, output_limit_hit=hit, **timings)
         self._save(f"piece-{piece}.wav", wav(pcm))
         self._save("pieces.jsonl", (json.dumps({"piece": piece, "audio_seconds": round(audio, 2), "text": text,
                                                 "output_limit": limit, "output_limit_hit": hit, **timings},
@@ -218,14 +175,5 @@ class Dictation:
         return text
 
     def _save(self, name, data, append=False):
-        if not self.save_dir:
-            return
-        try:
-            os.makedirs(self.save_dir, exist_ok=True)
-            with open(os.path.join(self.save_dir, name), "ab" if append else "wb") as f:
-                f.write(data)
-        except OSError:
-            log.exception("cannot save %s", name)
-
-    def close(self):
-        pass
+        if self.recording is not None:
+            self.recording.save(name, data, append)

@@ -230,10 +230,6 @@ class ClaudeDesktopTest(Fixture):
     def test_a_bad_desktop_id_reads_no_file(self):
         self.assertIsNone(sys.modules["lv_plugin_claude.desktop"].record("local_../../etc"))
 
-    def test_old_clients_send_a_bundle_id(self):
-        self.assertEqual(adapters.snapshot_of({"app": DESKTOP}), {"app": {"bundleId": DESKTOP}})
-        self.assertEqual(adapters.snapshot_of({"snapshot": {"x": 1}, "app": DESKTOP}), {"x": 1})
-
 
 if __name__ == "__main__":
     unittest.main()

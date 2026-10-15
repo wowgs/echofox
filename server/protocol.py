@@ -1,252 +1,313 @@
-"""One client connection: the protocol of gemma_voice.py (see its text), the recording's audio, levels and pieces."""
+"""One client connection (the protocol is in gemma_voice.py's text): an info request, or one recording.
+
+A recording (Session): the audio arrives and is saved; after the stop it is cut into pieces; one model request per
+piece, all at once on llama-server's slots, after the text before the audio (the adapters' context, then the prompt)
+was warmed in the slots while the speaker talked; the texts go to the client in the order of the pieces."""
 import asyncio
 import contextlib
 import json
 import logging
-import os
 import time
-import urllib.parse
+from dataclasses import dataclass, field
+
+from websockets.exceptions import ConnectionClosed
 
 import adapters
+import constants
 import metrics
 import recordings
-from audio import RATE, Levels, split
-from dictation import CHAT_HISTORY_TOKEN_BUDGET, LANGUAGES, MAX_PROMPT, parse_options, prompt, sampler_of
+import tuning
+from audio import Levels, seconds, split
+from dictation import LANGUAGES, MAX_PROMPT, Dictation, prompt
 
-SPEECH_EVERY_S = 0.3
+SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
+WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording got long enough for one more slot
+MIC_INFO_WAIT_S = 15        # for the input device's description at the end
+CLIENT_NAME_CHARS = 40
+STOP_REASONS = ("user", "silence", "max_duration", "error")
+INTERFACE = 2  # of the protocol; the app checks it
 log = logging.getLogger("gemma_voice")
 
 
-def audio_levels(recording, report, save_dir):
-    """Logs a recording's levels, warns about signs of a bad microphone, and keeps them in audio.json."""
-    if report["longest_digital_silence_s"] >= 0.5:
-        log.warning("recording %s: %.2f s of digital silence (all zeros): the microphone may have been closed or muted",
-                    recording, report["longest_digital_silence_s"])
-    if report["clipped_samples"]:
-        log.warning("recording %s: %d clipped samples: the input is too loud", recording, report["clipped_samples"])
-    log.info("recording %s: %.1f s, speech %s dBFS, noise %s dBFS (floor %s), threshold %s dBFS, peak %s dBFS, "
-             "speech in %.0f%% of the time", recording, report["seconds"], report["speech_dbfs"], report["noise_dbfs"],
-             report["noise_floor_dbfs"], report["threshold_dbfs"], report["peak_dbfs"], 100 * report["speech_fraction"])
-    metrics.metric("audio", recording=recording, **{k: v for k, v in report.items() if k != "dbfs_per_second"})
-    if save_dir:
-        try:
-            os.makedirs(save_dir, exist_ok=True)
-            with open(os.path.join(save_dir, "audio.json"), "w", encoding="utf-8") as f:
-                json.dump(report, f, indent=1)
-        except OSError:
-            log.exception("cannot save audio.json")
+def info(args):
+    """What a client needs to know of this server: the protocol, the audio, the waits, the adapters."""
+    enabled = set(getattr(args, "adapters", None) or [])
+    return {"type": "info", "interface": INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
+            "sampleRate": constants.RATE, "encoding": constants.ENCODING,
+            "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
+            "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()]}
 
 
-STOP_REASONS = ("user", "silence", "max_duration", "error")
+@dataclass
+class Start:
+    """A checked start message."""
+    model: str
+    entry: dict
+    options: dict
+    language: str
+    own_prompt: str
+    text_prompt: str
+    client: str
+    hints: dict = field(default_factory=dict)
+    snapshot: dict = field(default_factory=dict)
+
+
+def parse_start(m, models):
+    """A start message → Start; raises ValueError with what the client is told."""
+    if not isinstance(m, dict) or m.get("type") != "start":
+        raise ValueError(f"expected a start message, got {str(m)[:200]}")
+    if m.get("sampleRate", constants.RATE) != constants.RATE or m.get("encoding", constants.ENCODING) != constants.ENCODING:
+        raise ValueError(f"the audio must be {constants.RATE} Hz {constants.ENCODING}")
+    name = models.name_for(m.get("model") if isinstance(m.get("model"), str) else None)
+    if name is None:
+        raise ValueError(f"no model {m.get('model')}; this server has: {', '.join(models.entries)}")
+    entry = models.entries[name]
+    options = {**tuning.parse_options(entry.get("options")), **tuning.parse_options(m.get("options"))}
+    language = str(m.get("language") or "")
+    own = m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or ""
+    return Start(model=name, entry=entry, options=options, language=language, own_prompt=own.strip()[:MAX_PROMPT],
+                 text_prompt=prompt(language, own.strip()[:MAX_PROMPT]), client=str(m.get("client") or "")[:CLIENT_NAME_CHARS],
+                 hints=m["hints"] if isinstance(m.get("hints"), dict) else {},
+                 snapshot=m["snapshot"] if isinstance(m.get("snapshot"), dict) else {})
 
 
 async def handle(ws, models, args):
-    """One connection. `args`: the recording settings (settings.apply_recording_settings)."""
+    """One connection. `args`: the recording settings (settings.recording_settings)."""
     async def send(**m):
         await ws.send(json.dumps(m, ensure_ascii=False))
 
     try:
-        start = json.loads(await ws.recv())
+        first = json.loads(await ws.recv())
     except (ValueError, TypeError):
-        start = {}
-    if isinstance(start, dict) and start.get("type") == "adapters":
-        # The app asks which adapters there are: which apps to take the focus of, which to build the tree of.
-        enabled = set(getattr(args, "adapters", None) or [])
-        await send(type="adapters", interface=adapters.registry.INTERFACE,
-                   adapters=[p.info(enabled) for p in (await asyncio.to_thread(adapters.registry.plugins)).values()])
+        first = None
+    if isinstance(first, dict) and first.get("type") == "info":
+        await send(**await asyncio.to_thread(info, args))
         await ws.close()
         return
-    if not isinstance(start, dict) or start.get("type") != "start" or start.get("sampleRate", 16000) != RATE \
-            or start.get("encoding", "pcm_s16le") != "pcm_s16le":
-        await send(type="error", message=f"expected a start message for 16 kHz pcm_s16le, got {start}")
-        await ws.close()
-        return
-    asked = start.get("model") if isinstance(start.get("model"), str) else urllib.parse.urlparse(ws.request.path).path
-    name = models.name_for(asked)
-    if name is None:
-        await send(type="error", message=f"no model {asked}; this server has: {', '.join(models.entries)}")
-        await ws.close()
-        return
-    entry = models.entries[name]
     try:
-        options = {**parse_options(entry.get("options")), **parse_options(start.get("options"))}
+        start = parse_start(first, models)
     except ValueError as e:
-        await send(type="error", message=f"gemma_voice: {e}")
+        await send(type="error", message=str(e))
         await ws.close()
         return
-    language = str(start.get("language") or "")
-    own = start["prompt"] if isinstance(start.get("prompt"), str) else entry.get("prompt") or ""
-    text_prompt = prompt(language, own.strip()[:MAX_PROMPT])
-    client = str(start.get("client") or "")[:40]
-    hints = start.get("hints") if isinstance(start.get("hints"), dict) else {}
-    if isinstance(start.get("sessions"), list):  # clients from before hints
-        hints = {**hints, "sessions": start["sessions"]}
-    snapshot = adapters.snapshot_of(start)
-    log.info("recording: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s", name,
-             client or "unknown", language, LANGUAGES.get(language.split("-")[0], "no name"),
-             "own" if own.strip() else "default", text_prompt[:120], options or "none", sampler_of(options))
-    recording = os.urandom(4).hex()
-    rec = None
-    if args.save_recordings:
-        try:
-            rec = recordings.Recording(args.recordings)
-        except OSError:
-            log.exception("cannot start the recording folder")
-    save_dir = rec.dir if rec else None
-    meta = {"recording": recording, "language": language, "prompt": "own" if own.strip() else "default",
-            "prompt_chars": len(text_prompt), "options": options}
-    cut = {k: options.get(k, getattr(args, k)) for k in ("threshold_db", "speech_above_noise_db", "piece_seconds",
-                                                         "cut_search_seconds")}
-    levels, audio = Levels(cut["threshold_db"], cut["speech_above_noise_db"]), bytearray()
-    pending = asyncio.Queue()
-    texts, errors, chat_info = [], [], {}
-    mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if rec else None
+    await Session(ws, send, models, args, start).run()
 
-    async def fail(message):
-        errors.append(message)
+
+class Session:
+    """One recording on one connection."""
+
+    def __init__(self, ws, send, models, args, start):
+        self.ws, self.send, self.models, self.args, self.start = ws, send, models, args, start
+        self.rec = None
+        if args.save_recordings:
+            try:
+                self.rec = recordings.Recording(args.recordings)
+            except OSError:
+                log.exception("cannot start the recording folder")
+        self.id = self.rec.id if self.rec else time.strftime("%Y-%m-%d/%H%M%S-") + "unsaved"
+        opts = start.options
+        self.cut = {n: tuning.value(n, opts, args) for n in ("threshold_db", "speech_above_noise_db", "piece_seconds",
+                                                             "cut_search_seconds")}
+        self.meta = {"recording": self.id, "language": start.language,
+                     "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
+                     "options": opts}
+        self.levels = Levels(self.cut["threshold_db"], self.cut["speech_above_noise_db"])
+        self.audio, self.pending = bytearray(), asyncio.Queue()
+        self.texts, self.errors, self.chat = [], [], {}
+        self.stopped_at, self.stop_reason = None, None
+        self.mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if self.rec else None
+        log.info("recording %s: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s",
+                 self.id, start.model, start.client or "unknown", start.language,
+                 LANGUAGES.get(start.language.split("-")[0], "no name"), self.meta["prompt"], start.text_prompt[:120],
+                 opts or "none", tuning.sampler(opts))
+
+    @property
+    def heard_seconds(self):
+        return seconds(len(self.audio))
+
+    async def fail(self, message):
+        self.errors.append(message)
         with contextlib.suppress(Exception):
-            await send(type="error", message=f"gemma_voice: {message}")
+            await self.send(type="error", message=message)
 
-    async def transcribe_pieces():
-        # The text first, then the pieces in order, so the text arrives in the order it was spoken.
-        if models.recording.locked():
-            log.info("recording %s waits for the recording before it", recording)
-        async with models.recording:
-            await run_pieces()
+    # The audio
 
-    async def warm_slots(dictation, slots):
+    async def receive(self):
+        """The audio until the stop, the end of the connection (None), or the longest recording."""
+        try:
+            return await self._receive()
+        except ConnectionClosed:
+            return None
+
+    async def _receive(self):
+        last_speech = 0.0
+        limit = self.args.max_recording_seconds
+        async for message in self.ws:
+            if isinstance(message, (bytes, bytearray)):
+                self.audio += message
+                if self.rec:
+                    self.rec.write(message)
+                self.levels.feed(message)
+                if self.levels.heard and time.monotonic() - last_speech >= SPEECH_EVERY_S:
+                    last_speech = time.monotonic()
+                    await self.send(type="speech")
+                if self.heard_seconds >= limit:
+                    log.warning("recording %s reached the longest recording, %.0f s: stopped", self.id, limit)
+                    await self.send(type="stopped", reason="max_duration")
+                    return "max_duration"
+                continue
+            try:
+                m = json.loads(message)
+            except ValueError:
+                m = None
+            if not isinstance(m, dict):
+                await self.fail(f"a message that is not a JSON object: {str(message)[:100]!r}")
+                continue
+            if m.get("type") == "stop":
+                return m.get("reason") if m.get("reason") in STOP_REASONS else "user"
+        return None  # the connection ended without a stop
+
+    # The context and the pieces
+
+    async def context(self):
+        """The adapters' context, or None; what it was goes to the record."""
+        if tuning.value("chat_history_token_budget", self.start.options, self.args) <= 0:
+            return None
+        try:
+            found = await asyncio.wait_for(asyncio.to_thread(adapters.context, self.start.snapshot, self.start.hints,
+                                                             self.args.adapters), adapters.CONTEXT_TIMEOUT_S)
+        except TimeoutError:  # a plugin hangs: the dictation goes on without context
+            log.error("recording %s: the adapters gave no context in %.0f s", self.id, adapters.CONTEXT_TIMEOUT_S)
+            found = {"errors": [f"no context in {adapters.CONTEXT_TIMEOUT_S:.0f} s"]}
+        found = found or {}
+        self.chat.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source", "details",
+                                                "errors") if found.get(k)})
+        chat = found if found.get("messages") else None
+        if chat:
+            self.chat.update(messages=len(chat["messages"]), terms=len(chat["terms"]))
+        log.info("recording %s: adapter %s (%s), context %s", self.id, found.get("adapter", "none"),
+                 found.get("reason", "no adapter claims it"),
+                 f"{found.get('source') or found.get('about')}, {len(chat['messages'])} messages" if chat else "none")
+        return chat
+
+    async def warm_slots(self, dictation, slots):
         # Slot 0 at once; slot k once the recording is long enough for a (k+1)th piece, so that every piece finds
         # its text in its slot's cache. A failed warm-up only costs time: the piece then processes the text itself.
         for k in range(slots):
-            while k and not heard["stopped"] and heard["bytes"] / 2 / RATE < k * cut["piece_seconds"]:
-                await asyncio.sleep(0.2)
-            if k and heard["bytes"] / 2 / RATE < k * cut["piece_seconds"]:
+            while k and self.stopped_at is None and self.heard_seconds < k * self.cut["piece_seconds"]:
+                await asyncio.sleep(WARM_POLL_S)
+            if k and self.heard_seconds < k * self.cut["piece_seconds"]:
                 return
             try:
                 await dictation.warm(k if slots > 1 else None)
             except Exception:
-                log.exception("warming slot %d failed", k)
+                log.exception("recording %s: warming slot %d failed", self.id, k)
 
-    async def run_pieces():
-        dictation, piece, warming, tasks = None, 0, None, []
-        try:
+    async def transcribe(self):
+        if self.models.recording.locked():
+            log.info("recording %s waits for the recording before it", self.id)
+        async with self.models.recording:  # one recording at a time on the model
+            dictation, warming, tasks = None, None, []
             try:
-                dictation = (await models.get(name)).dictation(
-                    text_prompt, options, meta, save_dir, limits=(args.output_tokens_per_second, args.output_tokens_base))
-                chat = None
-                if options.get("chat_history_token_budget", CHAT_HISTORY_TOKEN_BUDGET) > 0:
-                    try:
-                        found = await asyncio.wait_for(asyncio.to_thread(adapters.context, snapshot, hints,
-                                                                         args.adapters), adapters.CONTEXT_TIMEOUT_S)
-                    except TimeoutError:  # a plugin hangs: the dictation goes on without context
-                        log.error("recording %s: the adapters gave no context in %.0f s", recording,
-                                  adapters.CONTEXT_TIMEOUT_S)
-                        found = {"errors": [f"no context in {adapters.CONTEXT_TIMEOUT_S:.0f} s"]}
-                    if found:
-                        chat_info.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source",
-                                                                "details", "errors") if found.get(k)})
-                    if found and found.get("messages"):
-                        chat = found
-                        chat_info.update(messages=len(found["messages"]), terms=len(found["terms"]))
-                    log.info("recording %s: adapter %s (%s), context %s", recording,
-                             (found or {}).get("adapter", "none"),
-                             (found or {}).get("reason", "no adapter claims it"),
-                             f"{found.get('source') or found.get('about')}, {len(found['messages'])} messages"
-                             if chat else "none")
-                await dictation.prepare(chat)
-            except Exception as e:
-                log.exception("preparing the recording failed")
-                await fail(str(e))
-            slots = 1
-            if dictation is not None:
-                slots = await asyncio.to_thread(dictation.slots)
-                if args.warm_text:
-                    warming = asyncio.ensure_future(warm_slots(dictation, slots))
-            # Every piece goes to llama-server at once, piece i to slot (i - 1) % slots; the texts go to the client in
-            # the order of the pieces.
-            while (pcm := await pending.get()) is not None:
-                piece += 1
-                if dictation is not None:
-                    tasks.append(asyncio.ensure_future(
-                        dictation.piece(pcm, piece, slot=(piece - 1) % slots if slots > 1 else None)))
-            for task in tasks:
                 try:
-                    text = await task
+                    dictation = Dictation(await self.models.get(self.start.model), self.start.text_prompt,
+                                          self.start.options, self.args, self.meta, self.rec)
+                    await dictation.prepare(await self.context())
+                except Exception as e:
+                    log.exception("recording %s: preparing failed", self.id)
+                    await self.fail(str(e))
+                slots = await asyncio.to_thread(dictation.slots) if dictation else 1
+                if dictation and self.args.warm_text:
+                    warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
+                # Every piece goes to llama-server at once, piece i to slot (i - 1) % slots.
+                piece = 0
+                while (pcm := await self.pending.get()) is not None:
+                    piece += 1
+                    if dictation:
+                        tasks.append(asyncio.ensure_future(
+                            dictation.piece(pcm, piece, slot=(piece - 1) % slots if slots > 1 else None)))
+                for task in tasks:  # in the order of the pieces
+                    try:
+                        text = await task
+                    except Exception as e:  # one failed piece does not end the recording
+                        log.exception("recording %s: a piece failed", self.id)
+                        await self.fail(str(e))
+                        continue
                     if text:
-                        texts.append(text)
-                        await send(type="text", text=text)
-                except Exception as e:  # one failed piece does not end the recording
-                    log.exception("transcription failed")
-                    await fail(str(e))
-        finally:
-            for t in tasks + ([warming] if warming else []):
-                if not t.done():
+                        self.texts.append(text)
+                        await self.send(type="text", text=text)
+            finally:
+                for t in tasks + ([warming] if warming else []):
                     t.cancel()
-            for t in tasks + ([warming] if warming else []):
-                with contextlib.suppress(BaseException):
-                    await t
-            if dictation is not None:
-                dictation.close()
+                for t in tasks + ([warming] if warming else []):
+                    with contextlib.suppress(BaseException):
+                        await t
 
-    heard = {"bytes": 0, "stopped": False}  # for warm_slots
-    worker = asyncio.create_task(transcribe_pieces())
-    last_speech, audio_bytes, stopped, stop_reason = 0.0, 0, None, None
-    try:
-        async for message in ws:
-            if isinstance(message, bytes):
-                audio_bytes += len(message)
-                heard["bytes"] = audio_bytes
-                audio += message
-                if rec:
-                    rec.write(message)
-                levels.feed(message)
-                if levels.heard and time.monotonic() - last_speech >= SPEECH_EVERY_S:
-                    last_speech = time.monotonic()
-                    await send(type="speech")
-            else:
-                m = json.loads(message)
-                if m.get("type") == "stop":
-                    stopped = time.monotonic()
-                    stop_reason = m.get("reason") if m.get("reason") in STOP_REASONS else "user"
-                    break
-        heard["stopped"] = True
-        # The recording is whole: cut it now, into pieces as equal as the pauses allow.
-        report = levels.report()
-        for piece in split(bytes(audio), levels.rms, levels.threshold, cut["piece_seconds"], cut["cut_search_seconds"]):
-            pending.put_nowait(piece)
-        pending.put_nowait(None)
-        audio_levels(recording, report, save_dir)
-        # The client may give up before the last piece; then the running request
-        # is closed and no more pieces go out.
-        closed = asyncio.ensure_future(ws.wait_closed())
-        await asyncio.wait({worker, closed}, return_when=asyncio.FIRST_COMPLETED)
-        if not worker.done():
-            log.warning("recording %s: the client closed the connection before the last piece", recording)
-            errors.append("the client closed the connection before the last piece")
-            worker.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker
+    # The whole recording
+
+    def levels_report(self):
+        report = self.levels.report()
+        if report["longest_digital_silence_s"] >= 0.5:
+            log.warning("recording %s: %.2f s of digital silence (all zeros): the microphone may have been closed or "
+                        "muted", self.id, report["longest_digital_silence_s"])
+        if report["clipped_samples"]:
+            log.warning("recording %s: %d clipped samples: the input is too loud", self.id, report["clipped_samples"])
+        log.info("recording %s: %.1f s, speech %s dBFS, noise %s dBFS (floor %s), threshold %s dBFS, peak %s dBFS, "
+                 "speech in %.0f%% of the time", self.id, report["seconds"], report["speech_dbfs"],
+                 report["noise_dbfs"], report["noise_floor_dbfs"], report["threshold_dbfs"], report["peak_dbfs"],
+                 100 * report["speech_fraction"])
+        metrics.metric("audio", recording=self.id, **{k: v for k, v in report.items() if k != "dbfs_per_second"})
+        if self.rec:
+            self.rec.save("audio.json", report)
+
+    async def run(self):
+        worker = asyncio.create_task(self.transcribe())
+        try:
+            self.stop_reason = await self.receive()
+            self.stopped_at = time.monotonic()
+            if self.stop_reason is None:
+                log.warning("recording %s: the client closed the connection before the stop", self.id)
+                self.errors.append("the client closed the connection before the stop")
+                return
+            # The recording is whole: cut it now, into pieces as equal as the pauses allow.
+            for pcm in split(bytes(self.audio), self.levels.rms, self.levels.threshold, self.cut["piece_seconds"],
+                             self.cut["cut_search_seconds"]):
+                self.pending.put_nowait(pcm)
+            self.pending.put_nowait(None)
+            self.levels_report()
+            # The client may give up before the last piece; then the running requests are closed.
+            closed = asyncio.ensure_future(self.ws.wait_closed())
+            await asyncio.wait({worker, closed}, return_when=asyncio.FIRST_COMPLETED)
+            if not worker.done():
+                log.warning("recording %s: the client closed the connection before the last piece", self.id)
+                self.errors.append("the client closed the connection before the last piece")
+                return
+            closed.cancel()
+            await worker
+            with contextlib.suppress(Exception):
+                await self.send(type="done")
+                await self.ws.close()
+            metrics.metric("recording", model=self.start.model, client=self.start.client, recording=self.id,
+                           language=self.start.language, prompt=self.meta["prompt"], options=self.start.options,
+                           audio_seconds=round(self.heard_seconds, 2), stop_reason=self.stop_reason,
+                           adapter=self.chat.get("adapter"), context_messages=self.chat.get("messages"),
+                           done_after_stop_seconds=round(time.monotonic() - self.stopped_at, 3))
+        finally:
+            if not worker.done():
+                self.pending.put_nowait(None)
+                worker.cancel()
+                with contextlib.suppress(BaseException):
+                    await worker
+            await self.finish()
+
+    async def finish(self):
+        if not self.rec:
             return
-        closed.cancel()
-        await worker
-        await send(type="done")
-        metrics.metric("recording", model=name, client=client, recording=recording, language=language, prompt=meta["prompt"],
-               options=options, audio_seconds=round(audio_bytes / 2 / RATE, 2), stop_reason=stop_reason,
-               adapter=chat_info.get("adapter"), context_messages=chat_info.get("messages"),
-               done_after_stop_seconds=round(time.monotonic() - stopped, 3) if stopped else None)
-        await ws.close()
-    finally:
-        if not worker.done():
-            worker.cancel()
-        if rec:
-            mic_info = None
-            if mic is not None:
-                with contextlib.suppress(Exception):
-                    mic_info = await asyncio.wait_for(asyncio.shield(mic), 15)
-            try:
-                rec.finish({"model": name, "language": language, "client": client,
-                            "stopReason": stop_reason or "connection closed", "error": "; ".join(errors) or None,
-                            "chat": chat_info or None, "pieces": texts, "text": " ".join(texts),
-                            "input": mic_info})
-            except OSError:
-                log.exception("cannot finish the recording folder %s", rec.dir)
+        mic_info = None
+        if self.mic is not None:
+            with contextlib.suppress(Exception):
+                mic_info = await asyncio.wait_for(asyncio.shield(self.mic), MIC_INFO_WAIT_S)
+        self.rec.finish({"model": self.start.model, "language": self.start.language, "client": self.start.client,
+                         "stopReason": self.stop_reason or "connection closed", "error": "; ".join(self.errors) or None,
+                         "chat": self.chat or None, "pieces": self.texts, "text": " ".join(self.texts),
+                         "input": mic_info})

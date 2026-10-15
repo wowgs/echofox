@@ -9,15 +9,18 @@ A plugin the user puts in the folder is theirs to trust: the server checks only 
 interface is this one, and that the module has its class (Alex's decision, 2026-10-15). A user plugin with the name of
 a built-in one replaces it. A plugin works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
 """
+import contextlib
 import importlib.util
 import json
 import logging
 import os
 import re
 import sys
+import threading
 from dataclasses import dataclass, field
 
 import adapters
+import constants
 
 INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
 BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins")
@@ -25,7 +28,7 @@ log = logging.getLogger("gemma_voice")
 
 
 def user_dir():
-    return os.environ.get("LOCAL_VOICE_PLUGINS") or os.path.expanduser("~/Library/Application Support/Local Voice/adapters")
+    return os.environ.get("LOCAL_VOICE_PLUGINS") or constants.path(constants.PLUGINS)
 
 
 @dataclass
@@ -83,11 +86,12 @@ def load(folder, builtin):
 
 
 _plugins, _signature = None, None
+_lock = threading.Lock()  # plugins() runs in worker threads, sometimes two at once
 
 
 def _folders():
-    """[(folder, builtin)] of every plugin folder, built-in first, and their signature: the folders with the times
-    their files changed."""
+    """[(folder, builtin)] of every plugin folder, built-in first, and their signature: every file of every plugin
+    folder with the time it changed."""
     out, sig = [], []
     for root, builtin in ((BUILTIN, True), (user_dir(), False)):
         try:
@@ -96,27 +100,33 @@ def _folders():
             continue
         for n in names:
             folder = os.path.join(root, n)
-            files = [os.path.join(folder, f) for f in ("adapter.json", "adapter.py")]
-            if os.path.isfile(files[0]):
-                out.append((folder, builtin))
-                sig.append((folder, *(os.stat(f).st_mtime_ns if os.path.exists(f) else None for f in files)))
+            if not os.path.isfile(os.path.join(folder, "adapter.json")):
+                continue
+            out.append((folder, builtin))
+            for d, dirs, files in os.walk(folder):
+                dirs[:] = [x for x in dirs if x != "__pycache__"]
+                for f in sorted(files):
+                    if f.endswith((".py", ".json")):
+                        with contextlib.suppress(OSError):
+                            sig.append((os.path.join(d, f), os.stat(os.path.join(d, f)).st_mtime_ns))
     return out, tuple(sig)
 
 
 def plugins():
     """Every plugin found, by name; a user plugin replaces a built-in one of the same name. The plugins load again when
-    a plugin folder or file changes, so a new or edited plugin works without a restart of the server."""
+    a file of a plugin folder changes, so a new or edited plugin works without a restart of the server."""
     global _plugins, _signature
-    folders, sig = _folders()
-    if _plugins is None or sig != _signature:
-        found = {}
-        for folder, builtin in folders:
-            p = load(folder, builtin)
-            if p.name in found and not builtin:
-                log.info("adapter plugin %s from %s replaces the built-in one", p.name, folder)
-            found[p.name] = p
-        _plugins, _signature = found, sig
-    return _plugins
+    with _lock:
+        folders, sig = _folders()
+        if _plugins is None or sig != _signature:
+            found = {}
+            for folder, builtin in folders:
+                p = load(folder, builtin)
+                if p.name in found and not builtin:
+                    log.info("adapter plugin %s from %s replaces the built-in one", p.name, folder)
+                found[p.name] = p
+            _plugins, _signature = found, sig
+        return _plugins
 
 
 def enabled(names):

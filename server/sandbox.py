@@ -11,7 +11,7 @@ import socket
 import stat
 import tempfile
 
-import places
+import constants as places
 
 ROOT = os.path.realpath(tempfile.mkdtemp(prefix="local-voice-tests-"))
 REAL_HOME = os.path.expanduser("~")

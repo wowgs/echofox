@@ -14,15 +14,26 @@ import os
 import statistics
 import time
 
-# Where metric() writes; the server sets it from its settings.
-METRICS = os.path.expanduser("~/Library/Logs/local-voice/gemma-voice-metrics.jsonl")
+import constants
+
 log = logging.getLogger("gemma_voice")
+_path = constants.path(constants.METRICS)
+
+
+def configure(path):
+    """Where metric() writes from now on (the server's setting "metrics")."""
+    global _path
+    _path = constants.path(path)
+
+
+def path():
+    return _path
 
 
 def metric(event, **fields):
     try:
-        os.makedirs(os.path.dirname(METRICS), exist_ok=True)
-        with open(METRICS, "a", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(_path), exist_ok=True)
+        with open(_path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "event": event, **fields},
                                ensure_ascii=False) + "\n")
     except OSError:
@@ -36,7 +47,7 @@ def med(xs):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("file", nargs="?", default=METRICS)
+    p.add_argument("file", nargs="?", default=_path)
     p.add_argument("--since", default="", help="only lines at or after this time, as in the file (2026-10-14T05:00)")
     p.add_argument("--last", type=int, default=10, help="how many recent pieces to list (default 10)")
     a = p.parse_args()

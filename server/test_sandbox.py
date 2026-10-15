@@ -8,7 +8,7 @@ import socket
 import unittest
 
 import metrics
-import places
+import constants as places
 import settings
 
 
@@ -20,7 +20,7 @@ class SandboxTest(unittest.TestCase):
             self.assertTrue(first.startswith("import sandbox"), f"{f}: the first import is {first!r}")
 
     def test_the_paths_are_the_sandboxs(self):
-        for path in (os.path.expanduser("~"), settings.config_file(), metrics.METRICS,
+        for path in (os.path.expanduser("~"), settings.config_file(), metrics.path(),
                      os.environ["LOCAL_VOICE_PLUGINS"], os.environ["LOCAL_VOICE_PROJECTS"]):
             self.assertTrue(os.path.realpath(path).startswith(sandbox.ROOT), path)
         self.assertNotEqual(sandbox.ROOT, sandbox.REAL_HOME)

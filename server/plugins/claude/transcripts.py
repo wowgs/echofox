@@ -43,20 +43,34 @@ def found(f):
     return {"file": f, "session": os.path.basename(f)[:-len(".jsonl")]}
 
 
+_titles = {}  # transcript → (its size and change time, its title or None): a title is read once per change
+
+
+def title_of(f):
+    """A transcript's title, from its "custom-title" line, or None. Cached until the file changes."""
+    try:
+        st = os.stat(f)
+    except OSError:
+        return None
+    key = (st.st_size, st.st_mtime_ns)
+    if f in _titles and _titles[f][0] == key:
+        return _titles[f][1]
+    title = None
+    try:
+        with open(f, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"custom-title"' in line:
+                    title = json.loads(line).get("customTitle")
+    except (OSError, ValueError):
+        pass
+    _titles[f] = (key, title)
+    return title
+
+
 def titled_session(title, root=None):
-    """The one transcript whose title (its "custom-title" line) is `title`: {"file", "session"}; None if there is no
-    such transcript or more than one."""
-    hits = []
-    for f in glob.glob(os.path.join(glob.escape(root or projects()), "*", "*.jsonl")):
-        try:
-            with open(f, encoding="utf-8", errors="replace") as fh:
-                for line in fh:
-                    if '"custom-title"' in line:
-                        if json.loads(line).get("customTitle") == title:
-                            hits.append(f)
-                        break
-        except (OSError, ValueError):
-            continue
+    """The one transcript whose title (its last "custom-title" line) is `title`: {"file", "session"}; None if there
+    is no such transcript or more than one."""
+    hits = [f for f in glob.glob(os.path.join(glob.escape(root or projects()), "*", "*.jsonl")) if title_of(f) == title]
     return found(hits[0]) if len(hits) == 1 else None
 
 

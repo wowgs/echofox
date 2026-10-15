@@ -9,22 +9,25 @@ import time
 import unittest
 
 import dictation as d
+import llama
 import metrics
-from fakes import LOUD, FakeLlamaServer
+import recordings
+import tuning
+from fakes import LOUD, FakeLlamaServer, args
 
 
 class OptionsTest(unittest.TestCase):
     def test_known_options_are_checked_and_renamed(self):
-        self.assertEqual(d.parse_options({"temperature": 0, "topK": 1, "maxOutputTokens": 200, "pieceSeconds": 10}),
+        self.assertEqual(tuning.parse_options({"temperature": 0, "topK": 1, "maxOutputTokens": 200, "pieceSeconds": 10}),
                          {"temperature": 0.0, "top_k": 1, "max_output_tokens": 200, "piece_seconds": 10.0})
-        self.assertEqual(d.parse_options(None), {})
+        self.assertEqual(tuning.parse_options(None), {})
 
     def test_unknown_or_wrong_options_are_refused(self):
         for bad, why in [({"tempreature": 0}, "unknown option"), ({"topK": 1.5}, "integer"), ({"topP": 2}, "out of range"),
                          ({"pieceSeconds": 45}, "out of range"), ({"temperature": "0"}, "number"), ({"topK": True}, "integer"),
                          ({"noRepeatNgramSize": 10}, "unknown option"), ([1], "object")]:
             with self.assertRaisesRegex(ValueError, why):
-                d.parse_options(bad)
+                tuning.parse_options(bad)
 
 
 class PromptTest(unittest.TestCase):
@@ -43,20 +46,23 @@ class PromptTest(unittest.TestCase):
 class DictationTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
-        self.saved = metrics.METRICS
-        metrics.METRICS = os.path.join(self.dir.name, "metrics.jsonl")
+        self.saved = metrics.path()
+        metrics.configure(os.path.join(self.dir.name, "metrics.jsonl"))
         self.fake = FakeLlamaServer()
 
     def tearDown(self):
-        metrics.METRICS = self.saved
+        metrics.configure(self.saved)
         self.fake.close()
         self.dir.cleanup()
 
     def metrics(self, event):
-        return [m for m in (json.loads(l) for l in open(metrics.METRICS, encoding="utf-8")) if m["event"] == event]
+        return [m for m in (json.loads(l) for l in open(metrics.path(), encoding="utf-8")) if m["event"] == event]
+
+    def dictation(self, options=None, model=None, recording=None):
+        return d.Dictation(model or self.fake.model(), "PROMPT", options or {}, args(), {}, recording)
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
-        d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 20, "seed": 3})
+        d = self.dictation({"chat_history_token_budget": 20, "seed": 3})
         await d.prepare({"messages": [{"from": "Anna", "text": "hello there"}], "terms": []})
         self.assertEqual(await d.piece(LOUD * 2, 1), "text from llama")
         await d.piece(LOUD, 2)
@@ -73,7 +79,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((m["prefill_tokens"], m["cached_tokens"], m["decode_tokens"]), (30, 6, 5))
 
     async def test_warm_sends_the_same_text_alone_to_the_slot_of_its_piece(self):
-        d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 20})
+        d = self.dictation({"chat_history_token_budget": 20})
         await d.prepare({"messages": [{"from": "Claude", "text": "hello there"}], "terms": []})
         await d.warm(1)
         await d.piece(LOUD, 2, slot=1)
@@ -85,11 +91,11 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.metrics("warm")[0]["slot"], 1)
 
     async def test_the_chat_context_fits_the_token_budget_newest_kept(self):
-        d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 12, "chat_terms_token_budget": 4})
+        d = self.dictation({"chat_history_token_budget": 12, "chat_terms_token_budget": 3})
         chat = {"messages": [{"from": "Assistant", "text": "new reply here"},       # 4 tokens with the author
                              {"from": "Speaker", "text": "a question asked"},          # 4
                              {"from": "Assistant", "text": "an old long reply that does not fit"}],
-                "terms": ["GitHub", "Kubernetes", "PostgreSQL"]}  # 2 tokens each with the separator
+                "terms": ["GitHub", "Kubernetes", "PostgreSQL"]}  # "Terms:" and a token each
         await d.prepare(chat)
         self.assertIn("Terms: GitHub, Kubernetes\n", d.text)
         self.assertLess(d.text.index("Speaker: a question asked"), d.text.index("Assistant: new reply here"))
@@ -98,21 +104,21 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
 
     async def test_a_budget_of_0_turns_the_chat_history_off(self):
-        d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 0})
+        d = self.dictation({"chat_history_token_budget": 0})
         await d.prepare({"messages": [{"from": "Anna", "text": "hello"}], "terms": ["X"]})
         self.assertEqual(d.text, "PROMPT")
 
     async def test_the_text_is_limited_by_the_length_of_the_audio(self):
-        await self.fake.model().dictation("PROMPT", {}).piece(LOUD * 20, 1)
-        await self.fake.model().dictation("PROMPT", {"max_output_tokens": 50}).piece(LOUD * 20, 1)
+        await self.dictation({}).piece(LOUD * 20, 1)
+        await self.dictation({"max_output_tokens": 50}).piece(LOUD * 20, 1)
         self.assertEqual([b["max_tokens"] for b in self.fake.completions()],
-                         [20 * d.OUTPUT_TOKENS_PER_SECOND + d.OUTPUT_TOKENS_BASE, 50])
+                         [20 * 10 + 32, 50])  # the defaults: 10 per second plus 32
         self.assertEqual([(m["output_limit"], m["output_limit_hit"]) for m in self.metrics("piece")],
                          [(232, False), (50, False)])
 
     async def test_googles_sampler_unless_the_options_set_one(self):
-        await self.fake.model().dictation("PROMPT", {}).piece(LOUD, 1)
-        await self.fake.model().dictation("PROMPT", {"top_k": 1, "seed": 3}).piece(LOUD, 1)
+        await self.dictation({}).piece(LOUD, 1)
+        await self.dictation({"top_k": 1, "seed": 3}).piece(LOUD, 1)
         self.assertEqual([{k: b.get(k) for k in ("temperature", "top_k", "top_p", "seed")} for b in self.fake.completions()],
                          [{"temperature": 1.0, "top_k": 64, "top_p": 0.95, "seed": None},
                           {"temperature": 1.0, "top_k": 1, "top_p": 0.95, "seed": 3}])
@@ -121,28 +127,29 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         fake = FakeLlamaServer(decode=1000)
         try:
             with self.assertLogs("gemma_voice", "WARNING") as logs:
-                await fake.model().dictation("PROMPT", {}).piece(LOUD * 2, 1)
+                await self.dictation(model=fake.model()).piece(LOUD * 2, 1)
         finally:
             fake.close()
         self.assertIn("reached the limit of 52 tokens", logs.output[0])
         self.assertTrue(self.metrics("piece")[0]["output_limit_hit"])
 
     async def test_a_named_recording_keeps_the_text_each_piece_and_its_text(self):
-        d = self.fake.model().dictation("PROMPT", {}, save_dir=os.path.join(self.dir.name, "2026-10-14", "130152-abcdef"))
+        rec = recordings.Recording(self.dir.name)
+        d = self.dictation(recording=rec)
         await d.prepare()
         await d.piece(LOUD * 2, 1)
         await d.piece(LOUD, 2)
-        files = sorted(os.listdir(d.save_dir))
-        self.assertEqual(files, ["piece-1.wav", "piece-2.wav", "pieces.jsonl", "text-before-audio.txt"])
-        self.assertEqual(open(os.path.join(d.save_dir, "text-before-audio.txt")).read(), "PROMPT")
-        self.assertEqual(os.path.getsize(os.path.join(d.save_dir, "piece-1.wav")), 44 + 2 * 32000)
-        lines = [json.loads(l) for l in open(os.path.join(d.save_dir, "pieces.jsonl"), encoding="utf-8")]
+        files = sorted(os.listdir(rec.dir))
+        self.assertEqual(files, ["mic.wav", "piece-1.wav", "piece-2.wav", "pieces.jsonl", "text-before-audio.txt"])
+        self.assertEqual(open(os.path.join(rec.dir, "text-before-audio.txt")).read(), "PROMPT")
+        self.assertEqual(os.path.getsize(os.path.join(rec.dir, "piece-1.wav")), 44 + 2 * 32000)
+        lines = [json.loads(l) for l in open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8")]
         self.assertEqual([(l["piece"], l["text"]) for l in lines], [(1, "text from llama"), (2, "text from llama")])
 
     async def test_a_cancelled_piece_closes_its_request_at_once(self):
         fake = FakeLlamaServer(delay=2.0)
         try:
-            task = asyncio.create_task(fake.model().dictation("PROMPT", {}).piece(LOUD, 1))
+            task = asyncio.create_task(self.dictation(model=fake.model()).piece(LOUD, 1))
             while not fake.seen:
                 await asyncio.sleep(0.01)
             t = time.monotonic()
@@ -156,21 +163,28 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.metrics("cancelled")), 1)
 
     async def test_a_cancel_stops_requests_that_have_not_connected_yet(self):
-        import llama
         m = self.fake.model()
-        d = m.dictation("PROMPT", {})
+        dic = self.dictation(model=m)
         m.cancel()  # before the piece's request connects
         with self.assertRaises(llama.Cancelled):
-            await d.piece(LOUD, 1)
+            await dic.piece(LOUD, 1)
         self.assertEqual(self.fake.completions(), [])  # it never reached llama-server
-        m.dictation("PROMPT", {})  # the next recording starts clean
-        self.assertEqual(await m.dictation("PROMPT", {}).piece(LOUD, 1), "text from llama")
+        self.assertEqual(await self.dictation(model=m).piece(LOUD, 1), "text from llama")  # the next one starts clean
+
+    async def test_slots_come_from_llama_servers_props_and_https_urls_keep_their_scheme(self):
+        fake = FakeLlamaServer(slots=2)
+        try:
+            self.assertEqual(fake.model().slots(), 2)
+        finally:
+            fake.close()
+        m = llama.LlamaModel("x", {"llamaServer": "https://llm.example.org/base/"})
+        self.assertEqual((m.https, m.host, m.port, m.base), (True, "llm.example.org", 443, "/base"))
 
     async def test_the_metrics_have_llama_servers_memory(self):
         m = self.fake.model()
-        await m.dictation("PROMPT", {}).piece(LOUD, 1)
+        await self.dictation(model=m).piece(LOUD, 1)
         mb = self.metrics("piece")[0]["llama_footprint_mb"]  # the fake runs in this process
-        self.assertTrue(mb is None or 1 < mb < 100000, mb)
+        self.assertTrue(mb is not None and 1 < mb < 100000, mb)
         self.assertEqual(m.pid, os.getpid())
 
 

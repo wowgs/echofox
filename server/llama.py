@@ -1,5 +1,6 @@
 """The models: each a llama.cpp llama-server (server/llama_launchd.sh) behind its launchd agent, and the registry that
 keeps only one of them in memory."""
+import abc
 import asyncio
 import base64
 import contextlib
@@ -15,22 +16,55 @@ import time
 import urllib.parse
 import urllib.request
 
+import constants
+import tuning
 from audio import wav
-from dictation import Dictation, sampler_of
 
 log = logging.getLogger("gemma_voice")
-REQUEST_TIMEOUT_S = 200  # one piece's request; the client waits 180 s for the whole text (Dictation.swift)
+SHORT_TIMEOUT_S = 10  # /tokenize, /detokenize, /props, /health, lsof
+HEALTH_POLL_S = 1
+BOOTOUT_WAIT_S = 30   # launchctl bootout returns before the agent is gone; this long for it to go
 
 
 class Cancelled(Exception):
     """A request of a cancelled recording."""
 
 
-def llama_post(url, path, body, timeout):
-    req = urllib.request.Request(url + path, data=json.dumps(body).encode("utf-8"),
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+class Model(abc.ABC):
+    """What a recording needs of a model (dictation.Dictation): the tests' stub models have the same."""
+    name = ""
+
+    @abc.abstractmethod
+    def begin(self):
+        """A new recording starts: a cancel of the one before does not reach it."""
+
+    @abc.abstractmethod
+    def cancel(self):
+        """Stops the running recording's requests, also those that have not connected yet."""
+
+    @abc.abstractmethod
+    def slots(self):
+        """How many requests the model runs at once."""
+
+    @abc.abstractmethod
+    def tokenize(self, text):
+        """The text's tokens."""
+
+    @abc.abstractmethod
+    def detokenize(self, ids):
+        """The tokens' text."""
+
+    @abc.abstractmethod
+    def warm(self, text, options, slot=None):
+        """The text into the slot's cache, with nothing to write; the timings."""
+
+    @abc.abstractmethod
+    def complete(self, text, pcm, limit, options, slot=None):
+        """One piece: the text, then the audio: (text, timings)."""
+
+    def footprint_mb(self):
+        """The model's memory in MB, for the metrics; None if unknown."""
+        return None
 
 
 _libproc = ctypes.CDLL(ctypes.util.find_library("proc")) if ctypes.util.find_library("proc") else None
@@ -51,28 +85,36 @@ def listening_pid(port):
     """The process listening on this TCP port of this Mac, or None (lsof)."""
     try:
         out = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True,
-                             timeout=5).stdout.split()
+                             timeout=SHORT_TIMEOUT_S).stdout.split()
         return int(out[0]) if out else None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 
-class LlamaModel:
-    """A model behind llama.cpp's llama-server. Its model, quantization and context are set where llama-server
-    starts (server/llama_launchd.sh)."""
+class LlamaModel(Model):
+    """A model behind llama.cpp's llama-server, at the URL of its registry entry (http or https, with a path prefix
+    if it has one). Its model, quantization, context and slots are set where llama-server starts
+    (server/llama_launchd.sh)."""
 
     def __init__(self, name, entry):
         self.name, self.url = name, entry["llamaServer"].rstrip("/")
+        u = urllib.parse.urlparse(self.url)
+        self.https, self.host, self.base = u.scheme == "https", u.hostname, u.path.rstrip("/")
+        self.port = u.port or (443 if self.https else 80)
         self.connections, self.pid, self.n_slots = set(), None, None  # the running requests; llama-server's process
         self.cancelled = False  # set by cancel(); a recording's requests that have not connected yet do not start
         self.lock = threading.Lock()
         log.info("model %s: llama-server at %s", name, self.url)
 
+    def begin(self):
+        with self.lock:
+            self.cancelled = False
+
     def cancel(self):
         """Stops the recording's requests: closing a request's connection makes llama-server stop decoding it
         (llama-server 0.6.0, build 11429: with the connection closed after 1 s, the next request got its answer 0.2 s
-        later; without, 136 s later). A request that has not connected yet does not start (_chat). One recording at a
-        time uses the model (Models.recording), so these are all its requests."""
+        later; without, 136 s later). A request that has not connected yet does not start (_request). One recording
+        at a time uses the model (Models.recording), so these are all its requests."""
         with self.lock:
             self.cancelled = True
             conns = list(self.connections)
@@ -81,55 +123,59 @@ class LlamaModel:
                 if conn.sock is not None:
                     conn.sock.shutdown(2)
 
-    def slots(self):
-        """llama-server's slots (its -np): requests it runs at once. 1 if it does not say."""
-        if self.n_slots is None:
-            try:
-                with urllib.request.urlopen(self.url + "/props", timeout=10) as r:
-                    self.n_slots = max(1, int(json.loads(r.read().decode("utf-8")).get("total_slots") or 1))
-            except (OSError, ValueError, TypeError):
-                return 1
-        return self.n_slots
-
-    def footprint_mb(self):
-        """llama-server's physical footprint in MB, for the metrics; None if its process is not found."""
-        if self.pid:
-            with contextlib.suppress(OSError):
-                os.kill(self.pid, 0)
-                return footprint_mb(self.pid)
-        url = urllib.parse.urlparse(self.url)
-        self.pid = listening_pid(url.port or 80) if url.hostname in ("127.0.0.1", "localhost") else None
-        return footprint_mb(self.pid)
-
-    def tokenize(self, text):
-        return llama_post(self.url, "/tokenize", {"content": text}, 30)["tokens"]
-
-    def detokenize(self, ids):
-        return llama_post(self.url, "/detokenize", {"tokens": list(ids)}, 30)["content"]
-
-    def _chat(self, body):
-        """One /v1/chat/completions request on a connection of its own, which cancel() can close."""
-        url = urllib.parse.urlparse(self.url)
-        conn = http.client.HTTPConnection(url.hostname, url.port or 80, timeout=REQUEST_TIMEOUT_S)
+    def _request(self, method, path, body=None, timeout=constants.REQUEST_TIMEOUT_S):
+        """One request on a connection of its own, which cancel() can close; the JSON answer."""
+        cls = http.client.HTTPSConnection if self.https else http.client.HTTPConnection
+        conn = cls(self.host, self.port, timeout=timeout)
         with self.lock:
             if self.cancelled:
                 raise Cancelled("the recording was cancelled before this request")
             self.connections.add(conn)
         try:
-            conn.request("POST", "/v1/chat/completions", json.dumps(body).encode("utf-8"),
-                         {"Content-Type": "application/json"})
+            data = json.dumps(body).encode("utf-8") if body is not None else None
+            conn.request(method, self.base + path, data, {"Content-Type": "application/json"} if data else {})
             reply = conn.getresponse()
+            raw = reply.read()
             if reply.status != 200:
-                raise RuntimeError(f"llama-server: HTTP {reply.status}: {reply.read()[:300]!r}")
-            return json.loads(reply.read().decode("utf-8"))
+                raise RuntimeError(f"llama-server {method} {path}: HTTP {reply.status}: {raw[:300]!r}")
+            return json.loads(raw.decode("utf-8"))
         finally:
-            self.connections.discard(conn)
+            with self.lock:
+                self.connections.discard(conn)
             conn.close()
+
+    def slots(self):
+        """llama-server's slots (its -np): requests it runs at once. 1 if it does not say."""
+        if self.n_slots is None:
+            try:
+                props = self._request("GET", "/props", timeout=SHORT_TIMEOUT_S)
+                self.n_slots = max(1, int(props.get("total_slots") or 1))
+            except (OSError, ValueError, TypeError, RuntimeError, Cancelled):
+                return 1
+        return self.n_slots
+
+    def footprint_mb(self):
+        """llama-server's physical footprint in MB, for the metrics; None if its process is not found (or it runs on
+        another computer)."""
+        if self.host not in (constants.HOST, "localhost"):
+            return None
+        if self.pid:
+            with contextlib.suppress(OSError):
+                os.kill(self.pid, 0)
+                return footprint_mb(self.pid)
+        self.pid = listening_pid(self.port)
+        return footprint_mb(self.pid)
+
+    def tokenize(self, text):
+        return self._request("POST", "/tokenize", {"content": text}, timeout=SHORT_TIMEOUT_S)["tokens"]
+
+    def detokenize(self, ids):
+        return self._request("POST", "/detokenize", {"tokens": list(ids)}, timeout=SHORT_TIMEOUT_S)["content"]
 
     @staticmethod
     def _body(content, limit, options, slot):
         body = {"messages": [{"role": "user", "content": content}],
-                "max_tokens": limit, "stream": False, "cache_prompt": True, **sampler_of(options),
+                "max_tokens": limit, "stream": False, "cache_prompt": True, **tuning.sampler(options),
                 # Gemma 4's template in llama.cpp lets the model think first (reasoning_content), which spent a
                 # piece's whole token limit on "Here's a thinking process…" and left no text.
                 "chat_template_kwargs": {"enable_thinking": False}}
@@ -149,75 +195,82 @@ class LlamaModel:
     def warm(self, text, options, slot=None):
         """The text alone, with no audio and nothing to write, so that llama-server keeps it in the slot's cache: a
         piece in that slot then processes only its audio. Measured 2026-10-15 (llama-server 0.6.0, build 11429): after
-        this request, a piece of the same text and 21 s of audio took 1316 tokens from the cache and processed 537.
-        Returns the timings."""
-        return self._timings(self._chat(self._body([{"type": "text", "text": text}], 0, options, slot)))
+        this request, a piece of the same text and 21 s of audio took 1316 tokens from the cache and processed 537."""
+        body = self._body([{"type": "text", "text": text}], 0, options, slot)
+        return self._timings(self._request("POST", "/v1/chat/completions", body))
 
     def complete(self, text, pcm, limit, options, slot=None):
-        """One piece: the text, then the audio, in one request. (text, timings for the metrics)."""
         audio = base64.b64encode(wav(pcm)).decode("ascii")
-        r = self._chat(self._body([{"type": "text", "text": text},
-                                   {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}],
-                                  limit, options, slot))
+        body = self._body([{"type": "text", "text": text},
+                           {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}],
+                          limit, options, slot)
+        r = self._request("POST", "/v1/chat/completions", body)
         return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
-
-    def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
-        """A new recording on this model; a cancel of the recording before it does not reach this one."""
-        with self.lock:
-            self.cancelled = False
-        return Dictation(self, text_prompt, options or {}, meta or {}, save_dir, **kw)
 
 
 LAUNCHCTL = os.environ.get("LOCAL_VOICE_LAUNCHCTL", "launchctl")  # tests put a fake here
 
 
 def launchd(*args):
-    """launchctl … in this user's GUI domain; True when it exits 0."""
-    import subprocess
-    return subprocess.run([LAUNCHCTL, *args], capture_output=True).returncode == 0
+    """launchctl … ; (exit code, its output)."""
+    r = subprocess.run([LAUNCHCTL, *args], capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
+def domain():
+    return f"gui/{os.getuid()}"
 
 
 def agent_running(label):
-    return launchd("print", f"gui/{os.getuid()}/{label}")
+    return launchd("print", f"{domain()}/{label}")[0] == 0
 
 
 def start_agent(label):
-    if not agent_running(label):
-        launchd("bootstrap", f"gui/{os.getuid()}", os.path.expanduser(f"~/Library/LaunchAgents/{label}.plist"))
-        log.info("started the launchd agent %s", label)
+    """Starts the launchd agent from its plist; raises RuntimeError if launchctl refuses."""
+    if agent_running(label):
+        return
+    code, out = launchd("bootstrap", domain(), constants.path(f"{constants.LAUNCH_AGENTS}/{label}.plist"))
+    if code != 0 and not agent_running(label):
+        raise RuntimeError(f"launchctl bootstrap {label}: exit {code}: {out}")
+    log.info("started the launchd agent %s", label)
 
 
 def stop_agent(label):
+    """Stops the launchd agent and waits until it is gone (bootout returns before that)."""
+    if not agent_running(label):
+        return
+    code, out = launchd("bootout", f"{domain()}/{label}")
+    end = time.monotonic() + BOOTOUT_WAIT_S
+    while agent_running(label) and time.monotonic() < end:
+        time.sleep(HEALTH_POLL_S / 10)
     if agent_running(label):
-        launchd("bootout", f"gui/{os.getuid()}/{label}")
-        log.info("stopped the launchd agent %s", label)
+        raise RuntimeError(f"launchctl bootout {label}: exit {code}: {out}; it still runs after {BOOTOUT_WAIT_S} s")
+    log.info("stopped the launchd agent %s", label)
 
 
-def wait_healthy(url, seconds=180):
+def wait_healthy(url, seconds=constants.MODEL_START_S):
     """Waits until a llama-server answers /health with 200 (it loads its model first)."""
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         try:
-            with urllib.request.urlopen(url + "/health", timeout=5) as r:
+            with urllib.request.urlopen(url + "/health", timeout=SHORT_TIMEOUT_S) as r:
                 if r.status == 200:
                     return True
         except OSError:
             pass
-        time.sleep(1)
+        time.sleep(HEALTH_POLL_S)
     return False
 
 
 class Models:
     """The models of the config's registry, by name; the first is the default. Only one is in memory at a time: its
-    llama-server's launchd agent runs, the others' agents are stopped. `make(name, entry)` makes the model object
-    (tests put a stub here)."""
+    llama-server's launchd agent runs, the others' agents are stopped (unless `manage` is off: the test server).
+    `make(name, entry)` makes the model object (tests put a stub here)."""
 
-    def __init__(self, entries, make=LlamaModel):
-        self.entries, self.make, self.models = dict(entries), make, {}
-        # Whether this server starts and stops the launchd agents (the test server does not).
-        self.manage = True
-        # One recording at a time: llama-server runs one request at a time (-np 1), and loading or switching a model
-        # waits for the running recording. A second recording waits.
+    def __init__(self, entries, make=LlamaModel, manage=True):
+        self.entries, self.make, self.models, self.manage = dict(entries), make, {}, manage
+        # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
+        # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()
 
     def reconfigure(self, entries):
@@ -225,10 +278,8 @@ class Models:
         self.entries, self.models = dict(entries), {}
 
     def name_for(self, name):
-        """The model a client asks for by name; no name (or the URL path /voice_stream of earlier clients): the
-        default."""
-        name = (name or "").strip("/")
-        if name in ("", "voice_stream"):
+        """The model a client asks for by name; no name: the default."""
+        if not name:
             return next(iter(self.entries))
         return name if name in self.entries else None
 

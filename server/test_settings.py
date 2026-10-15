@@ -28,8 +28,7 @@ class ModelsTest(unittest.IsolatedAsyncioTestCase):
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):
     def cli(self, **given):
-        names = {v[0] for v in s.SETTINGS.values() if v[0]}
-        return types.SimpleNamespace(**{**{n: None for n in names}, **given})
+        return types.SimpleNamespace(**{**{x.name: None for x in s.SETTINGS if x.flag}, **given})
 
     def write(self, f, **c):
         json.dump({"version": 3, **c}, open(f, "w"))
@@ -41,6 +40,16 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((now["port"], now["pieceSeconds"], now["cutSearchSeconds"], now["models"]), (8091, 25.0, 3.0, models))
         self.assertEqual((s.resolve(self.cli(), {})["models"], s.resolve(self.cli(), {})["saveRecordings"]),
                          (s.MODEL_DEFAULT, True))
+
+    def test_every_setting_with_a_flag_has_it_and_a_command_line_value_out_of_range_is_refused(self):
+        import argparse
+        p = argparse.ArgumentParser()
+        s.add_flags(p)
+        cli = p.parse_args(["--piece-seconds", "25", "--port", "9000", "--max-recording-seconds", "60"])
+        now = s.resolve(cli, {})
+        self.assertEqual((now["pieceSeconds"], now["port"], now["maxRecordingSeconds"]), (25.0, 9000, 60.0))
+        with self.assertRaisesRegex(ValueError, "pieceSeconds"):
+            s.resolve(p.parse_args(["--piece-seconds", "99"]), {})
 
     def test_the_file_has_the_registry_at_the_top_and_the_server_in_its_section(self):
         with tempfile.TemporaryDirectory() as d:
@@ -69,7 +78,6 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("the server reads version 3", logs.output[0])
 
     async def test_changes_of_the_file_take_effect_by_their_level(self):
-        s.CONFIG_CHECK_S = 0.02
         calls = []
 
         class FakeModels:
@@ -78,29 +86,56 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             def reconfigure(self, entries):
                 calls.append(("reconfigure", entries))
 
-        saved = metrics.METRICS
+        saved = metrics.path()
         try:
             with tempfile.TemporaryDirectory() as d:
                 f = os.path.join(d, "config.json")
                 self.write(f)
-                cli, st = self.cli(), types.SimpleNamespace()
+                cli = self.cli()
                 current = s.resolve(cli, {})
-                s.apply_recording_settings(st, current)
+                st = s.recording_settings(current)
                 stop = asyncio.get_running_loop().create_future()
-                task = asyncio.create_task(s.watch_config(cli, FakeModels(), st, current, f, stop, follow=False))
-                await asyncio.sleep(0.05)
+                w = s.ConfigWatcher(f, cli, FakeModels(), st, current, stop, follow=False)
                 self.write(f, server={"pieceSeconds": 25}, saveRecordings=False)  # recording settings
-                await asyncio.sleep(0.1)
+                self.assertTrue(await w.check())
                 self.assertEqual((st.piece_seconds, st.save_recordings, calls), (25.0, False, []))
                 models = {"b": {"llamaServer": "http://h:2"}}
                 self.write(f, server={"pieceSeconds": 25}, saveRecordings=False, models=models)  # a model setting
-                await asyncio.sleep(0.1)
+                self.assertTrue(await w.check())
                 self.assertEqual(calls, [("reconfigure", models)])
                 self.write(f, server={"pieceSeconds": 25, "port": 9999}, saveRecordings=False, models=models)
-                await asyncio.wait_for(stop, 1)  # the process ends
-                await task
+                self.assertFalse(await w.check())  # the process ends
+                self.assertTrue(stop.done())
+                self.write(f, server={"port": 9998})
+                stop2 = asyncio.get_running_loop().create_future()
+                stop2.set_result(None)  # already stopping (a signal): a second stop is no error
+                w2 = s.ConfigWatcher(f, cli, FakeModels(), st, dict(current), stop2, follow=False)
+                self.write(f, server={"port": 9997})
+                self.assertFalse(await w2.check())
         finally:
-            metrics.METRICS = saved
+            metrics.configure(saved)
+
+    async def test_a_change_made_while_the_first_model_loads_is_not_lost(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            self.write(f)
+            cli = self.cli()
+            current = s.resolve(cli, {})
+            st = s.recording_settings(current)
+
+            class SlowModels:
+                recording = asyncio.Lock()
+                entries = {}
+
+                async def activate(self, name):
+                    await asyncio.sleep(0)
+                    self_test.write(f, server={"pieceSeconds": 26})  # while the model loads
+
+            self_test = self
+            w = s.ConfigWatcher(f, cli, SlowModels(), st, current, asyncio.get_running_loop().create_future())
+            await w.follow_selection()
+            await w.check()
+            self.assertEqual(st.piece_seconds, 26.0)
 
 
 class SelectionTest(unittest.IsolatedAsyncioTestCase):
@@ -108,22 +143,51 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             choose = lambda model: json.dump({"version": 3, "model": model}, open(f, "w"))
-            models = llama.Models({"e4b": {"llamaServer": "http://127.0.0.1:8093", "launchd": "x.e4b"},
-                               "llama": {"llamaServer": "http://127.0.0.1:8092", "launchd": "x.llama"}}, make=StubModel)
-            chosen = [object()]
+            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
+                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            w = s.ConfigWatcher(f, self.cli(), models, s.recording_settings(s.resolve(self.cli(), {})), {}, None)
             choose("e4b")
-            await s.follow_selection(models, f, chosen)
-            self.assertEqual(agents.calls, [("stop", "x.llama"), ("start", "x.e4b")])
-            choose("llama")
-            await s.follow_selection(models, f, chosen)
-            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("start", "x.llama")])
-            choose("anthropic")  # Anthropic: no model in memory
-            await s.follow_selection(models, f, chosen)
-            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("stop", "x.llama")])
+            await w.follow_selection()
+            self.assertEqual(agents.calls, [("stop", "x.big"), ("start", "x.e4b")])
+            choose("big")
+            await w.follow_selection()
+            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("start", "x.big")])
+            choose("none of them")  # a name not in the registry: no model in memory
+            await w.follow_selection()
+            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("stop", "x.big")])
             models.manage = False  # a test server never starts or stops the agents
             n = len(agents.calls)
-            await models.get("llama")
+            await models.get("big")
             self.assertEqual(len(agents.calls), n)
+
+    def cli(self):
+        return types.SimpleNamespace(**{x.name: None for x in s.SETTINGS if x.flag})
+
+
+class LaunchdTest(unittest.TestCase):
+    def test_a_refused_bootstrap_is_an_error_and_bootout_waits_until_the_agent_is_gone(self):
+        state = {"loaded": True, "prints": 0}
+
+        def fake(*args):
+            if args[0] == "print":
+                state["prints"] += 1
+                return (0 if state["loaded"] else 113), ""
+            if args[0] == "bootout":
+                return 0, ""  # returns at once; the agent goes a moment later
+            return 5, "Bootstrap failed: 5: Input/output error"
+
+        saved = llama.launchd
+        llama.launchd = fake
+        try:
+            import threading
+            threading.Timer(0.3, lambda: state.update(loaded=False)).start()
+            llama.stop_agent("x.a")
+            self.assertFalse(state["loaded"])
+            self.assertGreater(state["prints"], 2)  # it waited
+            with self.assertRaisesRegex(RuntimeError, "bootstrap x.b: exit 5"):
+                llama.start_agent("x.b")
+        finally:
+            llama.launchd = saved
 
 
 class MigrateTest(unittest.TestCase):
