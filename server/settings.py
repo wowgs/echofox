@@ -12,11 +12,11 @@ log = logging.getLogger("gemma_voice")
 
 
 # The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 2, shared with the menus:
-#   {"version": 2, "model": "<name>" | "anthropic",
+#   {"version": 2, "model": "<name>" | "anthropic", "language": "ru",
 #    "models": {"<name>": {"llamaServer": "http://127.0.0.1:8092", "launchd": "<label>", "prompt": "…", "options": {…}}},
 #    "silenceStopSeconds": 60, "saveRecordings": true,
 #    "server": {"host": …, "port": …, "pieceSeconds": …, …}}
-# models: the registry; each a llama.cpp llama-server, started and stopped through its launchd agent. Only the model
+# language: the clients' dictation language; the server does not read it. models: the registry; each a llama.cpp llama-server, started and stopped through its launchd agent. Only the model
 # chosen in the menus ("model") is in memory; Anthropic chosen: none. The server's settings: built-in defaults, then
 # the file, then the command line, which wins (the test server keeps its own port, log and metrics). The server
 # watches the file:

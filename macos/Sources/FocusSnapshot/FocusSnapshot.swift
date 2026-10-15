@@ -18,10 +18,24 @@ public enum FocusSnapshot {
     static let maxProcesses = 40
     public static var electronWaitSeconds = 3.0
 
+    /// A snapshot and the element it was taken of: the element with the keyboard focus, where the text goes later.
+    public struct Capture {
+        public let snapshot: [String: Any]
+        public let focused: AXUIElement?
+        public let pid: pid_t?
+    }
+
     /// The snapshot of the frontmost app, as a JSON-ready dictionary.
     public static func take(enableElectron: Bool = true) -> [String: Any] {
+        capture(enableElectron: enableElectron).snapshot
+    }
+
+    /// The snapshot of the frontmost app, with its focused element and pid.
+    public static func capture(enableElectron: Bool = true) -> Capture {
         let started = Date()
-        guard let front = NSWorkspace.shared.frontmostApplication else { return ["error": "no frontmost app"] }
+        guard let front = NSWorkspace.shared.frontmostApplication else {
+            return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
+        }
         let pid = front.processIdentifier
         let app = AXUIElementCreateApplication(pid)
         var out: [String: Any] = ["app": ["bundleId": front.bundleIdentifier ?? "", "pid": Int(pid),
@@ -57,7 +71,7 @@ public enum FocusSnapshot {
         }
         out["processes"] = descendants(of: pid)
         out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
-        return out
+        return Capture(snapshot: out, focused: focused, pid: pid)
     }
 
     /// Asks an Electron app to build its accessibility tree now (AXManualAccessibility), so that a snapshot taken
@@ -72,12 +86,12 @@ public enum FocusSnapshot {
 
     // MARK: Accessibility
 
-    static func value(_ e: AXUIElement, _ name: String) -> AnyObject? {
+    public static func value(_ e: AXUIElement, _ name: String) -> AnyObject? {
         var v: AnyObject?
         return AXUIElementCopyAttributeValue(e, name as CFString, &v) == .success ? v : nil
     }
 
-    static func element(_ e: AXUIElement, _ name: String) -> AXUIElement? {
+    public static func element(_ e: AXUIElement, _ name: String) -> AXUIElement? {
         guard let v = value(e, name), CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
         return (v as! AXUIElement)
     }

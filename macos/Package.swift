@@ -7,9 +7,11 @@ let package = Package(
     products: [
         .library(name: "FocusSnapshot", targets: ["FocusSnapshot"]),
         .executable(name: "lv-snapshot", targets: ["lv-snapshot"]),
+        .executable(name: "LocalVoice", targets: ["LocalVoice"]),
     ],
     targets: [
         .target(name: "FocusSnapshot"),
         .executableTarget(name: "lv-snapshot", dependencies: ["FocusSnapshot"]),
+        .executableTarget(name: "LocalVoice", dependencies: ["FocusSnapshot"]),
     ]
 )

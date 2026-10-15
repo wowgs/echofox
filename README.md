@@ -54,6 +54,7 @@ server/.venv/bin/python -m unittest discover -s server
 {
   "version": 2,
   "model": "Gemma E4B llama.cpp",
+  "language": "ru",
   "models": {
     "Gemma E4B llama.cpp": {"llamaServer": "http://127.0.0.1:8092", "launchd": "local-voice.llama-server",
                             "prompt": "Transcribe … in {LANGUAGE} …", "options": {"chatHistoryTokenBudget": 2000}}
@@ -66,6 +67,7 @@ server/.venv/bin/python -m unittest discover -s server
 
 - `model`: the chosen model, a name in `models`; `anthropic` or no name: none (then no model is in memory).
 - `models`: the registry. Each model is a llama.cpp `llama-server` (`llamaServer`) with its launchd agent (`launchd`), the prompt the server gives the model (`prompt`; `{LANGUAGE}` becomes the dictation language; without it, Google's ASR prompt for Gemma 4) and the server's options for its recordings (`options`): `temperature`, `topK`, `topP`, `seed`, `maxOutputTokens`, the cutting of the recording: `pieceSeconds`, `cutSearchSeconds`, `thresholdDb`, `speechAboveNoiseDb`, and the chat history: `chatHistoryTokenBudget`, `chatTermsTokenBudget` (see below). The server refuses an unknown option. A model is added or removed here, with its `llama-server` (`server/llama_launchd.sh`).
+- `language`: the dictation language, a code such as `ru` or `en`; the client sends it in the start message. Without it, the menu bar app takes the first language of macOS. An empty value: the speech's own language.
 - `silenceStopSeconds`: a client stops a recording after this long without speech that the server hears; 0 turns the stop off.
 - `saveRecordings`: keep every recording (see below); on unless `false`.
 - `server`: the dictation server's settings (see the server's section).
@@ -95,6 +97,23 @@ To check by hand which conversation a dictation would get, without audio: build 
 swift build -c release --package-path macos
 macos/.build/release/lv-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
+
+## The menu bar app
+
+`macos/` holds the menu bar app, Local Voice. A tap of the right Option starts a dictation, and the next tap stops it. The app takes the focus snapshot at the tap, records the microphone, and sends both to the dictation server. When the text comes back, the app puts it into the input box that had the focus at the tap.
+
+The app inserts the text through Accessibility first: it replaces the selected text of that input box. If the app refuses that, or the text does not appear, and the same input box still has the focus, the app pastes the text with Cmd+V and then restores the clipboard. Otherwise the text is not inserted, and the menu has it to copy.
+
+The menu shows the state, the last text and the last error, and lets you choose the model (it writes `model` in the config file). The app stops a recording by itself after `silenceStopSeconds` without speech, and waits up to 180 seconds for the text after the stop. Its log is `~/Library/Logs/local-voice/app.log`. The log has the length of each text, never the text.
+
+Build it and start it:
+
+```
+macos/build-app.sh
+open macos/build/LocalVoice.app
+```
+
+At the first start, macOS asks for two permissions: Microphone, and Accessibility (System Settings, Privacy & Security). The app needs Accessibility for the hotkey, the snapshot and the insertion. The build is signed ad hoc, so the signature changes with each build, and macOS may ask for the permissions again after a rebuild.
 
 ## The recordings
 
