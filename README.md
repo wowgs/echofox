@@ -4,6 +4,8 @@ Local dictation on a Mac: speech to text by Gemma 4 E4B in llama.cpp, on this Ma
 
 ## The dictation server
 
+The server's code, in `server/`: `gemma_voice.py` starts it; `protocol.py` is one client connection; `audio.py` the levels, the cutting and WAV; `dictation.py` the prompt, the options, the text before the audio and each piece's request; `llama.py` the models in `llama-server` and their launchd agents; `settings.py` the config file; `context.py` the chat context; `recordings.py` the recordings; `metrics.py` writes the metrics and, run as a script, sums them up.
+
 `server/gemma_voice.py` is the dictation server. It sends the audio to Gemma 4 E4B in llama.cpp's `llama-server` on this Mac, so the audio does not leave the computer.
 
 Set it up once:

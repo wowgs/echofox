@@ -1,4 +1,7 @@
-"""A summary of the dictation server's metrics (gemma_voice.py writes them, one JSON object per line).
+"""The dictation server's metrics: written here (metric()), one JSON object per line, and summarised by this file run
+as a script. "event" is "prepare" (the text before the audio), "piece" (one model request: tokens, speeds, times,
+llama-server's memory), "cancelled", "audio" (a recording's levels) or "recording" (one connection: the model, the
+client, the audio, the stop reason, the wait after the stop).
 
 Usage: server/.venv/bin/python server/metrics.py [--since 2026-10-14T05:00] [--last N] [file]
 Prints, per model: requests, audio, wall time per second of audio, prefill and decode tokens and speeds, time to
@@ -6,8 +9,24 @@ the first token, the wait after the stop, and llama-server's memory. Then the la
 """
 import argparse
 import json
+import logging
 import os
 import statistics
+import time
+
+# Where metric() writes; the server sets it from its settings.
+METRICS = os.path.expanduser("~/Library/Logs/local-voice/gemma-voice-metrics.jsonl")
+log = logging.getLogger("gemma_voice")
+
+
+def metric(event, **fields):
+    try:
+        os.makedirs(os.path.dirname(METRICS), exist_ok=True)
+        with open(METRICS, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "event": event, **fields},
+                               ensure_ascii=False) + "\n")
+    except OSError:
+        log.exception("cannot write the metrics")  # metrics never stop a transcription
 
 
 def med(xs):
@@ -17,7 +36,7 @@ def med(xs):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("file", nargs="?", default=os.path.expanduser("~/Library/Logs/local-voice/gemma-voice-metrics.jsonl"))
+    p.add_argument("file", nargs="?", default=METRICS)
     p.add_argument("--since", default="", help="only lines at or after this time, as in the file (2026-10-14T05:00)")
     p.add_argument("--last", type=int, default=10, help="how many recent pieces to list (default 10)")
     a = p.parse_args()
