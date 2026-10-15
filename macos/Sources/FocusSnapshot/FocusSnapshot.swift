@@ -4,7 +4,9 @@
 //
 // Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps (Claude Desktop,
 // VS Code) build their accessibility tree only on request: without AXManualAccessibility set, Claude Desktop showed
-// only its window (measured 2026-10-15). take() sets it when the focused element is missing, and leaves it set.
+// only its window (measured 2026-10-15). After it is set, the focused element appeared 2.1 s later (2087–2104 ms, three
+// runs, Claude Desktop 2.37337.1). take() sets it when the focused element is missing, waits up to
+// electronWaitSeconds, and leaves it set; prepare(pid:) sets it ahead, so that a later take() need not wait.
 import AppKit
 import ApplicationServices
 import Darwin
@@ -14,6 +16,7 @@ public enum FocusSnapshot {
     static let maxAncestors = 80
     static let maxDomClasses = 12
     static let maxProcesses = 40
+    public static var electronWaitSeconds = 3.0
 
     /// The snapshot of the frontmost app, as a JSON-ready dictionary.
     public static func take(enableElectron: Bool = true) -> [String: Any] {
@@ -28,7 +31,7 @@ public enum FocusSnapshot {
         if focused == nil, enableElectron, hasAttribute(app, "AXManualAccessibility") {
             AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
             out["electronTreeEnabled"] = true
-            for _ in 0..<10 where focused == nil {
+            for _ in 0..<Int(electronWaitSeconds * 20) where focused == nil {
                 usleep(50_000)
                 focused = element(app, "AXFocusedUIElement")
             }
@@ -55,6 +58,16 @@ public enum FocusSnapshot {
         out["processes"] = descendants(of: pid)
         out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
         return out
+    }
+
+    /// Asks an Electron app to build its accessibility tree now (AXManualAccessibility), so that a snapshot taken
+    /// later need not wait for it. Returns whether the app has the attribute.
+    @discardableResult
+    public static func prepare(pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        guard hasAttribute(app, "AXManualAccessibility") else { return false }
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        return true
     }
 
     // MARK: Accessibility
