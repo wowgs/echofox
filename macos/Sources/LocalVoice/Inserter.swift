@@ -121,11 +121,14 @@ enum Inserter {
     /// since macOS 10.9, still in the SDK). The result if the text went in.
     static func axPaste(_ text: String, into box: AXUIElement, pid: pid_t) -> Result? {
         guard let before = length(box) else { return nil }
+        typealias PostKey = @convention(c) (AXUIElement, CGCharCode, CGKeyCode, DarwinBoolean) -> AXError
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "AXUIElementPostKeyboardEvent") else { return nil }
+        let post = unsafeBitCast(sym, to: PostKey.self)  // unavailable in Swift since it is deprecated (RTLD_DEFAULT = -2)
         let app = AXUIElementCreateApplication(pid)
         var ok = true
         withText(text) {
             for (key, down) in [(CGKeyCode(55), true), (9, true), (9, false), (55, false)] {  // Command, V
-                ok = ok && AXUIElementPostKeyboardEvent(app, 0, key, down) == .success
+                ok = ok && post(app, 0, key, DarwinBoolean(down)) == .success
             }
         }
         return ok && grew(box, from: before, within: 1) ? .axKeysInBackground : nil
