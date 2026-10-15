@@ -2,13 +2,14 @@
 app; server/try_wav.py).
 
 Clients are thin: they send the audio and show the text. The server has the rest: the model registry with each
-model's prompt and options, the chat context, and the recordings. The protocol, on one WebSocket:
+model's prompt and options, the adapters that give the chat context, and the recordings. The protocol, on one WebSocket:
   client → server  {"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le",
-                   "client":"<name>","sessions":["<session id>",…] or "app":"<bundle id>"}, then binary audio (16-bit
+                   "client":"<name>","snapshot":{…},"sessions":["<session id>",…]}, then binary audio (16-bit
                    little-endian PCM, 16 kHz, mono), then {"type":"stop","reason":"user"|"silence"|"max_duration"}.
-                   "sessions": the Claude Code sessions the text may go into, if the client knows them; "app": the app
-                   with the input box, when the client knows no session (context.py). An experiment may also send
-                   "prompt" and "options", which override the model's.
+                   "snapshot": the focus at the start of the dictation (adapters/__init__.py has its fields); the
+                   adapter that claims it gives the context. "sessions": Claude Code sessions, if the client knows
+                   them. Clients from before snapshots send "app": a bundle id. An experiment may also send "prompt"
+                   and "options", which override the model's.
   server → client  {"type":"speech"} while it hears speech; {"type":"text","text":…} for each finished piece,
                    in order; {"type":"error","message":…}; {"type":"done"} after the last piece, then it closes
 

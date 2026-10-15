@@ -9,7 +9,7 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-import context
+from adapters import claude_code, claude_desktop
 import metrics
 import protocol
 import recordings
@@ -89,25 +89,31 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("gemma-e4b, gemma-12b", got[0]["message"])
         self.assertEqual(self.loaded, [])
 
-    async def test_the_chat_context_comes_from_the_sessions_transcript(self):
+    async def test_the_chat_context_comes_from_the_adapter_that_claims_the_snapshot(self):
         with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "p"))
-            reply = {"type": "assistant", "entrypoint": "claude-vscode",
+            os.makedirs(os.path.join(d, "projects", "p"))
+            os.makedirs(os.path.join(d, "store", "o", "a"))
+            reply = {"type": "assistant", "entrypoint": "claude-desktop",
                      "message": {"id": "m1", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Готово."}]}}
-            with open(os.path.join(d, "p", "s1.jsonl"), "w") as f:
+            with open(os.path.join(d, "projects", "p", "s1.jsonl"), "w") as f:
                 f.write(json.dumps(reply) + "\n")
-            saved = context.PROJECTS
-            context.PROJECTS = d
+            with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
+                json.dump({"cliSessionId": "s1"}, f)
+            saved = claude_code.PROJECTS, claude_desktop.STORE
+            claude_code.PROJECTS, claude_desktop.STORE = os.path.join(d, "projects"), os.path.join(d, "store")
+            snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
+                        "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             try:
-                stub, got = await self.run_stream({"type": "start", "language": "ru", "sessions": ["s1"]}, LOUD)
-                stub2, got = await self.run_stream({"type": "start", "language": "ru",
-                                                    "app": "com.microsoft.VSCode"}, LOUD)
+                stub, got = await self.run_stream({"type": "start", "language": "ru", "snapshot": snapshot}, LOUD)
+                stub2, got = await self.run_stream({"type": "start", "language": "ru", "sessions": ["s1"]}, LOUD)
             finally:
-                context.PROJECTS = saved
+                claude_code.PROJECTS, claude_desktop.STORE = saved
         self.assertEqual(stub.contexts[0]["messages"], [{"role": "assistant", "text": "Готово."}])
-        self.assertEqual(stub2.contexts[0]["session"], "s1")  # the app's newest session
+        self.assertEqual(stub2.contexts[0]["session"], "s1")
         a = json.load(open(os.path.join(stub.save_dir, "adapter.json")))
-        self.assertEqual(a["session"], {"id": "s1", "file": os.path.join(d, "p", "s1.jsonl")})
+        self.assertEqual(a["session"], {"id": "s1", "file": os.path.join(d, "projects", "p", "s1.jsonl")})
+        self.assertEqual((a["chat"]["adapter"], a["chat"]["how"], a["chat"]["desktopSession"]),
+                         ("claude-desktop", "desktop store", "local_abc"))
 
     async def test_a_recording_writes_its_metrics(self):
         saved = metrics.METRICS

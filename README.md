@@ -4,7 +4,7 @@ Local dictation on a Mac: speech to text by Gemma 4 E4B in llama.cpp, on this Ma
 
 ## The dictation server
 
-The server's code, in `server/`: `gemma_voice.py` starts it; `protocol.py` is one client connection; `audio.py` the levels, the cutting and WAV; `dictation.py` the prompt, the options, the text before the audio and each piece's request; `llama.py` the models in `llama-server` and their launchd agents; `settings.py` the config file; `context.py` the chat context; `recordings.py` the recordings; `metrics.py` writes the metrics and, run as a script, sums them up.
+The server's code, in `server/`: `gemma_voice.py` starts it; `protocol.py` is one client connection; `audio.py` the levels, the cutting and WAV; `dictation.py` the prompt, the options, the text before the audio and each piece's request; `llama.py` the models in `llama-server` and their launchd agents; `settings.py` the config file; `adapters/` the adapters that find the chat context; `recordings.py` the recordings; `metrics.py` writes the metrics and, run as a script, sums them up.
 
 `server/gemma_voice.py` is the dictation server. It sends the audio to Gemma 4 E4B in llama.cpp's `llama-server` on this Mac, so the audio does not leave the computer.
 
@@ -76,11 +76,23 @@ The server reads this file at each recording, so a change by hand also takes eff
 
 ## The chat context
 
-Unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts Claude's final replies in the Claude Code session that the dictation goes into before the prompt, so the model knows the names and terms of the conversation (`server/context.py`). Only the last text of each finished turn (`stop_reason` `end_turn`) goes there: not your own messages (the model copied your previous dictation into the next transcription), and not Claude's texts between tool calls. Tool calls and their results, thinking, attachments, skill texts, subagents, and tags such as `<system-reminder>` are left out.
+Unless a model's `options` set `chatHistoryTokenBudget` to 0, the server puts Claude's final replies in the conversation that the dictation goes into before the prompt, so the model knows the names and terms of the conversation. Adapters find that conversation, one adapter per target app (`server/adapters/`).
 
-The session: a client that knows it names its session ids, and the server reads the newest transcript `~/.claude/projects/<project>/<session id>.jsonl` among them. A client that knows only the app with the input box names the app's bundle id, and the server reads the newest transcript whose last line came from that app; that is a guess, because the newest session of the app need not be the one on the screen.
+The client sends a focus snapshot in the start message: the frontmost app, its window, the element with the cursor and its ancestors, the nearest web area's URL and title, and the app's child processes with their working folders. It holds service fields only, never the text of input fields. `macos/` builds it (the `FocusSnapshot` library). The server asks every adapter whether the snapshot is its own and how sure it is, and the surest one finds the conversation. If none claims it, the dictation runs without context.
+
+- `claude-desktop`: Claude Desktop's Code tab. Its web area has the URL `https://claude.ai/epitaxy/local_<id>`. Desktop's record of that session (`~/Library/Application Support/Claude/claude-code-sessions/…/local_<id>.json`) names the Claude Code transcript (`cliSessionId`). Without a record, the web area's title finds the transcript of that title; without the Code tab, the newest session that Desktop wrote is read. The record's format is Desktop's own and not documented.
+- `claude-code`: a client that names its Claude Code sessions (the newest of them is read), or an app that may host Claude Code (VS Code, a terminal; then its newest session is read, a guess).
+
+From a transcript, only the last text of each finished turn (`stop_reason` `end_turn`) goes there: not your own messages (the model copied your previous dictation into the next transcription), and not Claude's texts between tool calls. Tool calls and their results, thinking, attachments, skill texts, subagents, and tags such as `<system-reminder>` are left out.
 
 The server keeps the newest replies that fit `chatHistoryTokenBudget` (Gemma tokens, default 1000) and their Latin-script terms, the most frequent first, that fit `chatTermsTokenBudget` (default: a tenth of `chatHistoryTokenBudget`), oldest reply first.
+
+To check by hand which conversation a dictation would get, without audio: build the snapshot tool once, then run it and put the cursor in an input box within 5 seconds. The process that runs it needs the Accessibility permission.
+
+```
+swift build -c release --package-path macos
+macos/.build/release/lv-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
+```
 
 ## The recordings
 
@@ -96,6 +108,6 @@ Speech takes about 115 MB per hour. `"saveRecordings": false` turns this off.
 
 A client speaks this protocol with `server/gemma_voice.py`, on one WebSocket, `ws://127.0.0.1:8090`:
 
-- It sends `{"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le","client":"<name>","sessions":["<session id>",…]}`; a client that knows no session sends `"app":"<bundle id>"` instead. Without `model`, the server takes the registry's first model. An experiment may also send `prompt` and `options`, which override the model's.
+- It sends `{"type":"start","model":"<name>","language":"ru","sampleRate":16000,"encoding":"pcm_s16le","client":"<name>","snapshot":{…},"sessions":["<session id>",…]}`. `snapshot` is the focus snapshot (see the chat context); `sessions` are Claude Code sessions, if the client knows them. Clients from before snapshots send `"app":"<bundle id>"`. Without `model`, the server takes the registry's first model. An experiment may also send `prompt` and `options`, which override the model's.
 - Then it sends binary messages of audio: 16-bit little-endian PCM, 16 kHz, mono. When the recording stops, it sends `{"type":"stop","reason":"user"}` (or `silence`, `max_duration`, `error`).
 - The server sends `{"type":"speech"}` while it hears speech, `{"type":"text","text":"…"}` for each finished piece of text, in order, and `{"type":"error","message":"…"}` for errors. After the last piece it sends `{"type":"done"}` and closes the connection.

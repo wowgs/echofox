@@ -7,7 +7,7 @@ import os
 import time
 import urllib.parse
 
-import context
+import adapters
 import metrics
 import recordings
 from audio import RATE, Levels, split
@@ -72,7 +72,7 @@ async def handle(ws, models, args):
     text_prompt = prompt(language, own.strip()[:MAX_PROMPT])
     client = str(start.get("client") or "")[:40]
     sessions = [s for s in start.get("sessions") or [] if isinstance(s, str)][:50]
-    app = start.get("app") if isinstance(start.get("app"), str) else None
+    snapshot = adapters.snapshot_of(start)
     log.info("recording: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s", name,
              client or "unknown", language, LANGUAGES.get(language.split("-")[0], "no name"),
              "own" if own.strip() else "default", text_prompt[:120], options or "none", sampler_of(options))
@@ -113,12 +113,16 @@ async def handle(ws, models, args):
                     text_prompt, options, meta, save_dir, limits=(args.output_tokens_per_second, args.output_tokens_base))
                 chat = None
                 if options.get("chat_history_token_budget", CHAT_HISTORY_TOKEN_BUDGET) > 0:
-                    chat = await asyncio.to_thread(context.chat_context, sessions, app)
-                    if chat:
-                        chat_info.update(session=chat["session"], file=chat["file"], messages=len(chat["messages"]),
-                                         terms=len(chat["terms"]))
-                    log.info("recording %s: chat context %s", recording,
-                             f"from {chat['file']}, {len(chat['messages'])} replies" if chat else "none")
+                    found = await asyncio.to_thread(adapters.context, snapshot, sessions)
+                    if found:
+                        chat_info.update({k: found[k] for k in ("adapter", "confidence", "reason", "how", "session",
+                                                                "file", "title", "desktopSession") if found.get(k)})
+                    if found and "messages" in found:
+                        chat = found
+                        chat_info.update(messages=len(found["messages"]), terms=len(found["terms"]))
+                    log.info("recording %s: adapter %s (%s), context %s", recording,
+                             found["adapter"] if found else "none", found["reason"] if found else "no adapter claims it",
+                             f"{found['how']}: {found['file']}, {len(found['messages'])} replies" if chat else "none")
                 await dictation.prepare(chat)
             except Exception as e:
                 log.exception("preparing the recording failed")
@@ -180,6 +184,7 @@ async def handle(ws, models, args):
         await send(type="done")
         metrics.metric("recording", model=name, client=client, recording=recording, language=language, prompt=meta["prompt"],
                options=options, audio_seconds=round(audio_bytes / 2 / RATE, 2), stop_reason=stop_reason,
+               adapter=chat_info.get("adapter"), context_how=chat_info.get("how"),
                done_after_stop_seconds=round(time.monotonic() - stopped, 3) if stopped else None)
         await ws.close()
     finally:
@@ -194,7 +199,8 @@ async def handle(ws, models, args):
                 rec.finish({"model": name, "language": language, "client": client,
                             "stopReason": stop_reason or "connection closed", "error": "; ".join(errors) or None,
                             "chat": chat_info or None, "pieces": texts, "text": " ".join(texts),
-                            "session": {"id": chat_info["session"], "file": chat_info["file"]} if chat_info else None,
+                            "session": {"id": chat_info["session"], "file": chat_info["file"]}
+                            if chat_info.get("file") else None,
                             "input": mic_info})
             except OSError:
                 log.exception("cannot finish the recording folder %s", rec.dir)
