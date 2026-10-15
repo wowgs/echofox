@@ -17,7 +17,7 @@
 ## macOS (факт, по документации Apple)
 
 - Запись с микрофона и вставка текста в чужие приложения требуют согласия пользователя: разрешения «Микрофон» и «Универсальный доступ».
-- Положение текстового курсора и вставку даёт Accessibility (`kAXFocusedUIElementAttribute`, `kAXSelectedTextAttribute`, `kAXBoundsForRangeParameterizedAttribute`). Отдают ли их поля в приложениях на Electron и в веб-страницах, не проверено.
+- Элемент с курсором и вставку даёт Accessibility (`kAXFocusedUIElementAttribute`, `kAXSelectedTextAttribute`). Приложения на Electron отдают дерево только после `AXManualAccessibility = true` (замер на Claude Desktop, 15 октября). Позицию текстового курсора (`AXBoundsForRange`) ни Claude Desktop, ни Telegram, ни Ghostty в замере не отдали (вкладка 4).
 
 ## Целевые приложения (факт)
 
