@@ -4,7 +4,9 @@ the dictation goes into.
 The core (protocol.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
 and how sure it is (claim), and gives the recording to the surest one; if none claims it, the dictation runs without
-context. Only that adapter finds the session and builds its context.
+context. Only that adapter finds the session and builds its context. Every adapter has clean(text): the core passes
+each message of the context through it before the message goes to the model, and takes the terms from the cleaned
+messages. clean makes the app's text plain prose (adapters/markdown.py has why).
 
 SNAPSHOT, as the client sends it (only service fields, never the text of input fields):
   {"app": {"bundleId", "pid", "name"},
@@ -15,6 +17,7 @@ SNAPSHOT, as the client sends it (only service fields, never the text of input f
    "processes": [{"pid", "name", "cwd"}, ...]  (the app's child processes)}
 Any part may be missing.
 """
+import abc
 import re
 from dataclasses import dataclass
 
@@ -32,6 +35,23 @@ class Claim:
     adapter: str
     confidence: float
     reason: str
+
+
+class Adapter(abc.ABC):
+    """An adapter: `name`, claim, context, clean. An adapter without one of them cannot be made."""
+    name = ""
+
+    @abc.abstractmethod
+    def claim(self, snapshot, sessions):
+        """Claim, or None if the snapshot is not this adapter's."""
+
+    @abc.abstractmethod
+    def context(self, snapshot, sessions):
+        """{"session", "file", "how", "title", "messages": [{"role", "text"}] newest first}, or None."""
+
+    @abc.abstractmethod
+    def clean(self, text):
+        """A message's text as plain prose for the model: no markup of the app; "" drops the message."""
 
 
 def terms(texts):
@@ -78,11 +98,14 @@ def claims(snapshot, sessions=()):
 
 def context(snapshot, sessions=()):
     """The context of the conversation the dictation goes into: {"adapter", "confidence", "reason", "session", "file",
-    "how", "title", "messages": newest first, "terms"}, or with no "messages" if the surest adapter found no
+    "how", "title", "messages": newest first and cleaned, "terms": from the cleaned messages}, or with no "messages" if the surest adapter found no
     conversation, or None if no adapter claims the snapshot."""
     ranked = claims(snapshot, sessions)
     if not ranked:
         return None
     a, c = ranked[0]
-    found = a.context(snapshot, sessions) or {}
+    found = dict(a.context(snapshot, sessions) or {})
+    if "messages" in found:
+        found["messages"] = [{**m, "text": t} for m in found["messages"] if (t := a.clean(m["text"]))]
+        found["terms"] = terms(m["text"] for m in reversed(found["messages"]))
     return {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason, **found}

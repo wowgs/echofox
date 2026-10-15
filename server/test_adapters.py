@@ -7,7 +7,7 @@ import time
 import unittest
 
 import adapters
-from adapters import claude_code, claude_desktop
+from adapters import claude_code, claude_desktop, markdown  # noqa: F401
 
 DESKTOP = "com.anthropic.claudefordesktop"
 
@@ -68,7 +68,7 @@ class ClaudeCodeTest(Fixture):
         c = adapters.context({}, ["old", "new", "../x"])
         self.assertEqual((c["adapter"], c["session"], c["how"], c["title"]), ("claude-code", "new", "named sessions", "Тесты"))
         self.assertEqual(c["messages"], [{"role": "assistant", "text": "Запушил в master."},
-                                         {"role": "assistant", "text": "Тесты прошли: npm test, 38 из 38.\n\nКоммит в master готов."}])
+                                         {"role": "assistant", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
         self.assertEqual(c["terms"], ["master", "test", "npm"])
         self.assertNotIn("messages", adapters.context({}, ["none"]))  # claimed, but no such transcript
 
@@ -81,6 +81,41 @@ class ClaudeCodeTest(Fixture):
     def test_terms_are_latin_script_words_the_most_frequent_first_without_common_english_words(self):
         self.assertEqual(adapters.terms(["the GitHub Actions and GitHub", "use node.js, CI/CD and /Users/x/y/z.js"]),
                          ["GitHub", "CI/CD", "node.js", "Actions"])
+
+
+class CleanTest(Fixture):
+    def test_markdown_becomes_plain_prose(self):
+        md = ("## Пропала пунктуация\n\n"
+              "**Настройки перенесены.** Промпт совпадает, `options` те же: [README](README.md:12), https://x.y/z.\n"
+              "Вторая строка абзаца.\n\n"
+              "- **Окно.** Без рамки, `NSPanel`\n"
+              "- второй пункт;\n"
+              "1. третий\n\n"
+              "| Контекст | Знаки |\n|---|---|\n| без контекста | 5 из 5 |\n\n"
+              "```bash\nopen ~/x.app\n```\n"
+              "> цитата _важная_ и snake_case_name\n\n---\n")
+        self.assertEqual(adapters.markdown.plain(md), "\n".join([
+            "Пропала пунктуация.",
+            "Настройки перенесены. Промпт совпадает, options те же: README. Вторая строка абзаца.",
+            "Окно. Без рамки, NSPanel.", "второй пункт;", "третий.",
+            "Контекст, Знаки.", "без контекста, 5 из 5.",
+            "цитата важная и snake_case_name"]))
+
+    def test_every_adapter_cleans_and_the_terms_come_from_clean_text(self):
+        self.put("a", "s", [reply("m1", "Смотри `FocusSnapshot`:\n```\nlet secretVar = take()\n```"),
+                            reply("m2", "```\nonlyCode()\n```")])
+        c = adapters.context({}, ["s"])
+        self.assertEqual(c["messages"], [{"role": "assistant", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
+        self.assertEqual(c["terms"], ["FocusSnapshot"])
+        for a in adapters.ADAPTERS:
+            self.assertIsInstance(a, adapters.Adapter)
+
+    def test_an_adapter_without_clean_cannot_be_made(self):
+        class NoClean(adapters.Adapter):
+            def claim(self, snapshot, sessions): return None
+            def context(self, snapshot, sessions): return None
+        with self.assertRaises(TypeError):
+            NoClean()
 
 
 class ClaudeDesktopTest(Fixture):

@@ -10,14 +10,15 @@ Claude Code transcript (~/.claude/projects/<project>/<cliSessionId>.jsonl) and w
      several transcripts with that title: no context.
 The adapter claims only a snapshot whose focus is in the Code tab, and never guesses: without the Code tab's URL in
 the snapshot (no Accessibility permission, the Chat tab, another window) it does not claim it, and the dictation runs
-without context. The Chat tab (claude.ai conversations) has no local transcript; it is not read yet.
+without context. The Chat tab (claude.ai conversations) has no local transcript; it is not read yet. Replies are
+Markdown; clean makes them plain prose.
 """
 import glob
 import json
 import os
 import re
 
-from . import Claim, bundle, claude_code
+from . import Adapter, Claim, bundle, claude_code, markdown
 
 BUNDLE = "com.anthropic.claudefordesktop"
 STORE = os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS") or os.path.expanduser(
@@ -47,8 +48,12 @@ def record(desktop_id, root=None):
     return None
 
 
-class ClaudeDesktop:
+class ClaudeDesktop(Adapter):
     name = "claude-desktop"
+
+    def clean(self, text):
+        """The Code tab shows Claude's Markdown replies: plain prose for the model."""
+        return markdown.plain(text)
 
     def claim(self, snapshot, sessions):
         if bundle(snapshot) != BUNDLE:

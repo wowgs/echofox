@@ -87,6 +87,8 @@ The client sends a focus snapshot in the start message: the frontmost app, its w
 
 The adapters never guess a session from the app alone: the newest session of an app is often another one that runs in the background. If no session is found exactly, the dictation runs without context.
 
+Every adapter has its own `clean`: the server passes each message through it before the message goes to the model, and takes the terms from the cleaned messages. Both Claude adapters turn Claude's Markdown into plain prose (`server/adapters/markdown.py`): code blocks and URLs go, the words of `code`, links, bold and lists stay, and each heading, list item and table row becomes a sentence.
+
 From a transcript, only the last text of each finished turn (`stop_reason` `end_turn`) goes there: not your own messages (the model copied your previous dictation into the next transcription), and not Claude's texts between tool calls. Tool calls and their results, thinking, attachments, skill texts, subagents, and tags such as `<system-reminder>` are left out.
 
 The server keeps the newest replies that fit `chatHistoryTokenBudget` (Gemma tokens, default 1000) and their Latin-script terms, the most frequent first, that fit `chatTermsTokenBudget` (default: a tenth of `chatHistoryTokenBudget`), oldest reply first.
