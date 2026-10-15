@@ -1,15 +1,67 @@
 {
- "schema": 1,
+ "schema": 2,
  "name": "local-voice",
+ "files": "managed",
  "docs": {
-  "docs/dictation-terms": {
+  "dictation-terms": {
    "id": "NPqnqAUHX8Rr7DjYnsfqHW",
-   "name": "Dictation terms"
+   "name": "Dictation terms",
+   "dir": "docs/dictation-terms",
+   "tabs": [
+    {
+     "id": "f41da338-1157",
+     "file": "docs/dictation-terms/1-untitled.md"
+    }
+   ]
   },
-  "docs/design": "8341d27e-60e1-45f1-977b-492a36109cba",
-  "docs/adapters": {
+  "design": {
+   "id": "8341d27e-60e1-45f1-977b-492a36109cba",
+   "dir": "docs/design",
+   "tabs": [
+    {
+     "id": "6a21e207-be06",
+     "file": "docs/design/1-what-and-why.md"
+    },
+    {
+     "id": "0ece8689-4eb6",
+     "file": "docs/design/2-requirements.md"
+    },
+    {
+     "id": "0e69223b-6368",
+     "file": "docs/design/3-constraints.md"
+    },
+    {
+     "id": "cb7b6e1f-fc49",
+     "file": "docs/design/4-hld.md"
+    },
+    {
+     "id": "4400e365-5b09",
+     "file": "docs/design/5-future-ideas.md"
+    }
+   ]
+  },
+  "adapters": {
    "id": "cc42f860-9fff-4014-b278-6a578cd6856f",
-   "name": "Local Voice: optional adapters"
+   "name": "Local Voice: optional adapters",
+   "dir": "docs/adapters",
+   "tabs": [
+    {
+     "id": "18494bc8-eebb",
+     "file": "docs/adapters/1-idea.md"
+    },
+    {
+     "id": "32f3bb51-a3b1",
+     "file": "docs/adapters/2-modes.md"
+    },
+    {
+     "id": "3e0066f0-7415",
+     "file": "docs/adapters/3-plugins.md"
+    },
+    {
+     "id": "9bfc1f64-c322",
+     "file": "docs/adapters/4-refactor.md"
+    }
+   ]
   }
  }
 }

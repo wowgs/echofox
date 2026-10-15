@@ -4,8 +4,8 @@ Local Voice — приложение для macOS: диктовка локаль
 
 Связанные документы:
 
-- <?claude block terms?>: словарь терминов.
-- <?claude block adapters?>: рабочий документ — необязательные адаптеры и адаптеры-плагины; решения оттуда переедут сюда.
+- [Dictation terms](../dictation-terms/1-untitled.md "doc"): словарь терминов.
+- [Local Voice: optional adapters](../adapters/1-idea.md "doc"): рабочий документ — необязательные адаптеры и адаптеры-плагины; решения оттуда переедут сюда.
 
 ## Что
 

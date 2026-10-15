@@ -2,7 +2,7 @@
 
 Архитектура по слоям, без выбора технологий. Технологии — отдельным шагом. Ссылки FR и NFR — на вкладку 2.
 
-<?claude block dia?>
+![Local Voice · the app, the dictation server and its adapters, llama-server](../../.docsync/design/4-hld.widget-078560ea-89d9.png "claude block dia")
 
 ## Слои (предложение)
 
