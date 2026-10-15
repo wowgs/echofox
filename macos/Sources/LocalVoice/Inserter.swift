@@ -18,7 +18,7 @@ import FocusSnapshot
 enum Inserter {
     enum Result: String {
         case accessibility, accessibilityUnchecked, paste, pasteUnchecked, pasteInBackground, valueInBackground,
-             typedInBackground, pasteBroughtToFront, clipboard
+             typedInBackground, axKeysInBackground, pasteBroughtToFront, clipboard
     }
 
     static let inputRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"]
@@ -40,7 +40,9 @@ enum Inserter {
             tried.append("cmd+v\(front ? "" : " in the background"): \(otherBox ? "skipped, focus in another box" : "no")")
             if !front && !otherBox {
                 if let r = setValueIfEmpty(text, box) { return note(r) }
-                tried.append("value: \(length(box) == 0 ? "no" : "skipped, the box is not known to be empty")")
+                tried.append("value: \(isEmpty(box) ? "no" : "skipped, the box is not empty")")
+                if let r = axPaste(text, into: box, pid: pid) { return note(r) }
+                tried.append("accessibility keys: no")
                 if let r = type(text, into: box, pid: pid) { return note(r) }
                 tried.append("typing: no")
             }
@@ -98,13 +100,35 @@ enum Inserter {
 
     /// c. The box's whole value through Accessibility, only if the box is empty. The result if the text went in.
     static func setValueIfEmpty(_ text: String, _ box: AXUIElement) -> Result? {
-        guard length(box) == 0 else { return nil }
+        guard isEmpty(box) else { return nil }
         var settable: DarwinBoolean = false
         guard AXUIElementIsAttributeSettable(box, kAXValueAttribute as CFString, &settable) == .success,
               settable.boolValue,
               AXUIElementSetAttributeValue(box, kAXValueAttribute as CFString, text as CFString) == .success
         else { return nil }
-        return grew(box, from: 0) ? .valueInBackground : nil
+        return grew(box, from: 1) ? .valueInBackground : nil
+    }
+
+    /// An empty box: its text is only spaces and line ends (Claude Desktop's empty box has length 1). Read, not kept.
+    static func isEmpty(_ box: AXUIElement) -> Bool {
+        if let s = FocusSnapshot.value(box, "AXValue") as? String {
+            return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return length(box) == 0
+    }
+
+    /// c. Cmd+V as keyboard events through Accessibility to the box's app (AXUIElementPostKeyboardEvent, deprecated
+    /// since macOS 10.9, still in the SDK). The result if the text went in.
+    static func axPaste(_ text: String, into box: AXUIElement, pid: pid_t) -> Result? {
+        guard let before = length(box) else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        var ok = true
+        withText(text) {
+            for (key, down) in [(CGKeyCode(55), true), (9, true), (9, false), (55, false)] {  // Command, V
+                ok = ok && AXUIElementPostKeyboardEvent(app, 0, key, down) == .success
+            }
+        }
+        return ok && grew(box, from: before, within: 1) ? .axKeysInBackground : nil
     }
 
     /// c. The text as typed characters, sent to the box's app in the background. The result if the text went in.
