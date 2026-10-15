@@ -14,6 +14,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var waiting: [Dictation] = []
     private var lastText: String?
     private var lastError: String?
+    private var lastNote: String?
     private var trustTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -143,7 +144,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastText = text
             let (how, why) = Inserter.insert(text, into: d.capture)
             Log.write("text: \(text.count) characters, inserted: \(how.rawValue) (\(why))")
-            if how == .notInserted { lastError = "the text was not inserted (\(why)); copy it from this menu" }
+            lastNote = how == .clipboard ? "The text is in the clipboard: \(why)." : nil
         } else {
             Log.write("no text")
         }
@@ -201,6 +202,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             copy.target = self
             menu.addItem(copy)
         }
+        if let n = lastNote { menu.addItem(disabled(n)) }
         if let e = lastError {
             menu.addItem(disabled("Last error: " + (e.count > 100 ? String(e.prefix(100)) + "…" : e)))
         }

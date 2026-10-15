@@ -25,9 +25,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         recordings.input_info = self.saved
 
-    async def run_stream(self, start, audio, path="", entries=ENTRIES, stop=None):
+    async def run_stream(self, start, audio, path="", entries=ENTRIES, stop=None, model=StubModel):
         stubs = {}
-        models = stub_models(entries, make=lambda name, entry: stubs.setdefault(name, StubModel(name)))
+        models = stub_models(entries, make=lambda name, entry: stubs.setdefault(name, model(name)))
         async with serve(lambda ws: protocol.handle(ws, models, self.args), "127.0.0.1", 0, max_size=None) as server:
             port = server.sockets[0].getsockname()[1]
             got = []
@@ -51,6 +51,37 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m for m in got if m["type"] != "speech"],
                          [{"type": "text", "text": "gemma-e4b piece 1"}, {"type": "done"}])  # 3 s: one piece
         self.assertTrue(all(c[1].startswith("Transcribe the following speech segment in Russian") for c in stub.calls))
+
+    async def test_the_text_is_warmed_while_the_speaker_talks_and_pieces_run_at_once_in_order(self):
+        order = []
+
+        class Unordered(StubDictation):
+            async def piece(self, pcm, piece, slot=None):
+                order.append(("start", piece, slot))
+                await asyncio.sleep(0.3 if piece == 1 else 0.05)  # the first piece ends last
+                order.append(("end", piece))
+                return f"p{piece}"
+
+        class TwoSlots(StubModel):
+            def __init__(self, name):
+                super().__init__(name)
+                self.slots = 2
+
+            def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
+                return Unordered(self, text_prompt, options or {})
+
+        self.args.piece_seconds = 5  # 12 s: two pieces; the second slot is warmed once 5 s are heard
+        stub, got = await self.run_stream({"type": "start"}, (LOUD + QUIET) * 6, model=TwoSlots)
+        self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["p1", "p2"])
+        self.assertEqual(stub.warmed, [0, 1])
+        self.assertEqual(order[:2], [("start", 1, 0), ("start", 2, 1)])  # both at once, one per slot
+        self.assertEqual(order[2:], [("end", 2), ("end", 1)])
+
+    async def test_without_warm_text_nothing_is_warmed(self):
+        self.args.warm_text = False
+        stub, got = await self.run_stream({"type": "start"}, LOUD)
+        self.assertEqual(stub.warmed, [])
+        self.assertEqual(stub.calls and len(stub.calls), 1)
 
     async def test_each_recording_gets_a_folder_with_the_audio_and_adapter_json(self):
         stub, got = await self.run_stream({"type": "start", "model": "gemma-12b", "language": "ru", "client": "vscode"},
@@ -180,7 +211,7 @@ class OneRecordingAtATimeTest(unittest.IsolatedAsyncioTestCase):
             async def prepare(self, context=None):
                 events.append(("prepare", self.prompt))
 
-            async def piece(self, pcm, piece):
+            async def piece(self, pcm, piece, slot=None):
                 await asyncio.sleep(0.2)
                 return self.prompt
 

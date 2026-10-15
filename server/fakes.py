@@ -24,7 +24,7 @@ ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"ll
 
 def args(**over):
     """The recording settings protocol.handle() gets; recordings never go to the real ~/speech/recordings."""
-    return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20,
+    return types.SimpleNamespace(**{"threshold_db": -45, "speech_above_noise_db": 12, "piece_seconds": 20, "warm_text": True,
                                     "cut_search_seconds": 3, "output_tokens_per_second": 10, "output_tokens_base": 32,
                                     "recordings": tempfile.mkdtemp(prefix="gemma-voice-test-recordings-"),
                                     "save_recordings": True, **over})
@@ -41,7 +41,13 @@ class StubDictation:
     async def prepare(self, context=None):
         self.stub.contexts.append(context)
 
-    async def piece(self, pcm, piece):
+    def slots(self):
+        return self.stub.slots
+
+    async def warm(self, slot=None):
+        self.stub.warmed.append(slot)
+
+    async def piece(self, pcm, piece, slot=None):
         self.stub.calls.append((round(seconds(pcm), 1), self.prompt, self.options))
         return f"{self.stub.name} piece {len(self.stub.calls)}"
 
@@ -52,6 +58,7 @@ class StubDictation:
 class StubModel:
     def __init__(self, name="gemma-e4b", entry=None):
         self.name, self.calls, self.contexts, self.dictations_closed = name, [], [], 0
+        self.slots, self.warmed = 1, []
 
     def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
         self.save_dir = save_dir
@@ -132,7 +139,7 @@ class FakeLlamaServer:
 class HangingDictation(StubDictation):
     """A model request that never ends unless cancelled."""
 
-    async def piece(self, pcm, piece):
+    async def piece(self, pcm, piece, slot=None):
         self.stub.calls.append(round(seconds(pcm), 1))
         try:
             await asyncio.sleep(3600)

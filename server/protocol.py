@@ -105,8 +105,21 @@ async def handle(ws, models, args):
         async with models.recording:
             await run_pieces()
 
+    async def warm_slots(dictation, slots):
+        # Slot 0 at once; slot k once the recording is long enough for a (k+1)th piece, so that every piece finds
+        # its text in its slot's cache. A failed warm-up only costs time: the piece then processes the text itself.
+        for k in range(slots):
+            while k and not heard["stopped"] and heard["bytes"] / 2 / RATE < k * cut["piece_seconds"]:
+                await asyncio.sleep(0.2)
+            if k and heard["bytes"] / 2 / RATE < k * cut["piece_seconds"]:
+                return
+            try:
+                await dictation.warm(k if slots > 1 else None)
+            except Exception:
+                log.exception("warming slot %d failed", k)
+
     async def run_pieces():
-        dictation, piece = None, 0
+        dictation, piece, warming, tasks = None, 0, None, []
         try:
             try:
                 dictation = (await models.get(name)).dictation(
@@ -127,12 +140,21 @@ async def handle(ws, models, args):
             except Exception as e:
                 log.exception("preparing the recording failed")
                 await fail(str(e))
+            slots = 1
+            if dictation is not None:
+                slots = await asyncio.to_thread(dictation.slots)
+                if args.warm_text:
+                    warming = asyncio.ensure_future(warm_slots(dictation, slots))
+            # Every piece goes to llama-server at once, piece i to slot (i - 1) % slots; the texts go to the client in
+            # the order of the pieces.
             while (pcm := await pending.get()) is not None:
                 piece += 1
-                if dictation is None:
-                    continue
+                if dictation is not None:
+                    tasks.append(asyncio.ensure_future(
+                        dictation.piece(pcm, piece, slot=(piece - 1) % slots if slots > 1 else None)))
+            for task in tasks:
                 try:
-                    text = await dictation.piece(pcm, piece)
+                    text = await task
                     if text:
                         texts.append(text)
                         await send(type="text", text=text)
@@ -140,15 +162,23 @@ async def handle(ws, models, args):
                     log.exception("transcription failed")
                     await fail(str(e))
         finally:
+            for t in tasks + ([warming] if warming else []):
+                if not t.done():
+                    t.cancel()
+            for t in tasks + ([warming] if warming else []):
+                with contextlib.suppress(BaseException):
+                    await t
             if dictation is not None:
                 dictation.close()
 
+    heard = {"bytes": 0, "stopped": False}  # for warm_slots
     worker = asyncio.create_task(transcribe_pieces())
     last_speech, audio_bytes, stopped, stop_reason = 0.0, 0, None, None
     try:
         async for message in ws:
             if isinstance(message, bytes):
                 audio_bytes += len(message)
+                heard["bytes"] = audio_bytes
                 audio += message
                 if rec:
                     rec.write(message)
@@ -162,6 +192,7 @@ async def handle(ws, models, args):
                     stopped = time.monotonic()
                     stop_reason = m.get("reason") if m.get("reason") in STOP_REASONS else "user"
                     break
+        heard["stopped"] = True
         # The recording is whole: cut it now, into pieces as equal as the pauses allow.
         report = levels.report()
         for piece in split(bytes(audio), levels.rms, levels.threshold, cut["piece_seconds"], cut["cut_search_seconds"]):

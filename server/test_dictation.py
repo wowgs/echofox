@@ -71,6 +71,18 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         m = self.metrics("piece")[0]
         self.assertEqual((m["prefill_tokens"], m["cached_tokens"], m["decode_tokens"]), (30, 6, 5))
 
+    async def test_warm_sends_the_same_text_alone_to_the_slot_of_its_piece(self):
+        d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 20})
+        await d.prepare({"messages": [{"role": "assistant", "text": "hello there"}], "terms": []})
+        await d.warm(1)
+        await d.piece(LOUD, 2, slot=1)
+        warm, piece = self.fake.completions()
+        self.assertEqual(warm["messages"][0]["content"], [{"type": "text", "text": d.text}])  # no audio
+        self.assertEqual((warm["max_tokens"], warm["id_slot"], warm["cache_prompt"]), (0, 1, True))
+        self.assertEqual(piece["messages"][0]["content"][0], warm["messages"][0]["content"][0])  # the same text first
+        self.assertEqual(piece["id_slot"], 1)
+        self.assertEqual(self.metrics("warm")[0]["slot"], 1)
+
     async def test_the_chat_context_fits_the_token_budget_newest_kept(self):
         d = self.fake.model().dictation("PROMPT", {"chat_history_token_budget": 12, "chat_terms_token_budget": 4})
         chat = {"messages": [{"role": "assistant", "text": "new reply here"},       # 4 tokens with the role

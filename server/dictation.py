@@ -117,7 +117,9 @@ ROLES = {"user": "Speaker", "assistant": "Assistant"}
 class Dictation:
     """One recording on one model. Each piece is a request of its own: the text (chat history, then the prompt),
     then the piece's audio. The model never sees its answers to earlier pieces: in one conversation for the whole
-    recording, a piece often began by repeating the earlier piece's text (2026-10-14, Gemma 4 E4B)."""
+    recording, a piece often began by repeating the earlier piece's text (2026-10-14, Gemma 4 E4B). So the pieces do
+    not depend on each other, and llama-server can run them at once, one per slot. While the speaker talks, warm()
+    puts the text into a slot's cache, so that after the stop a piece processes only its audio."""
 
     def __init__(self, model, text_prompt, options, meta, save_dir=None, limits=(OUTPUT_TOKENS_PER_SECOND, OUTPUT_TOKENS_BASE)):
         self.m, self.prompt, self.options, self.meta, self.save_dir = model, text_prompt, options, meta, save_dir
@@ -170,12 +172,27 @@ class Dictation:
         metrics.metric("prepare", model=self.m.name, **self.meta, seconds=round(seconds, 3))
         self._save("text-before-audio.txt", self.text.encode("utf-8"))
 
-    async def piece(self, pcm, piece):
+    def slots(self):
+        """How many pieces the model runs at once."""
+        return self.m.slots() if hasattr(self.m, "slots") else 1
+
+    async def warm(self, slot=None):
+        """The text before the audio into the cache of llama-server's slot `slot`, before any audio."""
+        if not hasattr(self.m, "warm"):
+            return
+        t = time.monotonic()
+        timings = await run_blocking(self.m.warm, self.text, self.options, slot, cancel=getattr(self.m, "cancel", None))
+        seconds = time.monotonic() - t
+        log.info("%s: text before the audio warmed in slot %s in %.2f s, %s prefill (%s cached)", self.m.name, slot,
+                 seconds, timings.get("prefill_tokens"), timings.get("cached_tokens"))
+        metrics.metric("warm", model=self.m.name, **self.meta, slot=slot, wall_seconds=round(seconds, 3), **timings)
+
+    async def piece(self, pcm, piece, slot=None):
         t, audio = time.monotonic(), len(pcm) / 2 / RATE
         limit = output_limit(audio, self.options, *self.limits)
-        meta = {**self.meta, "piece": piece}
+        meta = {**self.meta, "piece": piece, "slot": slot}
         try:
-            text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options,
+            text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
                                                cancel=getattr(self.m, "cancel", None))
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,

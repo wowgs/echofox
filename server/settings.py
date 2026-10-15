@@ -55,6 +55,7 @@ SETTINGS = {
     "cutSearchSeconds": ("cut_search_seconds", float, lambda v: 0 < v <= 10, 3.0, "recording", "server"),
     "outputTokensPerSecond": ("output_tokens_per_second", float, lambda v: v > 0, 10.0, "recording", "server"),
     "outputTokensBase": ("output_tokens_base", int, lambda v: v >= 0, 32, "recording", "server"),
+    "warmText": (None, bool, lambda v: True, True, "recording", "server"),
     "recordings": ("recordings", str, lambda v: bool(v), "~/speech/recordings", "recording", "server"),
     "metrics": ("metrics", str, lambda v: bool(v), "~/Library/Logs/local-voice/gemma-voice-metrics.jsonl",
                 "recording", "server"),
@@ -128,6 +129,7 @@ def apply_recording_settings(st, now):
     st.piece_seconds, st.cut_search_seconds = now["pieceSeconds"], now["cutSearchSeconds"]
     st.output_tokens_per_second, st.output_tokens_base = now["outputTokensPerSecond"], now["outputTokensBase"]
     st.recordings, st.save_recordings = os.path.expanduser(now["recordings"]), now["saveRecordings"]
+    st.warm_text = now["warmText"]
     metrics.METRICS = os.path.expanduser(now["metrics"])
 
 

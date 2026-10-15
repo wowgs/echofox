@@ -57,17 +57,27 @@ class LlamaModel:
 
     def __init__(self, name, entry):
         self.name, self.url = name, entry["llamaServer"].rstrip("/")
-        self.connection, self.pid = None, None  # the connection of the running request; llama-server's process
+        self.connections, self.pid, self.n_slots = set(), None, None  # the running requests; llama-server's process
         log.info("model %s: llama-server at %s", name, self.url)
 
     def cancel(self):
-        """Stops the running request: closing its connection makes llama-server stop decoding (llama-server 0.6.0,
-        build 11429: with the connection closed after 1 s, the next request got its answer 0.2 s later; without,
-        136 s later)."""
-        conn = self.connection
-        if conn is not None and conn.sock is not None:
-            with contextlib.suppress(OSError):
-                conn.sock.shutdown(2)
+        """Stops the running requests: closing a request's connection makes llama-server stop decoding it
+        (llama-server 0.6.0, build 11429: with the connection closed after 1 s, the next request got its answer 0.2 s
+        later; without, 136 s later)."""
+        for conn in list(self.connections):
+            if conn.sock is not None:
+                with contextlib.suppress(OSError):
+                    conn.sock.shutdown(2)
+
+    def slots(self):
+        """llama-server's slots (its -np): requests it runs at once. 1 if it does not say."""
+        if self.n_slots is None:
+            try:
+                with urllib.request.urlopen(self.url + "/props", timeout=10) as r:
+                    self.n_slots = max(1, int(json.loads(r.read().decode("utf-8")).get("total_slots") or 1))
+            except (OSError, ValueError, TypeError):
+                return 1
+        return self.n_slots
 
     def footprint_mb(self):
         """llama-server's physical footprint in MB, for the metrics; None if its process is not found."""
@@ -85,35 +95,56 @@ class LlamaModel:
     def detokenize(self, ids):
         return llama_post(self.url, "/detokenize", {"tokens": list(ids)}, 30)["content"]
 
-    def complete(self, text, pcm, limit, options):
-        """One piece: the text, then the audio, in one request. (text, timings for the metrics)."""
-        audio = base64.b64encode(wav(pcm)).decode("ascii")
-        body = {"messages": [{"role": "user", "content": [
-                    {"type": "text", "text": text},
-                    {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}]}],
-                "max_tokens": limit, "stream": False, "cache_prompt": True, **sampler_of(options),
-                # Gemma 4's template in llama.cpp lets the model think first (reasoning_content), which spent a
-                # piece's whole token limit on "Here's a thinking process…" and left no text.
-                "chat_template_kwargs": {"enable_thinking": False}}
+    def _chat(self, body):
+        """One /v1/chat/completions request on a connection of its own, which cancel() can close."""
         url = urllib.parse.urlparse(self.url)
-        conn = self.connection = http.client.HTTPConnection(url.hostname, url.port or 80, timeout=300)
+        conn = http.client.HTTPConnection(url.hostname, url.port or 80, timeout=300)
+        self.connections.add(conn)
         try:
             conn.request("POST", "/v1/chat/completions", json.dumps(body).encode("utf-8"),
                          {"Content-Type": "application/json"})
             reply = conn.getresponse()
             if reply.status != 200:
                 raise RuntimeError(f"llama-server: HTTP {reply.status}: {reply.read()[:300]!r}")
-            r = json.loads(reply.read().decode("utf-8"))
+            return json.loads(reply.read().decode("utf-8"))
         finally:
-            self.connection = None
+            self.connections.discard(conn)
             conn.close()
+
+    @staticmethod
+    def _body(content, limit, options, slot):
+        body = {"messages": [{"role": "user", "content": content}],
+                "max_tokens": limit, "stream": False, "cache_prompt": True, **sampler_of(options),
+                # Gemma 4's template in llama.cpp lets the model think first (reasoning_content), which spent a
+                # piece's whole token limit on "Here's a thinking process…" and left no text.
+                "chat_template_kwargs": {"enable_thinking": False}}
+        if slot is not None:
+            body["id_slot"] = slot
+        return body
+
+    @staticmethod
+    def _timings(r):
         t = r.get("timings") or {}
-        return (r["choices"][0]["message"]["content"] or "").strip(), {
-            "ttft_seconds": round(t["prompt_ms"] / 1000, 3) if "prompt_ms" in t else None,
-            "prefill_tokens": t.get("prompt_n"), "cached_tokens": t.get("cache_n"),
-            "prefill_tps": [round(t["prompt_per_second"], 1)] if "prompt_per_second" in t else [],
-            "decode_tokens": t.get("predicted_n", (r.get("usage") or {}).get("completion_tokens")),
-            "decode_tps": [round(t["predicted_per_second"], 1)] if "predicted_per_second" in t else []}
+        return {"ttft_seconds": round(t["prompt_ms"] / 1000, 3) if "prompt_ms" in t else None,
+                "prefill_tokens": t.get("prompt_n"), "cached_tokens": t.get("cache_n"),
+                "prefill_tps": [round(t["prompt_per_second"], 1)] if "prompt_per_second" in t else [],
+                "decode_tokens": t.get("predicted_n", (r.get("usage") or {}).get("completion_tokens")),
+                "decode_tps": [round(t["predicted_per_second"], 1)] if "predicted_per_second" in t else []}
+
+    def warm(self, text, options, slot=None):
+        """The text alone, with no audio and nothing to write, so that llama-server keeps it in the slot's cache: a
+        piece in that slot then processes only its audio. Measured 2026-10-15 (llama-server 0.6.0, build 11429): after
+        this request, a piece of the same text and 21 s of audio took 1316 tokens from the cache and processed 537.
+        Returns the timings."""
+        return self._timings(self._chat(self._body([{"type": "text", "text": text}], 0, options, slot)))
+
+    def complete(self, text, pcm, limit, options, slot=None):
+        """One piece: the text, then the audio, in one request. (text, timings for the metrics)."""
+        audio = base64.b64encode(wav(pcm)).decode("ascii")
+        r = self._chat(self._body([{"type": "text", "text": text},
+                                   {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}],
+                                  limit, options, slot))
+        return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
 
     def dictation(self, text_prompt, options=None, meta=None, save_dir=None, **kw):
         return Dictation(self, text_prompt, options or {}, meta or {}, save_dir, **kw)
