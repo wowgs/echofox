@@ -30,14 +30,19 @@ enum Inserter {
             if let r = setSelectedText(text, box) { return note(r) }
             tried.append("selected text: no")
             let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
-            let focusKept = focused(in: pid).map { CFEqual($0, box) } ?? false
-            if let r = pasteInto(box, pid: pid, text) { return note(r) }
-            tried.append("cmd+v\(front ? "" : " in the background"): \(focusKept ? "no" : "skipped, the app's focus moved")")
-            if !front {
+            let appFocus = focused(in: pid)
+            // In the background, Desktop's accessibility focus is not its box any more (2026-10-15), while the page's
+            // own focus stays where the speaker left it. So the background ways are tried unless the app's focus is
+            // in another input box.
+            let otherBox = appFocus.map { !CFEqual($0, box) && isInput($0) } ?? false
+            tried.append("the app's focus: \(appFocus.map(describe) ?? "none"), the box's length: \(length(box).map(String.init) ?? "unknown")")
+            if let r = pasteInto(box, pid: pid, text, anyFocus: !front && !otherBox) { return note(r) }
+            tried.append("cmd+v\(front ? "" : " in the background"): \(otherBox ? "skipped, focus in another box" : "no")")
+            if !front && !otherBox {
                 if let r = setValueIfEmpty(text, box) { return note(r) }
-                tried.append("value: \(length(box) == 0 ? "no" : "skipped, the box is not empty")")
-                if focusKept, let r = type(text, into: box, pid: pid) { return note(r) }
-                tried.append("typing: \(focusKept ? "no" : "skipped")")
+                tried.append("value: \(length(box) == 0 ? "no" : "skipped, the box is not known to be empty")")
+                if let r = type(text, into: box, pid: pid) { return note(r) }
+                tried.append("typing: no")
             }
             if bringToFrontAndPaste(box, pid: pid, text) {
                 return (.pasteBroughtToFront, "the input box of the tap, brought to the front and back; " + tried.joined(separator: ", "))
@@ -82,8 +87,8 @@ enum Inserter {
 
     /// b. Cmd+V into the box: to the frontmost app if the box's app is in front, else to that app in the background.
     /// Only while the app's own focus is in the box. The result if the text went in, nil if not.
-    static func pasteInto(_ box: AXUIElement, pid: pid_t, _ text: String) -> Result? {
-        guard let now = focused(in: pid), CFEqual(now, box) else { return nil }
+    static func pasteInto(_ box: AXUIElement, pid: pid_t, _ text: String, anyFocus: Bool = false) -> Result? {
+        guard anyFocus || focused(in: pid).map({ CFEqual($0, box) }) == true else { return nil }
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
         let before = length(box)
         withText(text) { paste(to: front ? nil : pid) }
@@ -143,6 +148,12 @@ enum Inserter {
             if let backBox { AXUIElementSetAttributeValue(backBox, kAXFocusedAttribute as CFString, kCFBooleanTrue) }
         }
         return ok
+    }
+
+    /// An element's role and description, for the log; never its value.
+    static func describe(_ e: AXUIElement) -> String {
+        [FocusSnapshot.value(e, "AXRole") as? String, FocusSnapshot.value(e, "AXDescription") as? String]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// Whether the element's text grows past `from` within `seconds`.
