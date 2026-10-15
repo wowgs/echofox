@@ -113,6 +113,30 @@ class CleanTest(Fixture):
         self.assertEqual(adapters.markdown.plain("Следы (`**`, `|`, `- `) убраны, `a.py` остался."),
                          "Следы убраны, a.py остался.")
 
+    def test_a_url_or_a_mark_in_inline_code_leaves_no_backticks(self):
+        plain = adapters.markdown.plain
+        self.assertEqual(plain("Страница на **`http://host.local:9000`**. Проверил."), "Страница на. Проверил.")
+        self.assertEqual(plain("`rp-monitor` работает на `http://h:1`, флаг `--spec-type ngram-*`."),
+                         "rp-monitor работает на, флаг --spec-type ngram-*.")
+        self.assertEqual(plain("Открывай *http://a.b/c*, или *http://d.e*."), "Открывай, или.")
+        self.assertEqual(plain("Код ``a `b` c`` и `x`."), "Код и x.")
+        self.assertEqual(plain("Одна ` без пары."), "Одна без пары.")
+
+    def test_inline_code_that_is_code_goes_and_terms_stay(self):
+        self.assertEqual(adapters.markdown.plain(
+            'Шлёт `POST /cmd` с `{"text": "..."}`, потом `close()`, `a = 1` и `sudo apt install glances`; '
+            'а `llama-server`, `~/.zshrc` и `push --force` — термины.'),
+            "Шлёт POST /cmd с, потом, и; а llama-server, ~/.zshrc и push --force — термины.")
+
+    def test_escapes_and_escaped_pipes_in_tables(self):
+        md = ("| Команда | Аргументы |\n|---|---|\n| `media` | `action: pause\\|play` |\n"
+              "| Звук \\| громкость | вверх\\|вниз |\n\n\\*Звёздочка\\* и X\\_C.")
+        self.assertEqual(adapters.markdown.plain(md), "Media.\nЗвук | громкость: вверх|вниз.\n*Звёздочка* и X_C.")
+
+    def test_a_word_with_a_small_letter_on_purpose_stays_small(self):
+        md = "- iPhone можно подключить\n- macOS: тесты\n- a.py изменён\n- обычный пункт"
+        self.assertEqual(adapters.markdown.plain(md), "iPhone можно подключить.\nmacOS: тесты.\na.py изменён.\nОбычный пункт.")
+
     def test_every_adapter_cleans_and_the_terms_come_from_clean_text(self):
         self.put("a", "s", [reply("m1", "Смотри `FocusSnapshot`:\n```\nlet secretVar = take()\n```"),
                             reply("m2", "```\nonlyCode()\n```")])
@@ -134,17 +158,18 @@ class PluginTest(Fixture):
     def plugin(self, name, manifest=None, code=None):
         d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], name)
         os.makedirs(d, exist_ok=True)
-        json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]},
-                  open(os.path.join(d, "adapter.json"), "w"))
-        open(os.path.join(d, "adapter.py"), "w").write(code if code is not None else (
-            "from adapters import Adapter, Claim\n"
-            "class Mine(Adapter):\n"
-            "    def claim(self, focus, hints):\n"
-            "        return Claim(self.name, 0.95, 'mine') if (focus.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
-            "    def context(self, focus, hints):\n"
-            "        return {'about': 'a chat with Anna', 'terms': ['Anna'], 'messages': [{'from': 'Anna', 'text': '**Hello** Kubernetes'}]}\n"
-            "    def clean(self, text):\n"
-            "        return text.replace('**', '')\n"))
+        with open(os.path.join(d, "adapter.json"), "w") as f:
+            json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]}, f)
+        with open(os.path.join(d, "adapter.py"), "w") as f:
+            f.write(code if code is not None else (
+                "from adapters import Adapter, Claim\n"
+                "class Mine(Adapter):\n"
+                "    def claim(self, focus, hints):\n"
+                "        return Claim(self.name, 0.95, 'mine') if (focus.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
+                "    def context(self, focus, hints):\n"
+                "        return {'about': 'a chat with Anna', 'terms': ['Anna'], 'messages': [{'from': 'Anna', 'text': '**Hello** Kubernetes'}]}\n"
+                "    def clean(self, text):\n"
+                "        return text.replace('**', '')\n"))
 
     def test_a_users_plugin_in_the_folder_works_once_enabled(self):
         self.plugin("mine")
