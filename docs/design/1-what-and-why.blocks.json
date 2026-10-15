@@ -1,0 +1,4 @@
+{
+ "dictation": {"type": "mention", "ref": "project/8c82f321-7382-486e-aeb8-6600b7c32f42", "label": "Dictation with a local model"},
+ "terms": {"type": "mention", "ref": "project/NPqnqAUHX8Rr7DjYnsfqHW", "label": "Dictation terms"}
+}
