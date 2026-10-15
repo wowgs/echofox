@@ -97,9 +97,11 @@ class CleanTest(Fixture):
         self.assertEqual(adapters.markdown.plain(md), "\n".join([
             "Пропала пунктуация.",
             "Настройки перенесены. Промпт совпадает, options те же: README. Вторая строка абзаца.",
-            "Окно. Без рамки, NSPanel.", "второй пункт;", "третий.",
-            "Контекст, Знаки.", "без контекста, 5 из 5.",
+            "Окно. Без рамки, NSPanel.", "Второй пункт;", "Третий.",
+            "Без контекста: 5 из 5.",
             "цитата важная и snake_case_name"]))
+        self.assertEqual(adapters.markdown.plain("Следы (`**`, `|`, `- `) убраны, `a.py` остался."),
+                         "Следы убраны, a.py остался.")
 
     def test_every_adapter_cleans_and_the_terms_come_from_clean_text(self):
         self.put("a", "s", [reply("m1", "Смотри `FocusSnapshot`:\n```\nlet secretVar = take()\n```"),

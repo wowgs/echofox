@@ -6,8 +6,10 @@ text with punctuation in 1 of 5 runs with this session's Markdown replies, 5 of 
 session whose replies had little Markdown (2026-10-15, Gemma 4 E4B Q8_0 in llama.cpp). So the context gets plain
 prose: the words stay, the marks go, and each heading, list item and table row becomes a sentence.
 
-Code blocks go (code is not speech); inline code keeps its text (identifiers are the terms the speaker says). Links
-keep their text, bare URLs go.
+Code blocks go (code is not speech); inline code keeps its text (identifiers are the terms the speaker says), unless it
+holds only marks such as `**` or `|`. Links keep their text, bare URLs go. A table's header row goes; each other row
+becomes "first cell: the other cells." Each sentence made from a heading, list item or table row starts with a
+capital letter: list items and table cells often start with a small one, and prose does not.
 """
 import re
 
@@ -21,6 +23,7 @@ IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 URL = re.compile(r"<?\bhttps?://[^\s<>()]*[^\s<>().,;:!?]>?")
 CODE = re.compile(r"`+([^`]*)`+")
+WORDLESS = re.compile(r"[^\w]*")
 STRONG = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
 EM = re.compile(r"(?<![\w*])([*_])(?=\S)(.+?)(?<=\S)\1(?![\w*])")
 STRIKE = re.compile(r"~~(.+?)~~")
@@ -32,7 +35,10 @@ def inline(s):
     s = IMAGE.sub(r"\1", s)
     s = LINK.sub(r"\1", s)
     s = URL.sub("", s)
-    s = CODE.sub(r"\1", s)
+    s = CODE.sub(lambda m: "" if WORDLESS.fullmatch(m.group(1)) else m.group(1), s)
+    s = re.sub(r"\(\s*(?:[,;]\s*)*\)", "", s)  # brackets left empty
+    s = re.sub(r"\(\s*[,;]\s*", "(", s)
+    s = re.sub(r"(?:\s*[,;])+\s*\)", ")", s)
     s = STRONG.sub(r"\2", s)
     s = EM.sub(r"\2", s)
     s = STRIKE.sub(r"\1", s)
@@ -43,8 +49,12 @@ def inline(s):
 
 
 def sentence(s):
-    """A heading, list item or table row as a sentence: with a full stop if it has no ending of its own."""
-    return s if not s or END.search(s) else s + "."
+    """A heading, list item or table row as a sentence: a capital letter first, and a full stop if it has no ending of
+    its own."""
+    if not s:
+        return s
+    s = s[0].upper() + s[1:]
+    return s if END.search(s) else s + "."
 
 
 def plain(text):
@@ -56,7 +66,8 @@ def plain(text):
             paragraphs.append(" ".join(current))
             current.clear()
 
-    for raw in text.splitlines():
+    lines = text.splitlines()
+    for i, raw in enumerate(lines):
         if FENCE.match(raw):
             in_code = not in_code
             flush()
@@ -73,8 +84,11 @@ def plain(text):
             flush()
         elif line.strip().startswith("|"):
             flush()
-            cells = [inline(c) for c in line.strip().strip("|").split("|")]
-            current.append(sentence(", ".join(c for c in cells if c)))
+            if i + 1 < len(lines) and TABLE_RULE.match(lines[i + 1]):
+                continue  # the header row
+            cells = [c for c in (inline(c) for c in line.strip().strip("|").split("|")) if c]
+            row = cells[0] + (": " + ", ".join(cells[1:]) if len(cells) > 1 else "") if cells else ""
+            current.append(sentence(row))
             flush()
         elif ITEM.match(line):
             flush()
