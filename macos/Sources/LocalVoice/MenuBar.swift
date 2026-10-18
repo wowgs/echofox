@@ -21,6 +21,7 @@ protocol MenuActions: AnyObject {
     func choose(language: String)
     func enable(adapter: String, _ on: Bool)
     func openLog()
+    func openLabeling()
 }
 
 final class MenuBar: NSObject, NSMenuDelegate {
@@ -89,6 +90,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(submenu("Adapters: " + (on.isEmpty ? "none" : on.map(\.name).joined(separator: ", ")) + failing,
                              adapterItems(s)))
         menu.addItem(.separator())
+        menu.addItem(action("Label Recordings…") { $0.openLabeling() })
         menu.addItem(action("Open the Log") { $0.openLog() })
         menu.addItem(NSMenuItem(title: "Quit Local Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }

@@ -12,6 +12,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
     private let server = Server()
     private let key = TapKey()
     private lazy var menu = MenuBar(actions: self)
+    private let labeling = LabelWindow()
     private let prepareQueue = DispatchQueue(label: "local-voice.prepare")
     private var current: Dictation?
     private var waiting: [Dictation] = []
@@ -171,6 +172,10 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
             menu.update()
             return false
         }
+    }
+
+    func openLabeling() {
+        labeling.show()
     }
 
     func openLog() {

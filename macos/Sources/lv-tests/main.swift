@@ -80,6 +80,8 @@ try text.write(to: file, atomically: true, encoding: .utf8)
 var c = Config.load(from: file, systemLanguage: "en-GB")
 check(c.models == ["a", "b"] && c.model == "a" && c.language == "ru" && c.silenceStopSeconds == 30 && c.port == 8099
       && c.error == nil, "config: read \(c)")
+check(c.recordings.path.hasSuffix("/speech/recordings") && !c.recordings.path.contains("~")
+      && c.labeled.path.hasSuffix("/speech/labeled"), "config: the default folders, ~ expanded")
 try Config.set(["model"], to: "b", in: file)
 var after = try String(contentsOf: file, encoding: .utf8)
 check(after == text.replacingOccurrences(of: #""model": "a""#, with: #""model": "b""#), "config: only the model changed")
@@ -120,6 +122,52 @@ check(Config.load(from: file).error != nil, "config: another version is an error
 check(Config.load(from: dir.appendingPathComponent("none.json"), systemLanguage: "de-DE").language == "de",
       "config: no file: the system's language")
 try? FileManager.default.removeItem(at: dir)
+
+// Labeling: the pieces not labeled yet, newest first; a saved one is done, its audio and context copied.
+do {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("lv-label-\(getpid())")
+    let recs = root.appendingPathComponent("recordings"), labeled = root.appendingPathComponent("labeled")
+    func recording(_ day: String, _ id: String, _ pieces: [(Int, String, String?)]) throws {
+        let dir = recs.appendingPathComponent(day).appendingPathComponent(id)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var lines = ""
+        for (n, text, raw) in pieces {
+            try Data("RIFF\(n)".utf8).write(to: dir.appendingPathComponent("piece-\(n).wav"))
+            var p: [String: Any] = ["piece": n, "text": text, "audio_seconds": 1.5]
+            if let raw { p["raw"] = raw }
+            lines += String(decoding: try JSONSerialization.data(withJSONObject: p), as: UTF8.self) + "\n"
+        }
+        try lines.write(to: dir.appendingPathComponent("pieces.jsonl"), atomically: true, encoding: .utf8)
+        try "CONTEXT".write(to: dir.appendingPathComponent("text-before-audio.txt"), atomically: true, encoding: .utf8)
+        let record: [String: Any] = ["started": day, "model": "m", "language": "ru",
+                                     "chat": ["details": ["title": "Radio"], "about": "a chat"]]
+        try JSONSerialization.data(withJSONObject: record).write(to: dir.appendingPathComponent("adapter.json"))
+    }
+    try recording("2026-10-17", "100000-a", [(1, "Привет", "Э, привет"), (2, "мир", nil)])
+    try recording("2026-10-18", "090000-b", [(1, "Новое", nil)])
+    try FileManager.default.createDirectory(at: recs.appendingPathComponent("2026-10-18/080000-empty"),
+                                            withIntermediateDirectories: true)  // a recording without pieces
+    var items = Labeling.pending(recordings: recs, labeled: labeled)
+    check(items.map { "\($0.recording)#\($0.piece)" } == ["2026-10-18/090000-b#1", "2026-10-17/100000-a#1",
+                                                         "2026-10-17/100000-a#2"], "label: newest first: \(items)")
+    check(items[1].raw == "Э, привет" && items[1].place == "Radio" && items[1].text == "Привет", "label: an item")
+    try Labeling.save(items[1], text: " Ну, привет \n", status: .verified, labeled: labeled)
+    try Labeling.save(items[0], text: "", status: .unusable, labeled: labeled)
+    items = Labeling.pending(recordings: recs, labeled: labeled)
+    check(items.map { "\($0.recording)#\($0.piece)" } == ["2026-10-17/100000-a#2"], "label: saved ones are done")
+    let dir = Labeling.labelFolder(labeled, "2026-10-17/100000-a", 1)
+    let label = try JSONSerialization.jsonObject(with: Data(contentsOf: dir.appendingPathComponent("label.json")))
+        as! [String: Any]
+    check(label["text"] as? String == "Ну, привет" && label["modelText"] as? String == "Привет"
+          && label["modelRaw"] as? String == "Э, привет" && label["status"] as? String == "verified"
+          && label["model"] as? String == "m", "label: the label \(label)")
+    check((try? String(contentsOf: dir.appendingPathComponent("audio.wav"), encoding: .utf8)) == "RIFF1"
+          && (try? String(contentsOf: dir.appendingPathComponent("text-before-audio.txt"), encoding: .utf8)) == "CONTEXT",
+          "label: the audio and the context are copied")
+    try? FileManager.default.removeItem(at: root)
+} catch {
+    check(false, "labeling: \(error)")
+}
 
 print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -1,13 +1,15 @@
 // The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
 // version 3 (server/settings.py has its fields). The app reads the model registry, the chosen model, the language,
-// the enabled adapters, the silence stop and where the server listens; it writes what the menu chooses: the model, the
-// language and the adapters.
+// the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
+// recordings go; it writes what the menu chooses: the model, the language and the adapters.
 import Foundation
 
 public struct Config: Equatable {
     public static let version = 3
     public static let defaultHost = "127.0.0.1"
     public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
+    public static let defaultRecordings = "~/speech/recordings"  // the server's own default (constants.py RECORDINGS)
+    public static let defaultLabeled = "~/speech/labeled"
 
     public static var url: URL {
         if let p = ProcessInfo.processInfo.environment["LOCAL_VOICE_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
@@ -22,11 +24,19 @@ public struct Config: Equatable {
     public var silenceStopSeconds = Tuning.silenceStopSeconds
     public var host = Config.defaultHost
     public var port = Config.defaultPort
+    /// The server's recordings (server.recordings), and the folder of the recordings you labeled ("labeled").
+    public var recordings = Config.path(Config.defaultRecordings)
+    public var labeled = Config.path(Config.defaultLabeled)
     public var error: String?
 
     public var serverURL: URL { URL(string: "ws://\(host):\(port)")! }
 
     public init() {}
+
+    /// A path of the config: "~" is the home folder.
+    public static func path(_ p: String) -> URL {
+        URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
+    }
 
     public static func load(from url: URL = Config.url,
                             systemLanguage: String? = Locale.preferredLanguages.first) -> Config {
@@ -51,7 +61,9 @@ public struct Config: Equatable {
         if let server = d["server"] as? [String: Any] {
             if let h = server["host"] as? String, !h.isEmpty { c.host = h }
             if let p = server["port"] as? Int, p > 0, p < 65536 { c.port = p }
+            if let r = server["recordings"] as? String, !r.isEmpty { c.recordings = path(r) }
         }
+        if let l = d["labeled"] as? String, !l.isEmpty { c.labeled = path(l) }
         return c
     }
 
