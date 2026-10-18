@@ -10,9 +10,9 @@
 # metrics and recordings folder are its own.
 # Usage: server/test_server.sh [start|stop|status]
 set -euo pipefail
-cd "${0:A:h}"
+HERE=${0:A:h}  # before any cd (a relative $0 resolves from the current folder), and not in c(): inside a function $0 is the function's name
+cd "$HERE"
 # The shared numbers and names come from server/constants.py.
-HERE=${0:A:h}  # here, not in c(): inside a function $0 is the function's name
 c() { PYTHONPATH=$HERE $HERE/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
 PORT=$(c TEST_PORT)
 LLAMA_PORT=$(c TEST_LLAMA_PORT)
