@@ -1,7 +1,8 @@
 // The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
 // version 3 (server/settings.py has its fields). The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
-// recordings go; it writes what the menu chooses: the model, the language and the adapters.
+// recordings go, and the microphone; it writes what the menu chooses: the model, the language, the adapters and the
+// microphone.
 import Foundation
 
 public struct Config: Equatable {
@@ -10,6 +11,9 @@ public struct Config: Equatable {
     public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
     public static let defaultRecordings = "~/speech/recordings"  // the server's own default (constants.py RECORDINGS)
     public static let defaultLabeled = "~/speech/labeled"
+    /// "microphone": the Mac's own microphone (the default), macOS's input, or a device's UID.
+    public static let builtInMicrophone = "builtin"
+    public static let systemMicrophone = "system"
 
     public static var url: URL {
         if let p = ProcessInfo.processInfo.environment["LOCAL_VOICE_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
@@ -22,6 +26,7 @@ public struct Config: Equatable {
     /// The adapters the file enables or disables, by name; one not named is off.
     public var adapters: [String: Bool] = [:]
     public var silenceStopSeconds = Tuning.silenceStopSeconds
+    public var microphone = Config.builtInMicrophone
     public var host = Config.defaultHost
     public var port = Config.defaultPort
     /// The server's recordings (server.recordings), and the folder of the recordings you labeled ("labeled").
@@ -58,6 +63,7 @@ public struct Config: Equatable {
             c.adapters[name] = ((entry as? [String: Any])?["enabled"] as? Bool) ?? false
         }
         if let s = d["silenceStopSeconds"] as? Double, s >= 0 { c.silenceStopSeconds = s }
+        if let m = d["microphone"] as? String, !m.isEmpty { c.microphone = m }
         if let server = d["server"] as? [String: Any] {
             if let h = server["host"] as? String, !h.isEmpty { c.host = h }
             if let p = server["port"] as? Int, p > 0, p < 65536 { c.port = p }

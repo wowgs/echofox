@@ -20,6 +20,7 @@ protocol MenuActions: AnyObject {
     func choose(model: String)
     func choose(language: String)
     func enable(adapter: String, _ on: Bool)
+    func choose(microphone: String)
     func openLog()
     func openLabeling()
 }
@@ -85,6 +86,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(submenu("Model: " + (s.config.model ?? "none"), modelItems(s)))
         menu.addItem(submenu("Language: " + languageName(s), languageItems(s)))
+        let inputs = AudioInputs.all()
+        menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
         let on = (s.server?.adapters ?? []).filter { s.config.adapters[$0.name] == true }
         let failing = on.contains { $0.error != nil } ? " (one does not work)" : ""
         menu.addItem(submenu("Adapters: " + (on.isEmpty ? "none" : on.map(\.name).joined(separator: ", ")) + failing,
@@ -118,6 +121,28 @@ final class MenuBar: NSObject, NSMenuDelegate {
             let note = s.server == nil ? "the server has not answered yet" : "the server's prompt does not name it"
             items.append(checked(disabled("\(s.config.language) (\(note))"), true))
         }
+        return items
+    }
+
+    /// The config's microphone is this input: the built-in one for "builtin", the device for its UID.
+    private func isChosen(_ input: AudioInput, _ s: MenuState) -> Bool {
+        s.config.microphone == Config.builtInMicrophone ? input.builtIn : s.config.microphone == input.uid
+    }
+
+    private func microphoneName(_ s: MenuState, _ inputs: [AudioInput]) -> String {
+        if s.config.microphone == Config.systemMicrophone { return "macOS's input" }
+        return inputs.first { isChosen($0, s) }?.name ?? "not connected"
+    }
+
+    private func microphoneItems(_ s: MenuState, _ inputs: [AudioInput]) -> [NSMenuItem] {
+        var items = inputs.map { input in
+            checked(action(input.name + (input.builtIn ? " (built-in)" : "")) {
+                $0.choose(microphone: input.builtIn ? Config.builtInMicrophone : input.uid)
+            }, isChosen(input, s))
+        }
+        if inputs.isEmpty { items.append(disabled("No microphone found.")) }
+        items += [.separator(), checked(action("Follow macOS's Input") { $0.choose(microphone: Config.systemMicrophone) },
+                                        s.config.microphone == Config.systemMicrophone)]
         return items
     }
 

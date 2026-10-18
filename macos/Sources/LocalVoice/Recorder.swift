@@ -1,6 +1,9 @@
 // The microphone, converted to what the server takes: 16-bit little-endian PCM, mono, at the server's sample rate.
 // When the input device changes during a recording (AirPods connected or gone), AVAudioEngine stops and posts
-// AVAudioEngineConfigurationChange; the recorder then starts again on the new device, and says so if it cannot.
+// AVAudioEngineConfigurationChange; the recorder then starts again on the new device, and says so if it cannot. With a
+// `device`, the engine's input is that microphone (kAudioOutputUnitProperty_CurrentDevice), set again at each start,
+// so a headset that connects does not take the recording over.
+import AudioToolbox
 import AVFoundation
 import LocalVoiceCore
 
@@ -12,8 +15,12 @@ final class Recorder {
     private var onLost: (String) -> Void = { _ in }
     private var observer: NSObjectProtocol?
 
-    init(sampleRate: Double) {
+    private let device: AudioDeviceID?
+
+    /// `device`: the microphone to record (nil: macOS's input).
+    init(sampleRate: Double, device: AudioDeviceID? = nil) {
         format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+        self.device = device
     }
 
     /// Starts the microphone; `onPCM` gets each converted buffer (on an audio thread), `onLost` why the microphone
@@ -29,6 +36,12 @@ final class Recorder {
 
     private func tap() throws {
         let input = engine.inputNode
+        if var id = device {
+            guard let unit = input.audioUnit else { throw MessageError("the audio input has no audio unit") }
+            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                              &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            guard status == noErr else { throw MessageError("cannot record the chosen microphone (status \(status))") }
+        }
         let from = input.outputFormat(forBus: 0)
         guard from.sampleRate > 0, from.channelCount > 0 else { throw MessageError("no microphone input") }
         guard let converter = AVAudioConverter(from: from, to: format) else {

@@ -24,6 +24,7 @@ final class Dictation {
     private let full: Bool, tree: Bool, lists: Bool
     private let queue = DispatchQueue(label: "local-voice.dictation.send")
     private let recorder: Recorder
+    private let microphone: String
     private var task: URLSessionWebSocketTask?
     private var lastSpeech = Date()
     private var silenceTimer: Timer?
@@ -41,7 +42,9 @@ final class Dictation {
         self.full = full
         self.tree = tree
         self.lists = lists
-        self.recorder = Recorder(sampleRate: Double(sampleRate))
+        let (input, why) = AudioInputs.chosen(config.microphone)
+        self.recorder = Recorder(sampleRate: Double(sampleRate), device: input?.id)
+        self.microphone = "\(input?.name ?? "macOS's input") (\(why))"
     }
 
     func start() {
@@ -71,7 +74,7 @@ final class Dictation {
         silenceTimer = Timer.scheduledTimer(withTimeInterval: Tuning.silenceCheckSeconds, repeats: true) { [weak self] _ in
             self?.checkSilence()
         }
-        Log.write("start: model \(config.model ?? "the server's default"), language \(config.language), "
+        Log.write("start: model \(config.model ?? "the server's default"), language \(config.language), microphone \(microphone), "
                   + config.serverURL.absoluteString)
     }
 

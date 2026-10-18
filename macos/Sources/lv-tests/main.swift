@@ -82,6 +82,7 @@ try text.write(to: file, atomically: true, encoding: .utf8)
 var c = Config.load(from: file, systemLanguage: "en-GB")
 check(c.models == ["a", "b"] && c.model == "a" && c.language == "ru" && c.silenceStopSeconds == 30 && c.port == 8099
       && c.error == nil, "config: read \(c)")
+check(c.microphone == "builtin", "config: the built-in microphone by default")
 check(c.recordings.path.hasSuffix("/speech/recordings") && !c.recordings.path.contains("~")
       && c.labeled.path.hasSuffix("/speech/labeled"), "config: the default folders, ~ expanded")
 try Config.set(["model"], to: "b", in: file)

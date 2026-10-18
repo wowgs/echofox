@@ -153,6 +153,10 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
         write(["language"], language, "language chosen: \(language.isEmpty ? "the speech's own" : language)")
     }
 
+    func choose(microphone: String) {
+        write(["microphone"], microphone, "microphone chosen: \(microphone)")
+    }
+
     func enable(adapter: String, _ on: Bool) {
         guard write(["adapters", adapter, "enabled"], on, "adapter \(adapter): \(on ? "on" : "off")") else { return }
         // The server applies the change at its next look at the file; then the snapshots and trees follow its info.
