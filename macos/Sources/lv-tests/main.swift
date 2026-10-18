@@ -20,7 +20,9 @@ func data(_ o: Any) -> Data { try! JSONSerialization.data(withJSONObject: o) }
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     check(info.sampleRate == 16000 && info.textWaitSeconds == 180, "info: the audio and the wait")
-    check(info.snapshotApps == ["com.anthropic.claudefordesktop"] && info.treeApps == info.snapshotApps, "info: apps")
+    check(info.snapshotApps == ["com.anthropic.claudefordesktop", "com.tdesktop.Telegram"]
+          && info.treeApps == ["com.anthropic.claudefordesktop"] && info.listApps == ["com.tdesktop.Telegram"],
+          "info: apps, trees and lists")
     check(info.languages.first.map { [$0.code, $0.name] } == ["cs", "Czech"] && info.languages.count == 20,
           "info: the languages")
     var other = examples["info"] as! [String: Any]

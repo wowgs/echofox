@@ -21,7 +21,7 @@ final class Dictation {
     private let config: Config
     private let sampleRate: Int
     private let textWait: TimeInterval
-    private let full: Bool, tree: Bool
+    private let full: Bool, tree: Bool, lists: Bool
     private let queue = DispatchQueue(label: "local-voice.dictation.send")
     private let recorder: Recorder
     private var task: URLSessionWebSocketTask?
@@ -32,13 +32,15 @@ final class Dictation {
 
     /// `server`: what the server said of itself (nil: not known yet; the defaults then). `full`: an enabled adapter
     /// reads the frontmost app, so the snapshot has its window, ancestors and processes. `tree`: the app is an
-    /// Electron app whose tree an enabled adapter needs.
-    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool) {
+    /// Electron app whose tree an enabled adapter needs. `lists`: an enabled adapter reads the rows of the app's window
+    /// lists (its manifest's "screen").
+    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false) {
         self.config = config
         self.sampleRate = server?.sampleRate ?? Tuning.defaultSampleRate
         self.textWait = server?.textWaitSeconds ?? Tuning.defaultTextWaitSeconds
         self.full = full
         self.tree = tree
+        self.lists = lists
         self.recorder = Recorder(sampleRate: Double(sampleRate))
     }
 
@@ -47,12 +49,13 @@ final class Dictation {
         self.task = task
         task.resume()
         receive()
-        let config = self.config, full = self.full, tree = self.tree, rate = self.sampleRate
+        let config = self.config, full = self.full, tree = self.tree, lists = self.lists, rate = self.sampleRate
         queue.async { [weak self] in
-            let capture = FocusSnapshot.capture(full: full, enableElectron: tree)
+            let capture = FocusSnapshot.capture(full: full, enableElectron: tree, lists: lists)
             DispatchQueue.main.async { self?.capture = capture }
             Log.write("snapshot: app \(capture.snapshot["app"].flatMap { ($0 as? [String: Any])?["bundleId"] } ?? "none"), "
                       + "focused \(capture.focused != nil), web area \(capture.snapshot["webArea"] != nil), "
+                      + "lists \((capture.snapshot["lists"] as? [Any])?.count ?? 0), "
                       + "\(capture.snapshot["tookMs"] ?? "?") ms")
             self?.send(.string(ClientMessage.start(model: config.model, language: config.language, sampleRate: rate,
                                                    client: Dictation.client, snapshot: capture.snapshot)))

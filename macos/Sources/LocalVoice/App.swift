@@ -89,7 +89,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
         let info = server.info
         if info == nil { server.refresh(config.serverURL) }
         let d = Dictation(config: config, server: info, full: info?.snapshotApps.contains(front) == true,
-                          tree: info?.treeApps.contains(front) == true)
+                          tree: info?.treeApps.contains(front) == true, lists: info?.listApps.contains(front) == true)
         d.onPhase = { [weak self] d in self?.changed(d) }
         current = d
         d.start()

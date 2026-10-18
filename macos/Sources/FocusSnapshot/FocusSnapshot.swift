@@ -1,6 +1,8 @@
 // The focus snapshot: what the dictation's target looks like when the dictation starts. The core takes it once, at the
 // hotkey, and sends it to the dictation server, whose adapters decide whose conversation it is
-// (server/adapters/__init__.py has the fields). Only service fields go in, never the text of input fields.
+// (server/adapters/__init__.py has the fields). Service fields go in, never the text of input fields. Screen content
+// goes in only when the caller asks: `lists` takes the rows of the lists in the focused window (a messenger's
+// messages), and the app asks only for the apps of an enabled adapter whose manifest wants them.
 //
 // Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps (Claude Desktop,
 // VS Code) build their accessibility tree only on request: without AXManualAccessibility set, Claude Desktop showed
@@ -20,6 +22,12 @@ public enum FocusSnapshot {
     public static let electronWaitSeconds = 3.0
     static let electronPollSeconds = 0.05
     static let maxPids = 8192  // proc_listallpids' buffer: more processes than a Mac runs
+    /// The lists of the focused window: how deep under the window to look for them, how many, and how much of each.
+    /// A chat's newest messages are at the end of its list, so a long list keeps its last rows.
+    static let maxListDepth = 4
+    static let maxLists = 6
+    static let maxListRows = 150
+    static let maxListChars = 30_000
 
     /// A snapshot and the element it was taken of: the element with the keyboard focus, where the text goes later.
     public struct Capture {
@@ -28,17 +36,20 @@ public enum FocusSnapshot {
         public let pid: pid_t?
     }
 
-    /// The snapshot of the frontmost app, as a JSON-ready dictionary.
-    public static func take(enableElectron: Bool = true) -> [String: Any] {
-        capture(full: true, enableElectron: enableElectron).snapshot
+    /// The snapshot of the frontmost app (or of `app`), as a JSON-ready dictionary.
+    public static func take(enableElectron: Bool = true, lists: Bool = false,
+                            of app: NSRunningApplication? = nil) -> [String: Any] {
+        capture(full: true, enableElectron: enableElectron, lists: lists, of: app).snapshot
     }
 
-    /// The snapshot of the frontmost app, with its focused element and pid. `full`: the window, the focused element's
+    /// The snapshot of the frontmost app (or of `target`, any running app: for tools), with its focused element and
+    /// pid. `full`: the window, the focused element's
     /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
     /// the text goes into later.
-    public static func capture(full: Bool = true, enableElectron: Bool = true) -> Capture {
+    public static func capture(full: Bool = true, enableElectron: Bool = true, lists: Bool = false,
+                               of target: NSRunningApplication? = nil) -> Capture {
         let started = Date()
-        guard let front = NSWorkspace.shared.frontmostApplication else {
+        guard let front = target ?? NSWorkspace.shared.frontmostApplication else {
             return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
         }
         let pid = front.processIdentifier
@@ -62,6 +73,10 @@ public enum FocusSnapshot {
         }
         if let w = element(app, "AXFocusedWindow") {
             out["window"] = compact(["title": string(w, "AXTitle"), "document": string(w, "AXDocument")])
+            if lists {
+                out["lists"] = windowLists(w)
+                if let f = focused, let r = frame(f) { out["focusedFrame"] = r }
+            }
         }
         if let f = focused {
             out["focused"] = describe(f)
@@ -131,6 +146,47 @@ public enum FocusSnapshot {
     }
 
     static func compact(_ d: [String: Any?]) -> [String: Any] { d.compactMapValues { $0 } }
+
+    static func children(_ e: AXUIElement) -> [AXUIElement] { value(e, "AXChildren") as? [AXUIElement] ?? [] }
+
+    /// An element's place on the screen: {"x", "y", "width", "height"} in points.
+    static func frame(_ e: AXUIElement) -> [String: Any]? {
+        guard let p = value(e, "AXPosition"), let s = value(e, "AXSize"),
+              CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero, size = CGSize.zero
+        guard AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size) else {
+            return nil
+        }
+        return ["x": Double(point.x), "y": Double(point.y), "width": Double(size.width), "height": Double(size.height)]
+    }
+
+    /// The lists in `window`, in the tree's order: each one's frame, its row count and its last rows (oldest first),
+    /// a row's accessible text and its cells' titles.
+    static func windowLists(_ window: AXUIElement) -> [[String: Any]] {
+        var found: [AXUIElement] = []
+        func look(_ e: AXUIElement, _ depth: Int) {
+            for c in children(e) where found.count < maxLists {
+                if string(c, "AXRole") == "AXList" {
+                    found.append(c)
+                } else if depth < maxListDepth {
+                    look(c, depth + 1)
+                }
+            }
+        }
+        look(window, 0)
+        return found.map { list in
+            let rows = children(list)
+            var kept: [[String: Any]] = [], chars = 0
+            for r in rows.suffix(maxListRows).reversed() {
+                let text = string(r, "AXTitle") ?? string(r, "AXValue") ?? string(r, "AXDescription") ?? ""
+                chars += text.count
+                if chars > maxListChars { break }
+                let columns = children(r).compactMap { string($0, "AXTitle") }
+                kept.append(compact(["text": text.isEmpty ? nil : text, "columns": columns.isEmpty ? nil : columns]))
+            }
+            return compact(["frame": frame(list), "rowCount": rows.count, "rows": Array(kept.reversed())])
+        }
+    }
 
     // MARK: Processes
 

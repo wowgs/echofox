@@ -12,6 +12,8 @@ public struct ServerInfo: Decodable, Equatable {
         public let enabled: Bool
         public let apps: [String]
         public let electronTree: Bool
+        /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
+        public let screen: [String]?
         public let description: String?
         public let error: String?
     }
@@ -32,6 +34,10 @@ public struct ServerInfo: Decodable, Equatable {
     public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }
     /// Electron apps whose accessibility tree an enabled adapter needs.
     public var treeApps: Set<String> { Set(adapters.filter { $0.enabled && $0.electronTree }.flatMap(\.apps)) }
+    /// Apps whose window lists an enabled adapter reads (a messenger's messages): the snapshot takes their rows.
+    public var listApps: Set<String> {
+        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap(\.apps))
+    }
 
     public static func decode(_ data: Data) throws -> ServerInfo {
         let info = try JSONDecoder().decode(ServerInfo.self, from: data)
