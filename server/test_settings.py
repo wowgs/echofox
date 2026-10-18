@@ -60,6 +60,20 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "pieceSeconds": 25.0,
                                                   "port": 9000, "fillers": {"ru": ["э"]}})
 
+    def test_an_adapters_entry_may_set_its_context_budgets_and_nothing_else(self):
+        now = s.resolve(self.cli(), {"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
+                                                  "claude": {"enabled": False}}})
+        st = s.recording_settings(now)
+        self.assertEqual((st.adapters, st.adapter_options), (["telegram"], {"telegram": {"chat_history_token_budget": 600},
+                                                                            "claude": {}}))
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            for bad in ({"telegram": {"enabled": True, "chatHistoryTokens": 600}},
+                        {"telegram": {"enabled": True, "chatHistoryTokenBudget": -1}}):
+                self.write(f, adapters=bad)
+                with self.assertLogs("gemma_voice", "ERROR"):
+                    self.assertNotIn("adapters", s.file_settings(f))
+
     def test_a_wrong_key_or_value_in_the_file_is_left_out(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")

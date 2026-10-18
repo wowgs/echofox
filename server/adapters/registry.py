@@ -2,7 +2,9 @@
 adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
   adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 2,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
-                on request (Electron), "reads": [the files it reads]}
+                on request (Electron), "reads": [the files it reads],
+                "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
+                focused window (a messenger's messages); see FOCUS in adapters/__init__.py]}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
                 import the plugin's other modules (from . import helpers)
 A plugin the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
@@ -23,6 +25,7 @@ import adapters
 import constants
 
 INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
+SCREEN = {"lists"}  # what of the screen a plugin can ask the client for (its manifest's "screen")
 BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins")
 log = logging.getLogger("gemma_voice")
 
@@ -47,7 +50,8 @@ class Plugin:
         return {"name": self.name, "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
                 "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
                 "description": m.get("description"), "apps": m.get("apps") or [],
-                "electronTree": bool(m.get("electronTree")), "reads": m.get("reads") or [], "error": self.error}
+                "electronTree": bool(m.get("electronTree")), "reads": m.get("reads") or [],
+                "screen": m.get("screen") or [], "error": self.error}
 
 
 def load(folder, builtin):
@@ -63,6 +67,9 @@ def load(folder, builtin):
             raise ValueError(f"interface {m.get('interface')!r}; this server has interface {INTERFACE}")
         if not all(isinstance(a, str) for a in m.get("apps") or []):
             raise ValueError("\"apps\" is not a list of bundle ids")
+        unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
+        if unknown:
+            raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
         package = f"lv_plugin_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
                                                       submodule_search_locations=[folder])

@@ -54,6 +54,23 @@ KNOBS = [
 BY_KEY = {k.key: k for k in KNOBS}
 BY_NAME = {k.name: k for k in KNOBS}
 SAMPLER = ("temperature", "top_k", "top_p", "seed")
+# The knobs an adapter's entry in the config may set for the context it gives: {"adapters": {"telegram":
+# {"enabled": true, "chatHistoryTokenBudget": 600}}}. A chat app's short messages and an assistant's long replies want
+# different budgets, so these win over the model's options for that adapter's context.
+ADAPTER_KNOBS = ("chatHistoryTokenBudget", "chatTermsTokenBudget")
+
+
+def adapter_options(entry):
+    """An adapter's entry in the config → its context knobs, checked: {name: value}. Raises ValueError for an unknown
+    key or a wrong value."""
+    out = {}
+    for key, value in entry.items():
+        if key == "enabled":
+            continue
+        if key not in ADAPTER_KNOBS:
+            raise ValueError(f"unknown key {key}; an adapter takes enabled, {', '.join(ADAPTER_KNOBS)}")
+        out[BY_KEY[key].name] = check(BY_KEY[key], value)
+    return out
 
 
 def check(knob, value):

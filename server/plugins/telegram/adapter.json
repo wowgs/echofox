@@ -1,0 +1,16 @@
+{
+  "name": "telegram",
+  "version": "1.0",
+  "author": "local-voice",
+  "source": "https://github.com/wowgs/local-voice",
+  "description": "Telegram Desktop: the messages of the chat open in the window, from its accessibility tree.",
+  "interface": 2,
+  "apps": [
+    "com.tdesktop.Telegram"
+  ],
+  "electronTree": false,
+  "reads": [],
+  "screen": [
+    "lists"
+  ]
+}

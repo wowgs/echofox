@@ -173,8 +173,9 @@ class Session:
 
     async def context(self):
         """The adapters' context, or None; what it was goes to the record."""
-        if tuning.value("chat_history_token_budget", self.start.options, self.args) <= 0:
-            return None
+        own = [o.get("chat_history_token_budget") for o in (getattr(self.args, "adapter_options", None) or {}).values()]
+        if tuning.value("chat_history_token_budget", self.start.options, self.args) <= 0 and not any(own):
+            return None  # the context is off, and no adapter turns it on for itself
         try:
             found = await asyncio.wait_for(asyncio.to_thread(adapters.context, self.start.snapshot, self.start.hints,
                                                              self.args.adapters), adapters.CONTEXT_TIMEOUT_S)

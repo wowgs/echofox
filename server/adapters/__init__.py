@@ -11,13 +11,19 @@ context. Only that adapter finds the session and builds its context. Every adapt
 each message of the context through it before the message goes to the model, and takes the terms from the cleaned
 messages. clean makes the app's text plain prose (adapters/markdown.py has why).
 
-FOCUS, the snapshot the client sends (only service fields, never the text of input fields):
+FOCUS, the snapshot the client sends (service fields, never the text of input fields; screen content only for the
+apps of an enabled adapter whose manifest asks for it in "screen"):
   {"app": {"bundleId", "pid", "name"},
    "window": {"title", "document"},
    "focused": {"role", "subrole", "title", "description", "identifier", "domClasses": [...]},
    "ancestors": [{"role", "subrole", "title", "description", "identifier", "domClasses", "url"}, ...]  (up the tree),
    "webArea": {"url", "title"}  (the nearest web area above the focused element, if any),
-   "processes": [{"pid", "name", "cwd"}, ...]  (the app's child processes)}
+   "processes": [{"pid", "name", "cwd"}, ...]  (the app's child processes),
+   "focusedFrame": {"x", "y", "width", "height"}  (the focused element on the screen, with "lists"),
+   "lists": [{"frame": {"x", "y", "width", "height"}, "rowCount": rows in the list,
+              "rows": [{"text": the row's accessible text, "columns": [the titles of its cells]}, ...]}, ...]
+            (screen "lists": the lists in the focused window, in the tree's order; the last rows of each, oldest
+             first, within the client's limits)}
 Any part may be missing.
 """
 import abc

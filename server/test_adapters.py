@@ -263,3 +263,86 @@ class ClaudeDesktopTest(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+TELEGRAM = "com.tdesktop.Telegram"
+
+
+def tg_row(lines, columns):
+    return {"text": "\n".join(lines), "columns": columns}
+
+
+def tg_focus(rows, title="Anna – (3)", others=True):
+    """A Telegram Desktop snapshot as the client sends it: the chat list on the left, the messages above the box."""
+    lists = [{"frame": {"x": 540, "y": -847, "width": 972, "height": 1684}, "rowCount": len(rows) + 20, "rows": rows}]
+    if others:
+        lists.append({"frame": {"x": 0, "y": 124, "width": 540, "height": 26744}, "rowCount": 393,
+                      "rows": [tg_row(["Bob", "see you", "Received at 9:00"], ["Sender", "Message", "Time"])] * 5})
+    return {"app": {"bundleId": TELEGRAM}, "window": {"title": title},
+            "focusedFrame": {"x": 590, "y": 847, "width": 826, "height": 31}, "lists": lists}
+
+
+# Rows as Telegram Desktop's MessageAccessibilityName writes them (see plugins/telegram/desktop.py).
+IN = ["Sender", "Message", "Delivery", "Time"]
+OUT = ["Seen", "Sender", "Message", "Delivery", "Time"]
+TG_ROWS = [
+    {"text": "Anna joined the group"},  # a service message: one line, no cells
+    tg_row(["Anna", "Привет! Как дела с Kubernetes?", "Received at 10:42"], IN),
+    tg_row(["Seen", "You", "Всё ок, деплою", "Sent at 10:43"], OUT),
+    tg_row(["Anna", "Photo", "Смотри, что вышло в 10:30", "Received at 10:44"], ["Sender", "Media type", "Message", "Delivery", "Time"]),
+    tg_row(["Anna", "Первая строка", "вторая строка", "Received edited at 10:45", "👍 2"], IN + ["Reactions"]),
+    tg_row(["Not seen", "You", "Ещё не прочитано", "Sent at 10:46"], OUT),
+]
+
+
+class TelegramTest(Fixture):
+    def plugin(self):
+        return registry.plugins()["telegram"].adapter
+
+    def test_the_rows_become_messages_with_the_speakers_own_and_without_the_status(self):
+        from lv_plugin_telegram import desktop
+        self.plugin()
+        self.assertEqual(desktop.messages(TG_ROWS), [
+            {"from": "Anna", "text": "Привет! Как дела с Kubernetes?"},
+            {"from": "the speaker", "text": "Всё ок, деплою"},
+            {"from": "Anna", "text": "Photo\nСмотри, что вышло в 10:30"},
+            {"from": "Anna", "text": "Первая строка\nвторая строка"},
+            {"from": "the speaker", "text": "Ещё не прочитано"},
+        ])
+
+    def test_the_chat_name_comes_from_the_window_title(self):
+        from lv_plugin_telegram import desktop
+        self.plugin()
+        for title, name in [("Anna – (3)", "Anna"), ("(2) Anna", "Anna"), ("Anna @ Work (3)", "Anna"),
+                            ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team")]:
+            self.assertEqual(desktop.chat_name(title), name, title)
+
+    def test_the_message_list_is_the_one_above_the_input_box(self):
+        from lv_plugin_telegram import desktop
+        self.plugin()
+        self.assertIs(desktop.message_list(tg_focus(TG_ROWS))["rows"], TG_ROWS)
+        no_box = tg_focus(TG_ROWS)
+        no_box.pop("focusedFrame")
+        self.assertIs(desktop.message_list(no_box)["rows"], TG_ROWS)  # the widest list
+
+    def test_telegram_claims_its_window_and_gives_the_open_chat_newest_first(self):
+        found = adapters.context(tg_focus(TG_ROWS), {}, ["telegram", "claude"])
+        self.assertEqual((found["adapter"], found["about"]), ("telegram", "a Telegram chat with Anna"))
+        self.assertEqual([m["text"] for m in found["messages"]][:2], ["Ещё не прочитано", "Первая строка вторая строка"])
+        self.assertEqual(found["terms"][:1], ["Anna"])
+        self.assertEqual(found["details"]["messages"], 5)
+        self.assertIsNone(adapters.context(tg_focus(TG_ROWS), {}, ["claude"]))  # not enabled: the base mode
+        self.assertIsNone(adapters.context({"app": {"bundleId": TELEGRAM}}, {}, ["telegram"]))  # no lists sent
+        self.assertIsNone(adapters.context({**tg_focus(TG_ROWS), "app": {"bundleId": "com.other"}}, {}, ["telegram"]))
+
+    def test_a_manifest_may_ask_only_for_screen_parts_the_client_sends(self):
+        info = registry.plugins()["telegram"].info({"telegram"})
+        self.assertEqual((info["screen"], info["enabled"]), (["lists"], True))
+        d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], "peek")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "adapter.json"), "w") as f:
+            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["everything"]}, f)
+        with open(os.path.join(d, "adapter.py"), "w") as f:
+            f.write("from adapters import Adapter\nclass P(Adapter):\n    def claim(self, f, h): pass\n"
+                    "    def context(self, f, h): pass\n    def clean(self, t): return t\n")
+        self.assertIn("screen", registry.plugins()["peek"].error)

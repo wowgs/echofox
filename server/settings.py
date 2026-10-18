@@ -6,7 +6,8 @@ The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 3:
    "silenceStopSeconds": 60, "saveRecordings": true, "fillers": {"ru": ["э", "мм"]},
    "server": {"host": …, "port": …, "pieceSeconds": …, …}}
 language and silenceStopSeconds: the clients'; the server does not read them. adapters: the adapter plugins that
-work (adapters/registry.py); none: the base mode, dictation without context. fillers: the hesitation sounds taken out of the text, by language
+work (adapters/registry.py); none: the base mode, dictation without context; an adapter's entry may also set chatHistoryTokenBudget and chatTermsTokenBudget for its
+own context (tuning.ADAPTER_KNOBS). fillers: the hesitation sounds taken out of the text, by language
 (fillers.py has the built-in lists; an empty list turns it off for that language). models: the registry; each a llama.cpp
 llama-server, started and stopped through its launchd agent. Only the model chosen in the menus ("model") is in
 memory; a name not in the registry, or none: no model in memory. A setting's value: the command line, then the
@@ -61,7 +62,13 @@ def good_model(m):
 
 
 def good_adapters(v):
-    return all(isinstance(k, str) and isinstance(e, dict) and isinstance(e.get("enabled", False), bool)
+    def good(e):
+        try:
+            tuning.adapter_options(e)
+            return True
+        except ValueError:
+            return False
+    return all(isinstance(k, str) and isinstance(e, dict) and isinstance(e.get("enabled", False), bool) and good(e)
                for k, e in v.items())
 
 
@@ -171,6 +178,7 @@ def recording_settings(now, into=None):
             setattr(st, s.name, now[s.key])
     st.recordings = constants.path(now["recordings"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
+    st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
     return st
 
 
@@ -192,8 +200,9 @@ def selected_model(config_path, models):
 
 def migrate(path):
     """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
-    working, so the upgrade enables every built-in plugin; a new config has none (the base mode). The file keeps its
-    order."""
+    working, so the upgrade enables the built-in plugins; a new config has none (the base mode). A plugin that asks
+    for the screen's content (its manifest's "screen": a messenger's messages) is never enabled for the user: they
+    turn it on themselves. The file keeps its order."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
@@ -202,7 +211,8 @@ def migrate(path):
     if not isinstance(c, dict) or c.get("version") != 2:
         return
     import adapters  # here, not at the top: adapters does not need the settings
-    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items() if p.builtin}
+    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items()
+               if p.builtin and not p.manifest.get("screen")}
     out = {}
     for k, v in c.items():
         out[k] = constants.CONFIG_VERSION if k == "version" else v

@@ -60,6 +60,11 @@ async def run_blocking(fn, *args, cancel=None):
         raise
 
 
+def context_options(adapter, server):
+    """The context knobs that `adapter`'s entry in the config sets ({} for none)."""
+    return (getattr(server, "adapter_options", None) or {}).get(adapter) or {}
+
+
 def context_header(about):
     """What the model reads before the context: where the speaker writes, as the adapter says it."""
     return (f"The speaker is writing into {about or 'a conversation'}. Its earlier messages follow, oldest first. "
@@ -95,11 +100,15 @@ class Dictation:
         return lo, used
 
     def _build(self, context):
-        """The text before the audio: the context within the token budget, then the prompt."""
-        budget = tuning.value("chat_history_token_budget", self.options, self.server)
-        if not context or budget <= 0:
+        """The text before the audio: the context within the token budget, then the prompt. The adapter's entry in the
+        config sets its own budgets (tuning.ADAPTER_KNOBS); they win over the model's options."""
+        if not context:
             return
-        terms_budget = tuning.value("chat_terms_token_budget", self.options, self.server)
+        options = {**self.options, **context_options(context.get("adapter"), self.server)}
+        budget = tuning.value("chat_history_token_budget", options, self.server)
+        if budget <= 0:
+            return
+        terms_budget = tuning.value("chat_terms_token_budget", options, self.server)
         terms_budget = budget // 10 if terms_budget is None else terms_budget
         all_terms = [t for t in context.get("terms") or [] if isinstance(t, str)]
         n_terms, used = self._fit(all_terms, terms_budget, lambda ts: "Terms: " + ", ".join(ts))
@@ -121,7 +130,7 @@ class Dictation:
         self.text = "\n\n".join(parts) + "\n\n---\n\n" + self.prompt
         self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
-                     "chat_terms": len(terms)}
+                     "chat_terms": len(terms), "chat_budget": budget}
 
     async def prepare(self, context=None):
         """Builds the text before the audio."""

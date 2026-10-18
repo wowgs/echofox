@@ -108,6 +108,21 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         await d.prepare({"messages": [{"from": "Anna", "text": "hello"}], "terms": ["X"]})
         self.assertEqual(d.text, "PROMPT")
 
+    async def test_an_adapters_entry_sets_the_budget_of_its_own_context(self):
+        chat = {"adapter": "telegram", "messages": [{"from": "Anna", "text": "hello there"}], "terms": []}
+        server = args(adapter_options={"telegram": {"chat_history_token_budget": 0}})
+        off = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
+        await off.prepare(chat)
+        self.assertEqual(off.text, "PROMPT")  # the adapter's 0 wins over the model's 500
+        on = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 0},
+                         args(adapter_options={"telegram": {"chat_history_token_budget": 500}}), {})
+        await on.prepare(chat)
+        self.assertIn("Anna: hello there", on.text)
+        self.assertEqual(on.meta["chat_budget"], 500)
+        other = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
+        await other.prepare({**chat, "adapter": "claude"})
+        self.assertIn("Anna: hello there", other.text)  # another adapter keeps the model's budget
+
     async def test_the_text_is_limited_by_the_length_of_the_audio(self):
         await self.dictation({}).piece(LOUD * 20, 1)
         await self.dictation({"max_output_tokens": 50}).piece(LOUD * 20, 1)
