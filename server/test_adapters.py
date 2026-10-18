@@ -300,8 +300,8 @@ class TelegramTest(Fixture):
         return registry.plugins()["telegram"].adapter
 
     def test_the_rows_become_messages_with_the_speakers_own_and_without_the_status(self):
+        self.plugin()  # loads the plugin's package
         from lv_plugin_telegram import desktop
-        self.plugin()
         self.assertEqual(desktop.messages(TG_ROWS), [
             {"from": "Anna", "text": "Привет! Как дела с Kubernetes?"},
             {"from": "the speaker", "text": "Всё ок, деплою"},
@@ -311,15 +311,16 @@ class TelegramTest(Fixture):
         ])
 
     def test_the_chat_name_comes_from_the_window_title(self):
+        self.plugin()  # loads the plugin's package
         from lv_plugin_telegram import desktop
-        self.plugin()
         for title, name in [("Anna – (3)", "Anna"), ("(2) Anna", "Anna"), ("Anna @ Work (3)", "Anna"),
-                            ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team")]:
+                            ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team"),
+                            ("\u2068Anna\u2069 \u2013 (3)", "Anna"), ("(2) \u2068Dev team\u2069", "Dev team")]:
             self.assertEqual(desktop.chat_name(title), name, title)
 
     def test_the_message_list_is_the_one_above_the_input_box(self):
+        self.plugin()  # loads the plugin's package
         from lv_plugin_telegram import desktop
-        self.plugin()
         self.assertIs(desktop.message_list(tg_focus(TG_ROWS))["rows"], TG_ROWS)
         no_box = tg_focus(TG_ROWS)
         no_box.pop("focusedFrame")

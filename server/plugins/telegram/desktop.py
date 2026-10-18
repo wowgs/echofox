@@ -28,7 +28,7 @@ SPEAKER = "the speaker"
 
 def chat_name(title):
     """The open chat's name from the window title, or None."""
-    t = str(title or "").strip()
+    t = re.sub("[\u200e\u200f\u202a-\u202e\u2066-\u2069]", "", str(title or "")).strip()
     t = re.sub(r"\s•\s.*$", "", t)  # a canary build's suffix
     t = re.sub(r"\s\(\d+\)$", "", t)  # the total unread
     t = re.sub(r"\s–$", "", t)
