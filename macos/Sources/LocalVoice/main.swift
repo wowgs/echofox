@@ -1,5 +1,14 @@
-// Local Voice: the menu bar app (App.swift).
+// Local Voice: the menu bar app (App.swift). With --record-test SECONDS OUT [CHOICE], it records the chosen microphone
+// (or CHOICE: builtin, system, a device's UID) for that
+// long and writes to OUT only what came (samples, seconds, peak level, which microphone), never the audio, then quits:
+// a check of the recorder that runs with the app's own Microphone permission (`open -n LocalVoice.app --args …`).
 import AppKit
+import LocalVoiceCore
+
+if let i = CommandLine.arguments.firstIndex(of: "--record-test"), CommandLine.arguments.count > i + 2 {
+    let a = CommandLine.arguments
+    RecordTest.run(seconds: Double(a[i + 1]) ?? 3, out: a[i + 2], choice: a.count > i + 3 ? a[i + 3] : nil)
+}
 
 let app = NSApplication.shared
 let delegate = App()

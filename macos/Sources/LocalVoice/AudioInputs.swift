@@ -30,7 +30,7 @@ enum AudioInputs {
         }
     }
 
-    /// macOS's input device now.
+    /// macOS's input device now (for the choice "system").
     static func defaultInput() -> AudioDeviceID? {
         var a = address(kAudioHardwarePropertyDefaultInputDevice)
         var id = AudioDeviceID(0)
