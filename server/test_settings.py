@@ -56,18 +56,18 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             f = os.path.join(d, "config.json")
             models = {"a": {"llamaServer": "http://h:1", "launchd": "x.a", "prompt": "P", "options": {"topK": 5}}}
             self.write(f, model="a", models=models, saveRecordings=False, silenceStopSeconds=60,
-                       server={"pieceSeconds": 25, "port": 9000})
+                       server={"pieceSeconds": 25, "port": 9000}, fillers={"ru": ["э"]})
             self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "pieceSeconds": 25.0,
-                                                  "port": 9000})
+                                                  "port": 9000, "fillers": {"ru": ["э"]}})
 
     def test_a_wrong_key_or_value_in_the_file_is_left_out(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             self.write(f, models={"a": {"llamaServer": "http://h", "options": {"noRepeatNgramSize": 10}}},
-                       server={"pieceSeconds": 25, "outputTokensBase": "many", "colour": "red"})
+                       server={"pieceSeconds": 25, "outputTokensBase": "many", "colour": "red"}, fillers={"ru": "э"})
             with self.assertLogs("gemma_voice", "ERROR") as logs:
                 self.assertEqual(s.file_settings(f), {"pieceSeconds": 25.0})
-        self.assertEqual(len(logs.output), 3)  # colour, outputTokensBase, models (an unknown option)
+        self.assertEqual(len(logs.output), 4)  # colour, outputTokensBase, models (an unknown option), fillers
 
     def test_a_file_of_another_version_is_not_read(self):
         with tempfile.TemporaryDirectory() as d:

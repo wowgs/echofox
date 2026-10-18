@@ -13,7 +13,7 @@ import llama
 import metrics
 import recordings
 import tuning
-from fakes import LOUD, FakeLlamaServer, args
+from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 
 class OptionsTest(unittest.TestCase):
@@ -145,6 +145,20 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(os.path.getsize(os.path.join(rec.dir, "piece-1.wav")), 44 + 2 * 32000)
         lines = [json.loads(l) for l in open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8")]
         self.assertEqual([(l["piece"], l["text"]) for l in lines], [(1, "text from llama"), (2, "text from llama")])
+
+    async def test_hesitation_sounds_leave_the_text_and_the_record_keeps_the_models_own(self):
+        class Hesitant(StubModel):
+            def complete(self, text, pcm, limit, options, slot=None):
+                return "Э, привет, мм, мир", {}
+        rec = recordings.Recording(self.dir.name)
+        dict_ = d.Dictation(Hesitant(), "PROMPT", {}, args(), {"language": "ru"}, rec)
+        await dict_.prepare()
+        self.assertEqual(await dict_.piece(LOUD, 1), "Привет, мир")
+        line = json.loads(open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8").read())
+        self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
+        other = d.Dictation(Hesitant(), "PROMPT", {}, args(fillers={"ru": []}), {"language": "ru"})
+        await other.prepare()
+        self.assertEqual(await other.piece(LOUD, 1), "Э, привет, мм, мир")  # the config turned it off
 
     async def test_a_cancelled_piece_closes_its_request_at_once(self):
         fake = FakeLlamaServer(delay=2.0)

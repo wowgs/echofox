@@ -71,6 +71,7 @@ server/.venv/bin/python -m unittest discover -s server
 - `language`: the dictation language, a code such as `ru` or `en`; the client sends it in the start message. Without it, the menu bar app takes the first language of macOS. An empty value: the speech's own language.
 - `silenceStopSeconds`: a client stops a recording after this long without speech that the server hears; 0 turns the stop off.
 - `saveRecordings`: keep every recording (see below); on unless `false`.
+- `fillers`: the hesitation sounds the server takes out of the text, by language, for example `{"ru": ["э", "мм"]}`. The model writes a speaker's hesitations as words, so they go after each piece; the record keeps the model's own text as `raw` in `pieces.jsonl`. Without the key the built-in list of the language applies (`server/fillers.py`; Russian: э, э-э, а-а, м, м-м, эм, ам, хм); an empty list turns the removal off for that language. A sound counts in any length ("ээ", "ммм", "э-э-э"), and one right after a number stays ("5 мм").
 - `server`: the dictation server's settings (see the server's section).
 
 The server reads this file at each recording, so a change by hand also takes effect with the next recording.

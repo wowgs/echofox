@@ -7,6 +7,7 @@ import logging
 import math
 import time
 
+import fillers
 import metrics
 import tuning
 from audio import seconds, wav
@@ -77,6 +78,7 @@ class Dictation:
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
         self.recording = recording
         self.text, self.chat_tokens = text_prompt, 0
+        self.sounds = fillers.words(meta.get("language", ""), getattr(server, "fillers", None))
         model.begin()
 
     def _fit(self, items, budget, render):
@@ -163,15 +165,18 @@ class Dictation:
         log.info("%s: piece %d, %.1f s of audio in %.2f s, %s prefill (%s cached) + %s decode tokens: %r", self.m.name,
                  piece, audio, took, timings.get("prefill_tokens"), timings.get("cached_tokens"),
                  timings.get("decode_tokens"), text)
+        raw, text = text, fillers.remove(text, self.sounds)
+        if text != raw:
+            log.info("%s: piece %d without hesitation sounds: %r", self.m.name, piece, text)
         if hit:
             log.warning("%s: the text reached the limit of %d tokens for %.1f s of audio and was cut", self.m.name,
                         limit, audio)
         metrics.metric("piece", model=self.m.name, **meta, audio_seconds=round(audio, 2), wall_seconds=round(took, 3),
-                       text_chars=len(text), output_limit=limit, output_limit_hit=hit, **timings)
+                       text_chars=len(text), raw_chars=len(raw), output_limit=limit, output_limit_hit=hit, **timings)
         self._save(f"piece-{piece}.wav", wav(pcm))
-        self._save("pieces.jsonl", (json.dumps({"piece": piece, "audio_seconds": round(audio, 2), "text": text,
-                                                "output_limit": limit, "output_limit_hit": hit, **timings},
-                                               ensure_ascii=False) + "\n").encode("utf-8"), append=True)
+        line = {"piece": piece, "audio_seconds": round(audio, 2), "text": text, **({"raw": raw} if raw != text else {}),
+                "output_limit": limit, "output_limit_hit": hit, **timings}
+        self._save("pieces.jsonl", (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8"), append=True)
         return text
 
     def _save(self, name, data, append=False):

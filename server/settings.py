@@ -3,10 +3,11 @@
 The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 3:
   {"version": 3, "model": "<name>", "language": "ru", "adapters": {"<plugin>": {"enabled": true}},
    "models": {"<name>": {"llamaServer": "http://127.0.0.1:8092", "launchd": "<label>", "prompt": "…", "options": {…}}},
-   "silenceStopSeconds": 60, "saveRecordings": true,
+   "silenceStopSeconds": 60, "saveRecordings": true, "fillers": {"ru": ["э", "мм"]},
    "server": {"host": …, "port": …, "pieceSeconds": …, …}}
 language and silenceStopSeconds: the clients'; the server does not read them. adapters: the adapter plugins that
-work (adapters/registry.py); none: the base mode, dictation without context. models: the registry; each a llama.cpp
+work (adapters/registry.py); none: the base mode, dictation without context. fillers: the hesitation sounds taken out of the text, by language
+(fillers.py has the built-in lists; an empty list turns it off for that language). models: the registry; each a llama.cpp
 llama-server, started and stopped through its launchd agent. Only the model chosen in the menus ("model") is in
 memory; a name not in the registry, or none: no model in memory. A setting's value: the command line, then the
 file, then the default (the test server keeps its own port, log and metrics). The server watches the file:
@@ -64,6 +65,11 @@ def good_adapters(v):
                for k, e in v.items())
 
 
+def good_fillers(v):
+    return all(isinstance(k, str) and isinstance(w, list) and all(isinstance(x, str) and x.strip() for x in w)
+               for k, w in v.items())
+
+
 SETTINGS = [
     Setting("host", "host", str, bool, constants.HOST, "process", "server", help="where the server listens"),
     Setting("port", "port", int, lambda v: 0 < v < 65536, constants.WORKING_PORT, "process", "server",
@@ -72,6 +78,7 @@ SETTINGS = [
             "model", flag=False),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", flag=False),
     Setting("adapters", "adapters", dict, good_adapters, {}, "recording", flag=False),
+    Setting("fillers", "fillers", dict, good_fillers, {}, "recording", flag=False),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
             help="where the recordings are saved"),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server", help="the metrics file"),
