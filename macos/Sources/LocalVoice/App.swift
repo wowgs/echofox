@@ -40,9 +40,14 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
     }
 
     private func state() -> MenuState {
-        MenuState(recording: current != nil, waiting: !waiting.isEmpty, accessibility: permissions.accessibility,
-                  microphone: permissions.microphone, keyName: key.keyName, lastText: lastText, lastNote: lastNote,
-                  lastError: lastError, config: Config.load(), server: server.info, serverProblem: server.problem)
+        let config = Config.load()
+        let input = AudioInputs.chosen(config.microphone).input
+        let device = input?.id ?? AudioInputs.defaultInput()
+        return MenuState(recording: current != nil, waiting: !waiting.isEmpty, accessibility: permissions.accessibility,
+                         microphone: permissions.microphone, keyName: key.keyName, lastText: lastText,
+                         lastNote: lastNote, lastError: lastError, config: config, server: server.info,
+                         serverProblem: server.problem, microphoneName: input?.name ?? "macOS's input",
+                         inputVolume: device.flatMap(AudioInputs.volume))
     }
 
     private func permissionsChanged() {
@@ -151,6 +156,13 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
 
     func choose(language: String) {
         write(["language"], language, "language chosen: \(language.isEmpty ? "the speech's own" : language)")
+    }
+
+    /// The recorded microphone's input volume: the device's own control, the same as in macOS's Sound settings.
+    func setInputVolume(_ value: Float) {
+        let input = AudioInputs.chosen(Config.load().microphone).input
+        guard let device = input?.id ?? AudioInputs.defaultInput() else { return }
+        if !AudioInputs.setVolume(value, of: device) { Log.write("the microphone's input volume cannot be set") }
     }
 
     func choose(microphone: String) {

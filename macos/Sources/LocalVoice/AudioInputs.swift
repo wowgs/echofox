@@ -56,6 +56,42 @@ enum AudioInputs {
         }
     }
 
+    /// The device's input volume, 0…1, as macOS's Sound settings show it: the device's own control (kAudioDevice
+    /// PropertyVolumeScalar on its input), shared by every app. Read on the main element, else on channel 1.
+    static func volume(_ id: AudioDeviceID) -> Float? {
+        for element in [kAudioObjectPropertyElementMain, 1] {
+            var a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,
+                                               mScope: kAudioObjectPropertyScopeInput, mElement: element)
+            var value: Float32 = 0
+            var size = UInt32(MemoryLayout<Float32>.size)
+            if AudioObjectHasProperty(id, &a), AudioObjectGetPropertyData(id, &a, 0, nil, &size, &value) == noErr {
+                return value
+            }
+        }
+        return nil
+    }
+
+    /// Sets the device's input volume (every settable element: the main one, or each input channel). False if the
+    /// device has no volume to set.
+    @discardableResult
+    static func setVolume(_ value: Float, of id: AudioDeviceID) -> Bool {
+        var done = false
+        let channels = max(1, inputChannels(id))
+        for element in [kAudioObjectPropertyElementMain] + Array(1...UInt32(channels)) {
+            var a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,
+                                               mScope: kAudioObjectPropertyScopeInput, mElement: element)
+            var settable: DarwinBoolean = false
+            guard AudioObjectHasProperty(id, &a), AudioObjectIsPropertySettable(id, &a, &settable) == noErr,
+                  settable.boolValue else { continue }
+            var v = Float32(min(1, max(0, value)))
+            if AudioObjectSetPropertyData(id, &a, 0, nil, UInt32(MemoryLayout<Float32>.size), &v) == noErr {
+                done = true
+                if element == kAudioObjectPropertyElementMain { break }
+            }
+        }
+        return done
+    }
+
     private static func address(_ selector: AudioObjectPropertySelector,
                                 _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal)
         -> AudioObjectPropertyAddress {

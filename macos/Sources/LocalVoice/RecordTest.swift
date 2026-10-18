@@ -29,6 +29,10 @@ enum RecordTest {
         } catch {
             result["error"] = "\(error)"
         }
+        if let device = input?.id ?? AudioInputs.defaultInput(), let v = AudioInputs.volume(device) {
+            result["inputVolume"] = v
+            result["inputVolumeSetsBack"] = AudioInputs.setVolume(v, of: device)  // the same value: nothing changes
+        }
         let st = recorder.stats
         result["formats"] = recorder.formats
         result["unit"] = ["calls": st.calls, "renderErrors": st.renderErrors, "lastStatus": Int(st.lastStatus),

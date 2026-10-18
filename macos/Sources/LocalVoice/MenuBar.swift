@@ -11,6 +11,8 @@ struct MenuState {
     var lastText: String?, lastNote: String?, lastError: String?
     var config = Config()
     var server: ServerInfo?, serverProblem: String?
+    /// The recorded microphone's name and input volume (0…1; nil: the device has none to set).
+    var microphoneName = "", inputVolume: Float?
 }
 
 protocol MenuActions: AnyObject {
@@ -21,6 +23,7 @@ protocol MenuActions: AnyObject {
     func choose(language: String)
     func enable(adapter: String, _ on: Bool)
     func choose(microphone: String)
+    func setInputVolume(_ value: Float)
     func openLog()
     func openLabeling()
 }
@@ -88,6 +91,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(submenu("Language: " + languageName(s), languageItems(s)))
         let inputs = AudioInputs.all()
         menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
+        menu.addItem(volumeItem(s))
         let on = (s.server?.adapters ?? []).filter { s.config.adapters[$0.name] == true }
         let failing = on.contains { $0.error != nil } ? " (one does not work)" : ""
         menu.addItem(submenu("Adapters: " + (on.isEmpty ? "none" : on.map(\.name).joined(separator: ", ")) + failing,
@@ -127,6 +131,16 @@ final class MenuBar: NSObject, NSMenuDelegate {
     /// The config's microphone is this input: the built-in one for "builtin", the device for its UID.
     private func isChosen(_ input: AudioInput, _ s: MenuState) -> Bool {
         s.config.microphone == Config.builtInMicrophone ? input.builtIn : s.config.microphone == input.uid
+    }
+
+    /// The input volume of the microphone the app records: the same control as in macOS's Sound settings.
+    private func volumeItem(_ s: MenuState) -> NSMenuItem {
+        guard let volume = s.inputVolume else {
+            return disabled("Input volume: \(s.microphoneName.isEmpty ? "no microphone" : s.microphoneName) has none")
+        }
+        let item = NSMenuItem()
+        item.view = VolumeView(value: volume) { [weak self] v in self?.actions?.setInputVolume(v) }
+        return item
     }
 
     private func microphoneName(_ s: MenuState, _ inputs: [AudioInput]) -> String {
@@ -196,4 +210,42 @@ final class MenuBar: NSObject, NSMenuDelegate {
         guard let actions, let run = handlers[ObjectIdentifier(sender)] else { return }
         run(actions)
     }
+}
+
+/// A slider in the menu: "Input volume", 0–100%, applied while it moves.
+final class VolumeView: NSView {
+    private let slider = NSSlider()
+    private let percent = NSTextField(labelWithString: "")
+    private let onChange: (Float) -> Void
+
+    init(value: Float, onChange: @escaping (Float) -> Void) {
+        self.onChange = onChange
+        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 46))
+        let title = NSTextField(labelWithString: "Input volume")
+        title.font = .menuFont(ofSize: 0)
+        title.textColor = .secondaryLabelColor
+        title.frame = NSRect(x: 20, y: 25, width: 160, height: 16)
+        percent.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        percent.textColor = .secondaryLabelColor
+        percent.alignment = .right
+        percent.frame = NSRect(x: 196, y: 25, width: 46, height: 16)
+        slider.minValue = 0
+        slider.maxValue = 1
+        slider.doubleValue = Double(value)
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(moved)
+        slider.frame = NSRect(x: 18, y: 4, width: 226, height: 20)
+        [title, percent, slider].forEach(addSubview)
+        show()
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func moved() {
+        show()
+        onChange(Float(slider.doubleValue))
+    }
+
+    private func show() { percent.stringValue = "\(Int((slider.doubleValue * 100).rounded()))%" }
 }
