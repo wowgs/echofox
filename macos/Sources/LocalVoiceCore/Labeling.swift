@@ -34,6 +34,10 @@ public enum LabelStatus: String {
 }
 
 public enum Labeling {
+    /// How a label's text is written: what was said, word for word, hesitation sounds, repeats and slips included
+    /// (the hesitations go later, in the server's fillers.py, so the model learns what it hears).
+    public static let convention = "verbatim"
+
     /// The pieces not labeled yet, the newest recording first, its pieces in order.
     public static func pending(recordings: URL, labeled: URL) -> [LabelItem] {
         let fm = FileManager.default
@@ -86,7 +90,7 @@ public enum Labeling {
             try fm.copyItem(at: from, to: target)
         }
         var label: [String: Any] = [
-            "recording": item.recording, "piece": item.piece, "status": status.rawValue,
+            "recording": item.recording, "piece": item.piece, "status": status.rawValue, "convention": convention,
             "text": text.trimmingCharacters(in: .whitespacesAndNewlines), "modelText": item.text,
             "labeledAt": ISO8601DateFormatter().string(from: now),
         ]

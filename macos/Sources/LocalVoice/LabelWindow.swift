@@ -1,5 +1,7 @@
 // The labeling window: one card for each piece not labeled yet (LocalVoiceCore/Labeling.swift). The piece plays at
-// once; you correct the model's text into what you said and go on, until you stop or the pieces end.
+// once; you correct the model's own text into what was said, word for word, hesitations and repeats included, and go
+// on, until you stop or the pieces end. It opens in the lower right corner of the screen, a third of its width and a
+// bit under half its height; its frame, once moved or resized, is kept.
 import AppKit
 import AVFoundation
 import LocalVoiceCore
@@ -18,21 +20,31 @@ final class LabelWindow: NSObject, NSWindowDelegate {
         let config = Config.load()
         let model = LabelModel(recordings: config.recordings, labeled: config.labeled)
         model.onStop = { [weak self] in self?.window?.close() }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
-                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered,
-                         defer: false)
+        let w = NSWindow(contentRect: Self.corner(), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+                         backing: .buffered, defer: false)
         w.title = "Label Recordings"
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
-        w.minSize = NSSize(width: 520, height: 380)
+        w.minSize = NSSize(width: Tuning.labelWindowMinWidth, height: Tuning.labelWindowMinHeight)
         w.contentView = NSHostingView(rootView: LabelView(model: model))
-        w.center()
+        w.setFrameAutosaveName("LabelRecordings")  // a frame the user chose wins over the corner
         w.delegate = self
         self.window = w
         self.model = model
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         model.load()
+    }
+
+    /// The lower right corner of the screen with the mouse.
+    private static func corner() -> NSRect {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let w = max(Tuning.labelWindowMinWidth, area.width * Tuning.labelWindowWidthShare)
+        let h = max(Tuning.labelWindowMinHeight, area.height * Tuning.labelWindowHeightShare)
+        let m = Tuning.labelWindowMargin
+        return NSRect(x: area.maxX - w - m, y: area.minY + m, width: w, height: h)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -81,7 +93,7 @@ final class LabelModel: ObservableObject {
         error = nil
         stopAudio()
         guard let item = current else { return }
-        text = item.text
+        text = item.raw ?? item.text  // word for word: the model's own text, before the hesitation sounds went
         play()
     }
 
@@ -167,7 +179,7 @@ struct LabelView: View {
         .padding(.horizontal, 22)
         .padding(.top, 34)
         .padding(.bottom, 18)
-        .frame(minWidth: 520, minHeight: 380)
+        .frame(minWidth: Tuning.labelWindowMinWidth - 44, minHeight: Tuning.labelWindowMinHeight - 52)
     }
 
     private func card(_ item: LabelItem) -> some View {
@@ -196,9 +208,8 @@ struct LabelView: View {
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
-            if let raw = item.raw {
-                Text("The model wrote: \(raw)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
+            Text("Write what was said, word for word: э, мм, repeats and slips too.")
+                .font(.caption).foregroundStyle(.secondary)
             if let e = model.error { Text(e).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("Unusable", action: { model.save(.unusable) }).keyboardShortcut("u", modifiers: .command)

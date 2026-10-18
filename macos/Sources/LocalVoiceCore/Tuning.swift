@@ -26,6 +26,13 @@ public enum Tuning {
     public static let recorderBufferFrames: UInt32 = 4096
     /// The longest tap of the hotkey that counts as a tap, in seconds.
     public static let longestTapSeconds: TimeInterval = 0.6
+    /// The labeling window: its share of the screen's width and height, its smallest size, and its distance from
+    /// the screen's edges, in points.
+    public static let labelWindowWidthShare = 1.0 / 3
+    public static let labelWindowHeightShare = 0.45
+    public static let labelWindowMinWidth = 420.0
+    public static let labelWindowMinHeight = 320.0
+    public static let labelWindowMargin = 16.0
     /// The defaults the app uses until the server's info arrives (the server's own values: server/constants.py).
     public static let defaultSampleRate = 16000
     public static let defaultTextWaitSeconds: TimeInterval = 180
