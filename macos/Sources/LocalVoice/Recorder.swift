@@ -1,8 +1,8 @@
 // The microphone, converted to what the server takes: 16-bit little-endian PCM, mono, at the server's sample rate.
 // When the input device changes during a recording (AirPods connected or gone), AVAudioEngine stops and posts
 // AVAudioEngineConfigurationChange; the recorder then starts again on the new device, and says so if it cannot. With a
-// `device`, the engine's input is that microphone (kAudioOutputUnitProperty_CurrentDevice), set again at each start,
-// so a headset that connects does not take the recording over.
+// `device`, the engine's input is that microphone (kAudioOutputUnitProperty_CurrentDevice) when it is not macOS's input
+// already, so a headset that connects does not take the recording over.
 import AudioToolbox
 import AVFoundation
 import LocalVoiceCore
@@ -36,7 +36,9 @@ final class Recorder {
 
     private func tap() throws {
         let input = engine.inputNode
-        if var id = device {
+        // Setting the device makes AVAudioEngine post a configuration change, after which the restarted engine gave no
+        // audio (2026-10-18, two recordings of 0.0 s). So the device is set only when it is not macOS's input already.
+        if var id = device, id != AudioInputs.defaultInput() {
             guard let unit = input.audioUnit else { throw MessageError("the audio input has no audio unit") }
             let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                               &id, UInt32(MemoryLayout<AudioDeviceID>.size))

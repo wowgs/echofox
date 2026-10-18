@@ -30,6 +30,15 @@ enum AudioInputs {
         }
     }
 
+    /// macOS's input device now.
+    static func defaultInput() -> AudioDeviceID? {
+        var a = address(kAudioHardwarePropertyDefaultInputDevice)
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &id) == noErr
+            && id != 0 ? id : nil
+    }
+
     /// The device the config's choice names, or nil for macOS's input. A device that is gone falls back to the
     /// built-in microphone, then to macOS's input; `why` says which.
     static func chosen(_ choice: String) -> (input: AudioInput?, why: String) {
