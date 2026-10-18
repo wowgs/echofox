@@ -16,7 +16,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
     private let prepareQueue = DispatchQueue(label: "local-voice.prepare")
     private var current: Dictation?
     private var waiting: [Dictation] = []
-    private var lastText: String?, lastNote: String?, lastError: String?
+    private var lastError: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier)")
@@ -44,8 +44,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
         let input = AudioInputs.chosen(config.microphone).input
         let device = input?.id ?? AudioInputs.defaultInput()
         return MenuState(recording: current != nil, waiting: !waiting.isEmpty, accessibility: permissions.accessibility,
-                         microphone: permissions.microphone, keyName: key.keyName, lastText: lastText,
-                         lastNote: lastNote, lastError: lastError, config: config, server: server.info,
+                         microphone: permissions.microphone, keyName: key.keyName, lastError: lastError, config: config, server: server.info,
                          serverProblem: server.problem, microphoneName: input?.name ?? "macOS's input",
                          inputVolume: device.flatMap(AudioInputs.volume))
     }
@@ -121,11 +120,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
             Log.write("no text")
             return
         }
-        lastText = text
-        Inserter.shared.insert(text, into: d.capture) { [weak self] how, why in
+        Inserter.shared.insert(text, into: d.capture) { how, why in
             Log.write("text: \(text.count) characters, inserted: \(how.rawValue) (\(why))")
-            self?.lastNote = how == .clipboard ? "The text is in the clipboard: \(why)." : nil
-            self?.menu.update()
         }
     }
 
@@ -142,12 +138,6 @@ final class App: NSObject, NSApplicationDelegate, MenuActions {
         } else {
             permissions.openSettings(.microphone)
         }
-    }
-
-    func copyLastText() {
-        guard let t = lastText else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(t, forType: .string)
     }
 
     func choose(model: String) {

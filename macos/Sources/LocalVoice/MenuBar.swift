@@ -1,5 +1,6 @@
-// The menu bar item: an icon for the state, and the menu built from the state each time it opens. It shows; it never
-// decides: the actions go back to the App.
+// The menu bar item: an icon for the state (recording, waiting, a problem), and the menu of the app's configuration,
+// built each time it opens. A dictation is the hotkey's, not the menu's. It shows; it never decides: the actions go
+// back to the App.
 import AppKit
 import AVFoundation
 import LocalVoiceCore
@@ -8,7 +9,7 @@ struct MenuState {
     var recording = false, waiting = false
     var accessibility = false, microphone = AVAuthorizationStatus.notDetermined
     var keyName = ""
-    var lastText: String?, lastNote: String?, lastError: String?
+    var lastError: String?
     var config = Config()
     var server: ServerInfo?, serverProblem: String?
     /// The recorded microphone's name and input volume (0…1; nil: the device has none to set).
@@ -18,7 +19,6 @@ struct MenuState {
 protocol MenuActions: AnyObject {
     func allowAccessibility()
     func allowMicrophone()
-    func copyLastText()
     func choose(model: String)
     func choose(language: String)
     func enable(adapter: String, _ on: Bool)
@@ -63,30 +63,13 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let s = state()
         menu.removeAllItems()
         handlers.removeAll()
-        let status: String
-        if s.recording {
-            status = "Recording. Tap \(s.keyName) to stop."
-        } else if s.waiting {
-            status = "Waiting for the text."
-        } else if !s.accessibility {
-            status = "Needs the Accessibility permission."
-        } else if s.microphone != .authorized {
-            status = "Needs the Microphone permission."
-        } else {
-            status = "Ready. Tap \(s.keyName) to dictate."
-        }
-        menu.addItem(disabled(status))
-        if !s.accessibility { menu.addItem(action("Allow Accessibility…") { $0.allowAccessibility() }) }
-        if s.microphone == .denied || s.microphone == .restricted || s.microphone == .notDetermined && s.accessibility {
-            menu.addItem(action("Allow the Microphone…") { $0.allowMicrophone() })
-        }
-        if let t = s.lastText {
-            menu.addItem(action("Copy the last text: “\(cut(t, Tuning.menuTextChars))”") { $0.copyLastText() })
-        }
-        if let n = s.lastNote { menu.addItem(disabled(n)) }
-        if let e = s.lastError { menu.addItem(disabled("Last error: " + cut(e, Tuning.menuErrorChars))) }
-        if let p = s.serverProblem { menu.addItem(disabled("Server: " + cut(p, Tuning.menuErrorChars))) }
-        menu.addItem(.separator())
+        // The menu is configuration; a dictation is the hotkey's, and the icon shows it.
+        let needsAccessibility = !s.accessibility
+        let needsMicrophone = s.microphone == .denied || s.microphone == .restricted
+            || s.microphone == .notDetermined && s.accessibility
+        if needsAccessibility { menu.addItem(action("Allow Accessibility…") { $0.allowAccessibility() }) }
+        if needsMicrophone { menu.addItem(action("Allow the Microphone…") { $0.allowMicrophone() }) }
+        if needsAccessibility || needsMicrophone { menu.addItem(.separator()) }
         menu.addItem(submenu("Model: " + (s.config.model ?? "none"), modelItems(s)))
         menu.addItem(submenu("Language: " + languageName(s), languageItems(s)))
         let inputs = AudioInputs.all()
