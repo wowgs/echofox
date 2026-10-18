@@ -6,6 +6,7 @@ Local Voice — приложение для macOS: диктовка локаль
 
 - [Dictation terms](../dictation-terms/1-untitled.md "doc"): словарь терминов.
 - [Local Voice: optional adapters](../adapters/1-idea.md "doc"): рабочий документ — необязательные адаптеры и адаптеры-плагины; решения оттуда переедут сюда.
+- [Local Voice: LoRA training](../lora-training/1-idea.md "doc"): дообучение модели распознавания на размеченных записях пользователя, на его Маке.
 
 ## Что
 

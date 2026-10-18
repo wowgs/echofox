@@ -61,6 +61,25 @@
      "file": "docs/adapters/4-refactor.md"
     }
    ]
+  },
+  "local-voice-lora-training": {
+   "id": "bcac8fe1-c023-4fa9-8e60-9e63573b9660",
+   "name": "Local Voice: LoRA training",
+   "dir": "docs/local-voice-lora-training",
+   "tabs": [
+    {
+     "id": "136f2b58-9200",
+     "file": "docs/lora-training/1-idea.md"
+    },
+    {
+     "id": "e27c2573-0b19",
+     "file": "docs/lora-training/2-requirements.md"
+    },
+    {
+     "id": "2517ca10-f3a1",
+     "file": "docs/lora-training/3-hld.md"
+    }
+   ]
   }
  },
  "conflicts": "local"
