@@ -160,7 +160,7 @@ do {
         as! [String: Any]
     check(label["text"] as? String == "Ну, привет" && label["modelText"] as? String == "Привет"
           && label["modelRaw"] as? String == "Э, привет" && label["status"] as? String == "verified"
-          && label["model"] as? String == "m" && label["convention"] as? String == "verbatim", "label: the label \(label)")
+          && label["model"] as? String == "m" && label["convention"] as? String == "clean", "label: the label \(label)")
     check((try? String(contentsOf: dir.appendingPathComponent("audio.wav"), encoding: .utf8)) == "RIFF1"
           && (try? String(contentsOf: dir.appendingPathComponent("text-before-audio.txt"), encoding: .utf8)) == "CONTEXT",
           "label: the audio and the context are copied")

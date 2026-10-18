@@ -34,9 +34,10 @@ public enum LabelStatus: String {
 }
 
 public enum Labeling {
-    /// How a label's text is written: what was said, word for word, hesitation sounds, repeats and slips included
-    /// (the hesitations go later, in the server's fillers.py, so the model learns what it hears).
-    public static let convention = "verbatim"
+    /// How a label's text is written: what the speaker meant to write. Hesitation sounds (э, мм, а-а) and repeated
+    /// words go, and after a slip only the correction stays ("fullback, ой, не fullback, fallback" → "fallback"), so
+    /// a model trained on the labels learns to leave them out; the words said on purpose stay.
+    public static let convention = "clean"
 
     /// The pieces not labeled yet, the newest recording first, its pieces in order.
     public static func pending(recordings: URL, labeled: URL) -> [LabelItem] {

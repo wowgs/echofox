@@ -1,6 +1,6 @@
 // The labeling window: one card for each piece not labeled yet (LocalVoiceCore/Labeling.swift). The piece plays at
-// once; you correct the model's own text into what was said, word for word, hesitations and repeats included, and go
-// on, until you stop or the pieces end. It opens in the lower right corner of the screen, a third of its width and a
+// once; you correct the model's text into what you meant to write (Labeling.convention), and go on, until you stop
+// or the pieces end. It opens in the lower right corner of the screen, a third of its width and a
 // bit under half its height; its frame, once moved or resized, is kept.
 import AppKit
 import AVFoundation
@@ -93,7 +93,7 @@ final class LabelModel: ObservableObject {
         error = nil
         stopAudio()
         guard let item = current else { return }
-        text = item.raw ?? item.text  // word for word: the model's own text, before the hesitation sounds went
+        text = item.text  // the text that went into the input box: the hesitation sounds are already out
         play()
     }
 
@@ -208,7 +208,7 @@ struct LabelView: View {
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
-            Text("Write what was said, word for word: э, мм, repeats and slips too.")
+            Text("Write what you meant to write: no э, мм, а-а, no repeats; after a slip, only what you corrected it to.")
                 .font(.caption).foregroundStyle(.secondary)
             if let e = model.error { Text(e).font(.caption).foregroundStyle(.red) }
             HStack {
