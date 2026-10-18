@@ -6,6 +6,10 @@
 //   4. otherwise the clipboard (and the menu).
 // Into a box, the ways are tried in this order; each is checked by the box's text length, and the first that works
 // wins. Before each next way, the box is checked again: a way that landed late counts, and no text goes in twice.
+// A Cmd+V to the app in front, with its focus in the box, is what the speaker's own Cmd+V would be, so it ends the
+// insertion even when the box's length does not show it: a terminal's box (Ghostty's AXTextArea) has the visible screen
+// as its value, which need not grow, and the next ways then pasted the same text twice more (2026-10-18). Once the tap's
+// app got keys, rules 2 and 3 do not send it more.
 //   a. Accessibility: the box's selected text is replaced. Claude Desktop's box reports success and changes nothing
 //      (2026-10-15).
 //   b. Cmd+V: to the frontmost app if the box is in it, else to the box's app in the background (CGEventPostToPid),
@@ -23,7 +27,7 @@ import FocusSnapshot
 final class Inserter {
     enum Result: String {
         case accessibility, accessibilityUnchecked, paste, pasteUnchecked, pasteInBackground, valueInBackground,
-             typedInBackground, axKeysInBackground, pasteBroughtToFront, clipboard, late
+             typedInBackground, axKeysInBackground, pasteBroughtToFront, pasteBroughtToFrontUnchecked, clipboard, late
     }
 
     /// The waits, in seconds. Not tuned: set by hand on 2026-10-15; only Claude Desktop was tried with them.
@@ -56,8 +60,9 @@ final class Inserter {
     }
 
     private func insert(_ text: String, into capture: FocusSnapshot.Capture?) -> (Result, String) {
+        var tried: [String] = []
+        var tapApp: pid_t?  // the tap's app, once rule 1 may have sent it keys
         if let box = capture?.focused, let pid = capture?.pid, Self.isInput(box) {
-            var tried: [String] = []
             let note = { (r: Result) in (r, "the input box of the tap" + (tried.isEmpty ? "" : "; " + tried.joined(separator: ", "))) }
             let baseline = Self.length(box)
             let landed = { baseline.map { b in (Self.length(box) ?? b) > b } ?? false }
@@ -71,6 +76,7 @@ final class Inserter {
             let otherBox = appFocus.map { !CFEqual($0, box) && Self.isInput($0) } ?? false
             tried.append("the app's focus: \(appFocus.map(Self.describe) ?? "none"), the box's length: \(baseline.map(String.init) ?? "unknown")")
             if landed() { return note(.late) }
+            tapApp = pid
             if let r = pasteInto(box, pid: pid, text, anyFocus: !front && !otherBox) { return note(r) }
             tried.append("cmd+v\(front ? "" : " in the background"): \(otherBox ? "skipped, focus in another box" : "no")")
             if !front && !otherBox {
@@ -85,11 +91,12 @@ final class Inserter {
                 }
             }
             if landed() { return note(.late) }
-            if bringToFrontAndPaste(box, pid: pid, text) {
-                return (.pasteBroughtToFront, "the input box of the tap, brought to the front and back; " + tried.joined(separator: ", "))
+            if let r = bringToFrontAndPaste(box, pid: pid, text) {
+                return (r, "the input box of the tap, brought to the front and back; " + tried.joined(separator: ", "))
             }
+            tried.append("brought to the front: no")
         }
-        if let (now, pid) = Self.focusedInput() {
+        if let (now, pid) = Self.focusedInput(), pid != tapApp {
             if let r = setSelectedText(text, now) { return (r, "the input box focused at the end") }
             if let r = pasteInto(now, pid: pid, text) { return (r, "the input box focused at the end") }
         }
@@ -101,7 +108,8 @@ final class Inserter {
             return (.pasteUnchecked, "the app of the tap, which tells nothing of its input box")
         }
         clipboard.keep(text)
-        return (.clipboard, "no input box at the tap or now, or the text did not go in")
+        return (.clipboard, "no input box at the tap or now, or the text did not go in"
+                    + (tried.isEmpty ? "" : "; the box of the tap: " + tried.joined(separator: ", ")))
     }
 
     // MARK: The ways
@@ -116,15 +124,18 @@ final class Inserter {
     }
 
     /// b. Cmd+V into the box: to the frontmost app if the box's app is in front, else to that app in the background.
-    /// Only while the app's own focus is in the box, unless `anyFocus`. The result if the text went in, nil if not.
+    /// Only while the app's own focus is in the box, unless `anyFocus`. In front, the paste counts as done (.paste if
+    /// the box grew, .pasteUnchecked if not); in the background, the result if the text went in, nil if not.
     private func pasteInto(_ box: AXUIElement, pid: pid_t, _ text: String, anyFocus: Bool = false) -> Result? {
         guard anyFocus || Self.focused(in: pid).map({ CFEqual($0, box) }) == true else { return nil }
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
         let before = Self.length(box)
         clipboard.lend(text) { Self.paste(to: front ? nil : pid) }
-        guard let b = before else { return front ? .pasteUnchecked : nil }
-        return Self.grew(box, from: b, within: front ? Wait.check : Wait.background)
-            ? (front ? .paste : .pasteInBackground) : nil
+        if front {
+            return before.map { Self.grew(box, from: $0, within: Wait.check) } == true ? .paste : .pasteUnchecked
+        }
+        guard let b = before else { return nil }
+        return Self.grew(box, from: b, within: Wait.background) ? .pasteInBackground : nil
     }
 
     /// c. The box's whole value through Accessibility, only if the box is empty. The result if the text went in.
@@ -177,9 +188,11 @@ final class Inserter {
         return Self.grew(box, from: before, within: Wait.background) ? .typedInBackground : nil
     }
 
-    /// d. Brings the box's app to the front with the focus in the box, pastes, and takes the speaker back.
-    private func bringToFrontAndPaste(_ box: AXUIElement, pid: pid_t, _ text: String) -> Bool {
-        guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+    /// d. Brings the box's app to the front with the focus in the box, pastes, and takes the speaker back to the app
+    /// and box they were in (another box of the same app too). Nil if the box did not get the focus, and nothing was
+    /// sent; else the paste counts as done, as in b.
+    private func bringToFrontAndPaste(_ box: AXUIElement, pid: pid_t, _ text: String) -> Result? {
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return nil }
         let back = NSWorkspace.shared.frontmostApplication
         let backBox = back.flatMap { Self.focused(in: $0.processIdentifier) }
         app.activate()
@@ -189,13 +202,19 @@ final class Inserter {
                 && Self.focused(in: pid).map { CFEqual($0, box) } == true
         }
         let before = Self.length(box)
-        if ready { clipboard.lend(text) { Self.paste(to: nil) } }
-        let ok = ready && (before.map { Self.grew(box, from: $0, within: Wait.check) } ?? true)
-        if let back, back.processIdentifier != pid, back.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            back.activate()
-            if let backBox { AXUIElementSetAttributeValue(backBox, kAXFocusedAttribute as CFString, kCFBooleanTrue) }
+        var r: Result?
+        if ready {
+            clipboard.lend(text) { Self.paste(to: nil) }
+            r = before.map { Self.grew(box, from: $0, within: Wait.check) } == true
+                ? .pasteBroughtToFront : .pasteBroughtToFrontUnchecked
         }
-        return ok
+        if let back, back.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            if back.processIdentifier != pid { back.activate() }
+            if let backBox, !CFEqual(backBox, box) {
+                AXUIElementSetAttributeValue(backBox, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            }
+        }
+        return r
     }
 
     // MARK: Accessibility helpers
