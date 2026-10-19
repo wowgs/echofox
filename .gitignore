@@ -3,9 +3,5 @@ server/.venv/
 __pycache__/
 .DS_Store
 .claude/settings.local.json
-# docs-local: this machine's sync state
-/.docsync/state.json
-/.docsync/push.json
-/.docsync/lock
+# docs-local: old files kept by docsync
 /.docsync-trash/
-/.docsync/base/
