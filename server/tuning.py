@@ -20,7 +20,7 @@ class Knob:
 
 
 KNOBS = [
-    Knob("pieceSeconds", "piece_seconds", float, lambda v: 5 <= v <= constants.MODEL_MAX_SECONDS, 20.0, True, True,
+    Knob("pieceSeconds", "piece_seconds", float, lambda v: 5 <= v <= constants.MODEL_MAX_SECONDS, 15.0, True, True,
          "the wanted length of a piece; a recording is cut, after the stop, into pieces as close to it as possible and "
          f"equal, none longer than {constants.MODEL_MAX_SECONDS} s"),
     Knob("cutSearchSeconds", "cut_search_seconds", float, lambda v: 0 < v <= 10, 3.0, True, True,
