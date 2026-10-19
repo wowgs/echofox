@@ -7,7 +7,10 @@
 # recording run at once, one per slot), every layer on the GPU (Metal), and the full cache of Gemma's sliding-window
 # layers (--swa-full). Without it, those layers keep only their window, so a later piece that shares the text but
 # not the audio of the one before cannot take the text from the cache: on 2026-10-15 the second piece of a recording
-# processed all its 2311 tokens again although 83 % of them matched. Log: ~/Library/Logs/local-voice/llama-server.log.
+# processed all its 2311 tokens again although 83 % of them matched. The prompt cache in RAM is off (--cache-ram 0):
+# the dictation server uses only each slot's own cache, and llama-server's default (8192 MiB, common/common.h) kept the
+# states of old requests, which filled up within a day (2026-10-19) and went to swap on a 24 GB Mac.
+# Log: ~/Library/Logs/local-voice/llama-server.log.
 set -euo pipefail
 # The shared numbers and names come from server/constants.py.
 HERE=${0:A:h}  # here, not in c(): inside a function $0 is the function's name
@@ -35,7 +38,7 @@ case ${1:-status} in
     <string>$bin</string><string>-m</string><string>$model</string><string>--mmproj</string><string>$mmproj</string>
     <string>--host</string><string>$HOST</string><string>--port</string><string>$PORT</string>
     <string>-c</string><string>16384</string><string>-np</string><string>2</string><string>-ngl</string><string>999</string>
-    <string>--swa-full</string>
+    <string>--swa-full</string><string>--cache-ram</string><string>0</string>
   </array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>$LOG</string><key>StandardErrorPath</key><string>$LOG</string>

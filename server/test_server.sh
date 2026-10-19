@@ -47,6 +47,8 @@ for x in a:
     if skip: out.append(sys.argv[2]); skip = False; continue
     out.append(x)
     skip = x == "--port"
+if "--cache-ram" not in out:  # never the prompt cache in RAM of llama-server, even with an older plist
+    out += ["--cache-ram", "0"]
 print("\n".join(out))' $LLAMA_PLIST $LLAMA_PORT)"})
     python3 - $CONFIG $STATE/config.json http://127.0.0.1:$LLAMA_PORT <<'PY'
 import json, sys
