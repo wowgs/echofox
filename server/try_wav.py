@@ -3,7 +3,7 @@
 The audio goes in 100 ms chunks at real-time speed, then the stop message. The script prints each message with
 its time, and the time from the stop until the server says done.
 Usage: try_wav.py <16 kHz mono 16-bit WAV> [--url URL] [--working] [--model NAME] [--language ru]
-                  [--session ID]... [--snapshot FILE] [--fast]
+                  [--session ID]... [--snapshot FILE] [--options JSON] [--fast]
 It goes to the test dictation server (server/test_server.sh, constants.TEST_URL) unless --url says otherwise. The working
 server, the one your dictation uses, it reaches only with --working: a run there would wait behind your dictation,
 make yours wait, and add to your recordings and metrics.
@@ -30,6 +30,7 @@ async def main():
     p.add_argument("--model", help="a model of the registry (default: the server's first)")
     p.add_argument("--session", action="append", default=[], help="a session id, sent as hints[\"sessions\"] (the Claude plugin reads it)")
     p.add_argument("--snapshot", help="a focus snapshot (macos lv-snapshot), for the chat context")
+    p.add_argument("--options", type=json.loads, help='the start message\'s options, e.g. \'{"cutWhileSpeaking": false}\'')
     p.add_argument("--fast", action="store_true", help="send without waiting between chunks")
     args = p.parse_args()
     if urllib.parse.urlparse(args.url).port == constants.WORKING_PORT and not args.working:
@@ -48,6 +49,7 @@ async def main():
         await ws.send(json.dumps({"type": "start", "language": args.language, "sampleRate": constants.RATE,
                                   "encoding": constants.ENCODING, "client": "try_wav", "hints": {"sessions": args.session} if args.session else {},
                                   **({"model": args.model} if args.model else {}),
+                                  **({"options": args.options} if args.options else {}),
                                   **({"snapshot": json.load(open(args.snapshot))} if args.snapshot else {})}))
 
         async def receive():

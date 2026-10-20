@@ -86,8 +86,32 @@ class Levels:
                 "dbfs_per_second": per_second}
 
 
+def quietness(rms, k):
+    """How loud the 300 ms around frame k are: the mean RMS of its 10 frames (fewer at the ends)."""
+    around = rms[max(0, k - 5):k + 5]
+    return sum(around) / len(around)
+
+
+def has_speech(rms, threshold):
+    return any(r > threshold for r in rms)
+
+
+def live_cut(rms, start, piece_s, search_s, last_s):
+    """While the speaker talks, the length of a recording is not known: where to cut the next piece, a frame, or None
+    for not yet. `start` is the frame of the cut before. A piece is cut once `piece_s` + `last_s` seconds were heard
+    since that cut, at the quietest 300 ms within `search_s` before `piece_s` from it. So the piece is
+    `piece_s` - `search_s` to `piece_s` long, and the audio after it is never shorter than `last_s`, the piece after
+    the stop included. `rms`: the RMS of each 30 ms frame (Levels)."""
+    if len(rms) - start < int((piece_s + last_s) / FRAME_S):  # whole frames: 20 s are 666 of them
+        return None
+    ideal = start + round(piece_s / FRAME_S)
+    lo = max(start + 1, ideal - max(1, int(search_s / FRAME_S)))
+    return min(range(lo, ideal + 1), key=lambda c: (quietness(rms, c), ideal - c))
+
+
 def split(pcm, rms, threshold, piece_s, search_s):
-    """Cuts a whole recording into pieces for the model, after the stop, when its length is known. The number of
+    """Cuts audio whose length is known (a whole recording, or what is left of it at the stop) into pieces for the
+    model. The number of
     pieces makes them as close to `piece_s` as possible, and none longer than the model takes (30 s): round(length /
     piece_s), at least ceil(length / 30). The pieces are equal, except that each cut moves to the quietest 300 ms
     within `search_s` of its equal point, so no cut falls inside a word. Pieces without speech are dropped.
@@ -98,7 +122,7 @@ def split(pcm, rms, threshold, piece_s, search_s):
     total = frames * FRAME_S
     n = max(1, math.ceil(total / MODEL_MAX_SECONDS), math.floor(total / piece_s + 0.5))
     most, search = int(MODEL_MAX_SECONDS / FRAME_S), max(1, int(search_s / FRAME_S))
-    smooth = [sum(rms[max(0, k - 5):k + 5]) / len(rms[max(0, k - 5):k + 5]) for k in range(frames)]
+    smooth = [quietness(rms, k) for k in range(frames)]
     cuts = [0]
     for k in range(1, n):
         ideal = round(k * frames / n)
@@ -110,7 +134,7 @@ def split(pcm, rms, threshold, piece_s, search_s):
     cuts.append(frames)
     pieces = []
     for a, b in zip(cuts, cuts[1:]):
-        if any(r > threshold for r in rms[a:b]):
+        if has_speech(rms[a:b], threshold):
             pieces.append(pcm[a * FRAME_BYTES:(b * FRAME_BYTES if b < frames else len(pcm))])
     return pieces
 

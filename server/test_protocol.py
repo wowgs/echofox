@@ -84,11 +84,34 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 return f"slot {slot}", {}
 
         self.args.piece_seconds = 5  # 12 s: two pieces; the second slot is warmed once 5 s are heard
+        self.args.cut_while_speaking = False  # both pieces are cut at the stop
         stub, got = await self.run_stream(START, (LOUD + QUIET) * 6, model=TwoSlots)
         self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["slot 0", "slot 1"])  # the pieces' order
         self.assertEqual(stub.warmed, [0, 1])
         self.assertEqual(sorted(stub.order[:2]), [("start", 0), ("start", 1)])  # both at once, one per slot
         self.assertEqual(stub.order[2:], [("end", 1), ("end", 0)])
+
+    async def test_pieces_are_cut_while_the_speaker_talks_and_the_rest_at_the_stop(self):
+        self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
+        saved = metrics.path()
+        with tempfile.TemporaryDirectory() as d:
+            metrics.configure(os.path.join(d, "metrics.jsonl"))
+            try:
+                stub, got = await self.run_stream(START, LOUD * 22)
+                lines = [json.loads(l) for l in open(metrics.path(), encoding="utf-8")]
+            finally:
+                metrics.configure(saved)
+        # Cuts once 10, 15 and 20 s are heard, at 5, 10 and 15 s; the 7 s left are one piece at the stop.
+        self.assertEqual(sorted(c[0] for c in stub.calls), [5.0, 5.0, 5.0, 7.0])  # the calls run at once
+        self.assertEqual(len([m for m in got if m["type"] == "text"]), 4)
+        r = next(l for l in lines if l["event"] == "recording")
+        self.assertEqual(r["pieces_while_speaking"], 3)
+        self.assertAlmostEqual(r["seconds_left_at_stop"], 7.0, delta=0.1)  # cuts fall on 30 ms frames
+
+    async def test_a_recording_too_short_for_a_cut_is_cut_at_the_stop(self):
+        self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
+        stub, got = await self.run_stream(START, LOUD * 7)  # 7 s < 5 + 5: no cut while speaking
+        self.assertEqual([c[0] for c in stub.calls], [7.0])  # and at the stop round(7 / 5) = 1 piece
 
     async def test_a_client_asks_what_the_server_offers(self):
         self.args.adapters = ["claude"]
@@ -199,7 +222,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_models_options_reach_the_model_and_a_clients_options_override_them(self):
         entries = {"g": {"llamaServer": "http://127.0.0.1:9", "options": {"temperature": 0.5, "pieceSeconds": 5}}}
         stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0}}, LOUD * 12, entries=entries)
-        self.assertEqual([c[0] for c in stub.calls], [6.0, 6.0])  # pieceSeconds 5: round(12 / 5) = 2 equal pieces
+        self.assertEqual(sorted(c[0] for c in stub.calls), [5.0, 7.0])  # pieceSeconds 5: a cut at 10 s heard, 7 s left
         self.assertEqual(stub.calls[0][2], {"temperature": 0.0, "top_k": 1, "piece_seconds": 5.0})
         stub, got = await self.run_stream({"type": "start", "options": {"topK": 0}}, LOUD)
         self.assertEqual(got[0]["type"], "error")

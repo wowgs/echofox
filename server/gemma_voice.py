@@ -17,8 +17,10 @@ model's prompt and options, the adapters that give the chat context, and the rec
                    then it closes
 
 Gemma 4 takes at most 30 s of audio per request (model card and processor_config.json: 25 tokens per second,
-750 tokens). The recording is cut after the stop, when its length is known: into pieces as close to --piece-seconds
-as possible and equal, none longer than 30 s, each cut moved to the quietest moment near its equal point. Each piece
+750 tokens). While the speaker talks, a piece is cut each time --piece-seconds plus --min-last-piece-seconds are heard
+since the cut before, at the quietest moment shortly before --piece-seconds, and goes to the model at once; at the
+stop, the rest is cut into pieces as close to --piece-seconds as possible and equal, none longer than 30 s, each cut
+moved to the quietest moment near its equal point. Each piece
 then goes to the model in a request of its own, so the model never sees its answers to earlier pieces (with them in
 the conversation it repeated them). The prompt is Google's ASR template from the model card, unless the model has
 its own, with the text before the audio, as the card advises.
@@ -26,7 +28,8 @@ its own, with the text before the audio, as the card advises.
 The models run in llama.cpp's llama-server (server/llama_launchd.sh), through its OpenAI-compatible
 /v1/chat/completions with the audio as "input_audio". The model's "options": sampling (temperature, topK, topP,
 seed), maxOutputTokens, the chat history (chatHistoryTokenBudget, chatTermsTokenBudget) and the cutting
-(pieceSeconds, cutSearchSeconds, thresholdDb, speechAboveNoiseDb). The server logs each recording's levels (speech,
+(pieceSeconds, cutSearchSeconds,
+cutWhileSpeaking, minLastPieceSeconds, thresholdDb, speechAboveNoiseDb). The server logs each recording's levels (speech,
 noise, peak, clipping, digital silence) and keeps them in audio.json.
 
 A piece's request holds the text before the audio (the messages of the place that an enabled adapter found, within

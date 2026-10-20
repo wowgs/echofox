@@ -21,10 +21,15 @@ class Knob:
 
 KNOBS = [
     Knob("pieceSeconds", "piece_seconds", float, lambda v: 5 <= v <= constants.MODEL_MAX_SECONDS, 15.0, True, True,
-         "the wanted length of a piece; a recording is cut, after the stop, into pieces as close to it as possible and "
-         f"equal, none longer than {constants.MODEL_MAX_SECONDS} s"),
+         "the wanted length of a piece; while the speaker talks, pieces of at most this long are cut; what is left at "
+         f"the stop is cut into pieces as close to it as possible and equal, none longer than {constants.MODEL_MAX_SECONDS} s"),
     Knob("cutSearchSeconds", "cut_search_seconds", float, lambda v: 0 < v <= 10, 3.0, True, True,
-         "how far from its equal point a cut may move to the quietest moment"),
+         "how far from its point a cut may move to the quietest moment (while the speaker talks: only back)"),
+    Knob("cutWhileSpeaking", "cut_while_speaking", bool, lambda v: True, True, True, True,
+         "cut pieces and send them to the model while the speaker talks, so that after the stop only the rest is left"),
+    Knob("minLastPieceSeconds", "min_last_piece_seconds", float, lambda v: 0 <= v <= constants.MODEL_MAX_SECONDS, 5.0,
+         True, True, "while the speaker talks, a piece is cut only once this much more was heard after it, so the "
+         "piece after the stop is never shorter"),
     Knob("thresholdDb", "threshold_db", float, lambda v: v < 0, -45.0, True, True, "the lowest loudness of speech, dBFS"),
     Knob("speechAboveNoiseDb", "speech_above_noise_db", float, lambda v: v >= 0, 12.0, True, True,
          "speech is at least this much louder than the recording's noise floor, dB"),

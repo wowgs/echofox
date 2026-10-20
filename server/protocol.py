@@ -1,8 +1,10 @@
 """One client connection (the protocol is in gemma_voice.py's text): an info request, or one recording.
 
-A recording (Session): the audio arrives and is saved; after the stop it is cut into pieces; one model request per
-piece, all at once on llama-server's slots, after the text before the audio (the adapters' context, then the prompt)
-was warmed in the slots while the speaker talked; the texts go to the client in the order of the pieces."""
+A recording (Session): the audio arrives and is saved; while the speaker talks, a piece is cut and goes to the model
+each time enough audio is heard (audio.live_cut); at the stop, the rest is cut into pieces; one model request per
+piece, each as soon as it is cut, on llama-server's slots, after the text before the audio (the adapters' context,
+then the prompt) was warmed in the slots while the speaker talked; the texts go to the client in the order of the
+pieces."""
 import asyncio
 import contextlib
 import json
@@ -17,7 +19,7 @@ import constants
 import metrics
 import recordings
 import tuning
-from audio import Levels, seconds, split
+from audio import FRAME_BYTES, Levels, has_speech, live_cut, seconds, split
 from dictation import LANGUAGES, MAX_PROMPT, Dictation, prompt
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
@@ -109,7 +111,9 @@ class Session:
         self.id = self.rec.id if self.rec else time.strftime("%Y-%m-%d/%H%M%S-") + "unsaved"
         opts = start.options
         self.cut = {n: tuning.value(n, opts, args) for n in ("threshold_db", "speech_above_noise_db", "piece_seconds",
-                                                             "cut_search_seconds")}
+                                                             "cut_search_seconds", "cut_while_speaking",
+                                                             "min_last_piece_seconds")}
+        self.cut_frame, self.live_pieces = 0, 0  # the audio before cut_frame (a 30 ms frame) went into pieces
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
                      "options": opts}
@@ -150,6 +154,7 @@ class Session:
                 if self.rec:
                     self.rec.write(message)
                 self.levels.feed(message)
+                self.cut_live()
                 if self.levels.heard and time.monotonic() - last_speech >= SPEECH_EVERY_S:
                     last_speech = time.monotonic()
                     await self.send(type="speech")
@@ -168,6 +173,18 @@ class Session:
             if m.get("type") == "stop":
                 return m.get("reason") if m.get("reason") in STOP_REASONS else "user"
         return None  # the connection ended without a stop
+
+    def cut_live(self):
+        """While the speaker talks: each piece that can be cut goes to the model now, so that after the stop only the
+        rest is left. A piece without speech is dropped."""
+        if not self.cut["cut_while_speaking"]:
+            return
+        while (c := live_cut(self.levels.rms, self.cut_frame, self.cut["piece_seconds"], self.cut["cut_search_seconds"],
+                             self.cut["min_last_piece_seconds"])) is not None:
+            if has_speech(self.levels.rms[self.cut_frame:c], self.levels.threshold):
+                self.pending.put_nowait(bytes(self.audio[self.cut_frame * FRAME_BYTES:c * FRAME_BYTES]))
+                self.live_pieces += 1
+            self.cut_frame = c
 
     # The context and the pieces
 
@@ -222,7 +239,7 @@ class Session:
                 slots = await asyncio.to_thread(dictation.slots) if dictation else 1
                 if dictation and self.args.warm_text:
                     warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
-                # Every piece goes to llama-server at once, piece i to slot (i - 1) % slots.
+                # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots.
                 piece = 0
                 while (pcm := await self.pending.get()) is not None:
                     piece += 1
@@ -272,10 +289,14 @@ class Session:
                 log.warning("recording %s: the client closed the connection before the stop", self.id)
                 self.errors.append("the client closed the connection before the stop")
                 return
-            # The recording is whole: cut it now, into pieces as equal as the pauses allow.
-            for pcm in split(bytes(self.audio), self.levels.rms, self.levels.threshold, self.cut["piece_seconds"],
-                             self.cut["cut_search_seconds"]):
+            # The recording is whole: cut what is left of it now, into pieces as equal as the pauses allow.
+            rest = self.cut_frame * FRAME_BYTES
+            for pcm in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:], self.levels.threshold,
+                             self.cut["piece_seconds"], self.cut["cut_search_seconds"]):
                 self.pending.put_nowait(pcm)
+            if self.live_pieces:
+                log.info("recording %s: %d pieces cut while the speaker talked, %.1f s left at the stop", self.id,
+                         self.live_pieces, seconds(len(self.audio) - rest))
             self.pending.put_nowait(None)
             self.levels_report()
             # The client may give up before the last piece; then the running requests are closed.
@@ -294,6 +315,8 @@ class Session:
                            language=self.start.language, prompt=self.meta["prompt"], options=self.start.options,
                            audio_seconds=round(self.heard_seconds, 2), stop_reason=self.stop_reason,
                            adapter=self.chat.get("adapter"), context_messages=self.chat.get("messages"),
+                           pieces_while_speaking=self.live_pieces,
+                           seconds_left_at_stop=round(seconds(len(self.audio) - self.cut_frame * FRAME_BYTES), 2),
                            done_after_stop_seconds=round(time.monotonic() - self.stopped_at, 3))
         finally:
             if not worker.done():

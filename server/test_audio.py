@@ -45,6 +45,30 @@ def tone(amplitude, seconds=1):
     return array.array("h", [amplitude, -amplitude] * int(a.RATE * seconds / 2)).tobytes()
 
 
+class LiveCutTest(unittest.TestCase):
+    def cut(self, pcm, start=0, piece_s=15, search_s=3, last_s=5):
+        c = a.live_cut(levels(pcm).rms, start, piece_s, search_s, last_s)
+        return None if c is None else round(c * a.FRAME_S, 1)
+
+    def test_no_cut_before_the_piece_and_the_last_piece_are_heard(self):
+        self.assertIsNone(self.cut(LOUD * 19))
+        self.assertEqual(self.cut(LOUD * 20), 15.0)  # no pause: at the wanted length
+
+    def test_a_cut_moves_back_into_a_pause_never_forward(self):
+        self.assertTrue(13.0 <= self.cut(LOUD * 13 + QUIET + LOUD * 6) <= 14.0)  # the pause 13 to 14 s
+        self.assertEqual(self.cut(LOUD * 15 + QUIET + LOUD * 4), 15.0)  # a pause after 15 s is not taken
+
+    def test_what_follows_a_cut_is_never_shorter_than_the_last_piece(self):
+        pcm = LOUD * 12 + QUIET + LOUD * 7  # 20 s; the pause 12 to 13 s is within the 3 s before 15 s
+        c = self.cut(pcm)
+        self.assertTrue(12.0 <= c <= 13.0 and 20 - c >= 5, c)
+
+    def test_the_next_cut_counts_from_the_cut_before(self):
+        rms = levels(LOUD * 34).rms
+        self.assertIsNone(a.live_cut(rms, round(15 / a.FRAME_S), 15, 3, 5))  # 19 s since the cut at 15 s
+        self.assertEqual(a.live_cut(levels(LOUD * 35).rms, round(15 / a.FRAME_S), 15, 3, 5), round(30 / a.FRAME_S))
+
+
 class LevelsTest(unittest.TestCase):
     def test_the_threshold_follows_the_noise_floor_of_a_loud_microphone(self):
         noise, speech = tone(100), tone(2300)  # -50.3 and -23.1 dBFS: a microphone at full input volume
