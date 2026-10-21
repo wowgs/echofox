@@ -79,7 +79,9 @@ final class LabelModel: ObservableObject {
     func load() {
         let recordings = self.recordings, labeled = self.labeled
         DispatchQueue.global(qos: .userInitiated).async {
-            let items = Labeling.pending(recordings: recordings, labeled: labeled)
+            // In random order, not the newest first: the labels then come from every day and every kind of
+            // dictation, and the days held out for checking a trained model have labels too.
+            let items = Labeling.pending(recordings: recordings, labeled: labeled).shuffled()
             DispatchQueue.main.async {
                 self.items = items
                 self.loading = false
