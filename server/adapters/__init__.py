@@ -8,8 +8,8 @@ The core (protocol.py) never looks at the screen. The client takes one focus sna
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
 and how sure it is (claim), and gives the recording to the surest one; if none claims it, the dictation runs without
 context. Only that adapter finds the session and builds its context. Every adapter has clean(text): the core passes
-each message of the context through it before the message goes to the model, and takes the terms from the cleaned
-messages. clean makes the app's text plain prose (adapters/markdown.py has why).
+each message of the context through it before the message goes to the model, takes the terms from the cleaned
+messages, then keeps only their prose lines (prose()). clean makes the app's text plain prose (adapters/markdown.py has why).
 
 FOCUS, the snapshot the client sends (service fields, never the text of input fields; screen content only for the
 apps of an enabled adapter whose manifest asks for it in "screen"):
@@ -34,6 +34,9 @@ from dataclasses import dataclass
 log = logging.getLogger("gemma_voice")
 
 MAX_TERMS = 500
+SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+")
+LETTERS = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")  # a word of letters in any script, with its hyphens
+PROSE_LETTERS = 0.6  # a line is prose when this share of its characters are letters; not tuned
 # Latin-script words: product names, identifiers, file names. A word joined by . _ + # - / stays one term.
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[._+#/-][A-Za-z0-9]+)*\+*")
 STOP = set(("a an and are as at be but by can do for from has have he i if in is it its me my no not of on "
@@ -77,11 +80,24 @@ class Adapter(abc.ABC):
         """A message's text as plain prose for the model: no markup of the app; "" drops the message."""
 
 
+def names(text):
+    """The words of the text in another script than Latin that start with a capital letter inside a sentence: names
+    of people, places and products (Флинт, Убунту). The first word of each sentence and line is left out: its capital
+    letter tells nothing."""
+    out = []
+    for line in text.splitlines():
+        for sentence in SENTENCE_END.split(line):
+            words = LETTERS.findall(sentence)
+            out += [w for w in words[1:] if w[:1].isupper() and not w.isascii() and len(w) > 1]
+    return out
+
+
 def terms(texts):
-    """Latin-script terms of the texts, the most frequent first (ties: the later one first)."""
+    """The terms of the texts: Latin-script words (product names, identifiers, files) and names in other scripts, the
+    most frequent first (ties: the later one first)."""
     seen, i = {}, 0
     for t in texts:
-        for w in WORD.findall(t):
+        for w in WORD.findall(t) + names(t):
             i += 1
             w = re.sub(r"[.\-/]+$", "", w)
             if len(w) < 2 or len(w) > 40 or w.count("/") > 1 or w.lower() in STOP:
@@ -89,6 +105,17 @@ def terms(texts):
             n, _ = seen.get(w, (0, 0))
             seen[w] = (n + 1, i)
     return [w for w, _ in sorted(seen.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))][:MAX_TERMS]
+
+
+def prose(text):
+    """The lines of the text that are prose: most of their characters (spaces aside) are letters. A table row of
+    numbers, a list of paths or values is not something a speaker says, so it goes; its terms were taken before."""
+    keep = []
+    for line in text.splitlines():
+        chars = [c for c in line if not c.isspace()]
+        if chars and sum(c.isalpha() for c in chars) >= PROSE_LETTERS * len(chars):
+            keep.append(line)
+    return "\n".join(keep)
 
 
 def bundle(snapshot):
@@ -129,7 +156,8 @@ def claims(focus, hints=None, enabled=None, errors=None):
 
 def context(focus, hints=None, enabled=None):
     """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
-    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages,
+    newest first, cleaned, with only their prose lines, "terms": the adapter's own terms, then the frequent ones of the
+    cleaned messages (taken before their lines that are not prose go),
     "errors": what failed in the plugins}; without "messages" if the surest adapter found nothing or failed; None if no
     enabled adapter claims the focus (with none enabled: the base mode, no context)."""
     errors = []
@@ -154,9 +182,9 @@ def context(focus, hints=None, enabled=None):
                 break  # a clean that fails once fails for all; the context goes without the rest
             if t:
                 messages.append({"from": str(m.get("from") or ""), "text": t})
-        out["messages"] = messages
         own = [t for t in found.get("terms") or [] if isinstance(t, str)]
         out["terms"] = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
+        out["messages"] = [{**m, "text": t} for m in messages if (t := prose(m["text"]))]  # after the terms
     if errors:
         out["errors"] = errors
     return out

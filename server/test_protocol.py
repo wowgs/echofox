@@ -196,7 +196,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 os.environ.update(saved)
         self.assertIn("Claude: Готово.", stub.calls[0][1])
-        self.assertTrue(stub.calls[0][1].endswith("---\n\n" + dictation.prompt("ru")))  # the context, then the prompt
+        self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
         self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],
                           a["chat"]["details"]["session"]), ("claude", "desktop store", "local_abc", "s1"))
         self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the plugin

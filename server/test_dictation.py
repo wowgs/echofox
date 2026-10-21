@@ -71,7 +71,8 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         for body in bodies:  # the text, then one piece's audio; never an earlier answer
             parts = body["messages"][0]["content"]
             self.assertEqual([p["type"] for p in parts], ["text", "input_audio"])
-            self.assertTrue(parts[0]["text"].endswith("---\n\nPROMPT") and "Anna: hello there" in parts[0]["text"])
+            self.assertTrue(parts[0]["text"].endswith("</context>\n\nPROMPT") and "Anna: hello there" in parts[0]["text"])
+            self.assertEqual(len(body["messages"]), 1)  # no system turn by default
             self.assertEqual(base64.b64decode(parts[1]["input_audio"]["data"])[:4], b"RIFF")
             self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
         self.assertEqual((bodies[0]["max_tokens"], bodies[0]["cache_prompt"], bodies[0]["seed"]), (52, True, 3))
@@ -100,8 +101,32 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Terms: GitHub, Kubernetes\n", d.text)
         self.assertLess(d.text.index("Speaker: a question asked"), d.text.index("Assistant: new reply here"))
         self.assertNotIn("old long reply", d.text)
-        self.assertTrue(d.text.endswith("---\n\nPROMPT"))
+        self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
+
+    async def test_only_the_newest_messages_go_in_whole_when_the_option_says_so(self):
+        d = self.dictation({"chat_history_token_budget": 100, "chat_history_messages": 1})
+        await d.prepare({"messages": [{"from": "Assistant", "text": "new reply here"},
+                                      {"from": "Speaker", "text": "a question asked"}], "terms": ["GitHub"]})
+        self.assertIn("Assistant: new reply here", d.text)
+        self.assertNotIn("a question asked", d.text)
+        self.assertIn("Terms: GitHub", d.text)
+
+    async def test_the_context_can_go_in_a_system_turn(self):
+        d = self.dictation({"chat_history_token_budget": 100, "context_as_system": True})
+        await d.prepare({"messages": [{"from": "Anna", "text": "hello there"}], "terms": []})
+        self.assertEqual(d.text, "PROMPT")  # the user turn: the prompt, then the audio
+        await d.warm(0)
+        await d.piece(LOUD, 1)
+        for body in self.fake.completions():  # the warm-up and the piece
+            self.assertEqual(body["messages"][0]["role"], "system")
+            self.assertIn("Anna: hello there", body["messages"][0]["content"])
+            self.assertEqual(body["messages"][1]["content"][0]["text"], "PROMPT")
+
+    def test_the_default_prompt_asks_for_punctuation_and_keeps_russian_imperatives(self):
+        self.assertIn("punctuation and capital letters", d.prompt("en"))
+        self.assertIn("imperative mood", d.prompt("ru"))
+        self.assertNotIn("imperative mood", d.prompt("en"))
 
     async def test_a_budget_of_0_turns_the_chat_history_off(self):
         d = self.dictation({"chat_history_token_budget": 0})

@@ -55,12 +55,12 @@ class Model(abc.ABC):
         """The tokens' text."""
 
     @abc.abstractmethod
-    def warm(self, text, options, slot=None):
-        """The text into the slot's cache, with nothing to write; the timings."""
+    def warm(self, text, options, slot=None, system=None):
+        """The text into the slot's cache, with nothing to write (after the system turn, if any); the timings."""
 
     @abc.abstractmethod
-    def complete(self, text, pcm, limit, options, slot=None):
-        """One piece: the text, then the audio: (text, timings)."""
+    def complete(self, text, pcm, limit, options, slot=None, system=None):
+        """One piece: the system turn if any, then the text, then the audio: (text, timings)."""
 
     def footprint_mb(self):
         """The model's memory in MB, for the metrics; None if unknown."""
@@ -173,8 +173,9 @@ class LlamaModel(Model):
         return self._request("POST", "/detokenize", {"tokens": list(ids)}, timeout=SHORT_TIMEOUT_S)["content"]
 
     @staticmethod
-    def _body(content, limit, options, slot):
-        body = {"messages": [{"role": "user", "content": content}],
+    def _body(content, limit, options, slot, system=None):
+        body = {"messages": ([{"role": "system", "content": system}] if system else []) +
+                            [{"role": "user", "content": content}],
                 "max_tokens": limit, "stream": False, "cache_prompt": True, **tuning.sampler(options),
                 # Gemma 4's template in llama.cpp lets the model think first (reasoning_content), which spent a
                 # piece's whole token limit on "Here's a thinking process…" and left no text.
@@ -192,18 +193,18 @@ class LlamaModel(Model):
                 "decode_tokens": t.get("predicted_n", (r.get("usage") or {}).get("completion_tokens")),
                 "decode_tps": [round(t["predicted_per_second"], 1)] if "predicted_per_second" in t else []}
 
-    def warm(self, text, options, slot=None):
+    def warm(self, text, options, slot=None, system=None):
         """The text alone, with no audio and nothing to write, so that llama-server keeps it in the slot's cache: a
         piece in that slot then processes only its audio. Measured 2026-10-15 (llama-server 0.6.0, build 11429): after
         this request, a piece of the same text and 21 s of audio took 1316 tokens from the cache and processed 537."""
-        body = self._body([{"type": "text", "text": text}], 0, options, slot)
+        body = self._body([{"type": "text", "text": text}], 0, options, slot, system)
         return self._timings(self._request("POST", "/v1/chat/completions", body))
 
-    def complete(self, text, pcm, limit, options, slot=None):
+    def complete(self, text, pcm, limit, options, slot=None, system=None):
         audio = base64.b64encode(wav(pcm)).decode("ascii")
         body = self._body([{"type": "text", "text": text},
                            {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}],
-                          limit, options, slot)
+                          limit, options, slot, system)
         r = self._request("POST", "/v1/chat/completions", body)
         return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
 

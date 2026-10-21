@@ -122,6 +122,19 @@ class CleanTest(Fixture):
                          "Открывай, или, а как пример.")
         self.assertEqual(plain("Код ``a `b` c`` и `x`."), "Код и x.")
 
+    def test_names_in_other_scripts_are_terms_but_not_the_first_word_of_a_sentence(self):
+        got = adapters.terms(["Поставь Убунту на ubu. Потом проверь Флинт и роутер.\nДальше Флинт снова."])
+        self.assertEqual(got[0], "Флинт")  # twice; the others once
+        self.assertIn("ubu", got)
+        self.assertIn("Убунту", got)
+        self.assertNotIn("Поставь", got)
+        self.assertNotIn("Потом", got)
+        self.assertNotIn("Дальше", got)
+
+    def test_only_prose_lines_stay_in_a_message(self):
+        text = "Ожидание упало заметно.\n20–40 с: 4,38 / 5,70 (n 158), 3,66 / 4,80 (n 47).\nДальше проверим."
+        self.assertEqual(adapters.prose(text), "Ожидание упало заметно.\nДальше проверим.")
+
     def test_inline_code_that_is_code_goes_and_terms_stay(self):
         self.assertEqual(adapters.markdown.plain(
             'Шлёт `POST /cmd` с `{"text": "..."}`, потом `close()`, `a = 1` и `sudo apt install glances`; '

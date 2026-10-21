@@ -19,10 +19,16 @@ LANGUAGES = {"cs": "Czech", "da": "Danish", "nl": "Dutch", "en": "English", "fr"
              "sv": "Swedish", "tr": "Turkish", "uk": "Ukrainian"}
 # Google's ASR prompt for Gemma 4 (model card, "Audio"); the second form, for an unknown language, is the
 # one in the card's code example.
+# Google's formatting rules for speech recognition (the model card), and one of ours: with the chat context, the model
+# often wrote whole pieces without punctuation and capital letters (2026-10-15 to 2026-10-20, 10 to 16 % of pieces).
 FORMAT = ("Follow these specific instructions for formatting the answer:\n"
           "* Only output the transcription, with no newlines.\n"
           "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, "
-          "and write 3 instead of three.")
+          "and write 3 instead of three.\n"
+          "* Write it with punctuation and capital letters.")
+# What a language's speakers say that the model tends to write differently. Russian: requests to an assistant are
+# in the imperative mood (сделай, посмотри, проверь).
+LANGUAGE_NOTES = {"ru": "* The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken."}
 NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
 log = logging.getLogger("gemma_voice")
 
@@ -33,7 +39,9 @@ def prompt(language, custom=""):
     if custom:
         return custom.replace("{LANGUAGE}", name or "its original language")
     if name:
-        return f"Transcribe the following speech segment in {name} into {name} text.\n\n{FORMAT}"
+        note = LANGUAGE_NOTES.get(language.split("-")[0])
+        return f"Transcribe the following speech segment in {name} into {name} text.\n\n{FORMAT}" + \
+            (f"\n{note}" if note else "")
     return f"Transcribe the following speech segment in its original language.\n{FORMAT}"
 
 
@@ -67,8 +75,9 @@ def context_options(adapter, server):
 
 def context_header(about):
     """What the model reads before the context: where the speaker writes, as the adapter says it."""
-    return (f"The speaker is writing into {about or 'a conversation'}. Its earlier messages follow, oldest first. "
-            "They show names and terms the speaker may use. Do not transcribe them.")
+    return (f"The speaker is writing into {about or 'a conversation'}. Between <context> and </context> are its terms "
+            "and latest messages, oldest first: they show names and words the speaker may use. They are not the "
+            "speech: do not transcribe or repeat them.")
 
 
 class Dictation:
@@ -82,7 +91,7 @@ class Dictation:
     def __init__(self, model, text_prompt, options, server, meta, recording=None):
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
         self.recording = recording
-        self.text, self.chat_tokens = text_prompt, 0
+        self.text, self.system, self.chat_tokens = text_prompt, "", 0  # system: the context, if it goes in a system turn
         self.sounds = fillers.words(meta.get("language", ""), getattr(server, "fillers", None))
         model.begin()
 
@@ -115,6 +124,9 @@ class Dictation:
         terms = all_terms[:n_terms]
         lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}"
                  for m in context.get("messages") or []]  # newest first
+        whole = tuning.value("chat_history_messages", options, self.server)
+        if whole is not None:
+            lines = lines[:whole]  # the older messages gave their terms (adapters.context)
         left = budget - used
         n_lines, _ = self._fit(lines, left, lambda ls: "\n\n".join(ls))
         kept = lines[:n_lines]
@@ -123,12 +135,14 @@ class Dictation:
             kept = ["…" + self.m.detokenize(ids[-(left - 2):])]
         if not kept and not terms:
             return
-        parts = [context_header(context.get("about"))]
-        if terms:
-            parts.append("Terms: " + ", ".join(terms))
-        parts += reversed(kept)
-        self.text = "\n\n".join(parts) + "\n\n---\n\n" + self.prompt
-        self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
+        parts = ["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + list(reversed(kept)) + ["</context>"]
+        block = context_header(context.get("about")) + "\n\n" + "\n\n".join(parts)
+        if tuning.value("context_as_system", options, self.server):
+            self.system = block
+            self.chat_tokens = len(self.m.tokenize(block))
+        else:
+            self.text = block + "\n\n" + self.prompt
+            self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
                      "chat_terms": len(terms), "chat_budget": budget}
 
@@ -140,7 +154,12 @@ class Dictation:
         log.info("%s: text before the audio ready in %.2f s, %d tokens of chat history and terms", self.m.name,
                  took, self.chat_tokens)
         metrics.metric("prepare", model=self.m.name, **self.meta, seconds=round(took, 3))
-        self._save("text-before-audio.txt", self.text.encode("utf-8"))
+        self._save("text-before-audio.txt", ((f"[system]\n{self.system}\n\n[user]\n" if self.system else "") +
+                                             self.text).encode("utf-8"))
+
+    def _system(self):
+        """The system turn as the model's last argument, only when there is one (a model without it takes none)."""
+        return [self.system] if self.system else []
 
     def slots(self):
         """How many pieces the model runs at once."""
@@ -149,7 +168,7 @@ class Dictation:
     async def warm(self, slot=None):
         """The text before the audio into the cache of llama-server's slot `slot`, before any audio."""
         t = time.monotonic()
-        timings = await run_blocking(self.m.warm, self.text, self.options, slot, cancel=self.m.cancel)
+        timings = await run_blocking(self.m.warm, self.text, self.options, slot, *self._system(), cancel=self.m.cancel)
         took = time.monotonic() - t
         log.info("%s: text before the audio warmed in slot %s in %.2f s, %s prefill (%s cached)", self.m.name, slot,
                  took, timings.get("prefill_tokens"), timings.get("cached_tokens"))
@@ -161,7 +180,7 @@ class Dictation:
         meta = {**self.meta, "piece": piece, "slot": slot}
         try:
             text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                               cancel=self.m.cancel)
+                                               *self._system(), cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)

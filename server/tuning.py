@@ -48,6 +48,10 @@ KNOBS = [
          "tokens of the context's messages before the audio; 0 turns the context off"),
     Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, lambda v: v >= 0, None, False, True,
          "tokens of the context's terms; none: a tenth of chatHistoryTokenBudget"),
+    Knob("chatHistoryMessages", "chat_history_messages", int, lambda v: v >= 0, None, False, True,
+         "how many of the newest messages go in whole; the older ones give only their terms; none: as many as fit"),
+    Knob("contextAsSystem", "context_as_system", bool, lambda v: True, False, False, True,
+         "the context goes in a system turn, and the user turn holds only the prompt and the audio"),
     # Google's sampler for Gemma 4 (generation_config.json of google/gemma-4-E4B-it and google/gemma-4-12B-it; the
     # model card: "Use the following standardized sampling configuration across all use cases"). It goes with every
     # request, so llama-server's own defaults never apply.
@@ -62,7 +66,7 @@ SAMPLER = ("temperature", "top_k", "top_p", "seed")
 # The knobs an adapter's entry in the config may set for the context it gives: {"adapters": {"telegram":
 # {"enabled": true, "chatHistoryTokenBudget": 600}}}. A chat app's short messages and an assistant's long replies want
 # different budgets, so these win over the model's options for that adapter's context.
-ADAPTER_KNOBS = ("chatHistoryTokenBudget", "chatTermsTokenBudget")
+ADAPTER_KNOBS = ("chatHistoryTokenBudget", "chatTermsTokenBudget", "chatHistoryMessages")
 
 
 def adapter_options(entry):
