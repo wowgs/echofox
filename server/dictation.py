@@ -11,6 +11,8 @@ import fillers
 import metrics
 import tuning
 from audio import seconds, wav
+from vad import CHUNK_S
+from vad import speech_in as speech_seconds  # tests put a fake here
 
 MAX_PROMPT = 4000  # characters of a prompt, the model's or a client's
 LANGUAGES = {"cs": "Czech", "da": "Danish", "nl": "Dutch", "en": "English", "fr": "French", "de": "German",
@@ -178,6 +180,17 @@ class Dictation:
         t, audio = time.monotonic(), seconds(pcm)
         limit = output_limit(audio, self.options, self.server)
         meta = {**self.meta, "piece": piece, "slot": slot}
+        least = tuning.value("min_speech_seconds", self.options, self.server)
+        most = tuning.value("max_chars_per_speech_second", self.options, self.server)
+        speech = await asyncio.to_thread(speech_seconds, pcm) if least or most else None
+        if speech is not None and speech < least:
+            log.info("%s: piece %d, %.1f s of audio with %.2f s of speech: not sent to the model", self.m.name, piece,
+                     audio, speech)
+            metrics.metric("piece_skipped", model=self.m.name, **meta, audio_seconds=round(audio, 2),
+                           speech_seconds=round(speech, 2))
+            self._save_piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2), "speech_seconds": round(speech, 2),
+                                   "text": "", "skipped": "no speech"})
+            return ""
         try:
             text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
                                                *self._system(), cancel=self.m.cancel)
@@ -199,13 +212,25 @@ class Dictation:
         if hit:
             log.warning("%s: the text reached the limit of %d tokens for %.1f s of audio and was cut", self.m.name,
                         limit, audio)
+        dropped = None
+        if speech is not None and most and len(text) > most * max(speech, CHUNK_S):
+            log.warning("%s: piece %d, %d characters for %.2f s of speech: the model's own text, dropped", self.m.name,
+                        piece, len(text), speech)
+            dropped, text = text, ""
         metrics.metric("piece", model=self.m.name, **meta, audio_seconds=round(audio, 2), wall_seconds=round(took, 3),
-                       text_chars=len(text), raw_chars=len(raw), output_limit=limit, output_limit_hit=hit, **timings)
-        self._save(f"piece-{piece}.wav", wav(pcm))
-        line = {"piece": piece, "audio_seconds": round(audio, 2), "text": text, **({"raw": raw} if raw != text else {}),
-                "output_limit": limit, "output_limit_hit": hit, **timings}
-        self._save("pieces.jsonl", (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8"), append=True)
+                       text_chars=len(text), raw_chars=len(raw), output_limit=limit, output_limit_hit=hit,
+                       **({"speech_seconds": round(speech, 2)} if speech is not None else {}),
+                       **({"dropped_chars": len(dropped)} if dropped is not None else {}), **timings)
+        self._save_piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2),
+                               **({"speech_seconds": round(speech, 2)} if speech is not None else {}),
+                               "text": text, **({"raw": raw} if raw != text and dropped is None else {}),
+                               **({"dropped": dropped} if dropped is not None else {}),
+                               "output_limit": limit, "output_limit_hit": hit, **timings})
         return text
+
+    def _save_piece(self, pcm, line):
+        self._save(f"piece-{line['piece']}.wav", wav(pcm))
+        self._save("pieces.jsonl", (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8"), append=True)
 
     def _save(self, name, data, append=False):
         if self.recording is not None:

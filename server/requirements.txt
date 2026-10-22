@@ -3,3 +3,8 @@ markdown-it-py==4.2.0
 mdurl==0.1.2
 linkify-it-py==2.2.0
 uc-micro-py==2.0.0
+onnxruntime==1.31.0
+numpy==2.5.4
+flatbuffers==25.12.19
+packaging==26.3
+protobuf==7.36.2

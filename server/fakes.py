@@ -28,6 +28,7 @@ def args(**over):
     st = settings.recording_settings(settings.resolve(argparse.Namespace(), {}))
     st.recordings = tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT)
     st.adapters = ["claude"]
+    st.min_speech_seconds = st.max_chars_per_speech_second = 0  # the fake audio is a tone, not speech (test_vad.py)
     for k, v in over.items():
         setattr(st, k, v)
     return st

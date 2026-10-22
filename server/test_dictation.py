@@ -123,6 +123,27 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Anna: hello there", body["messages"][0]["content"])
             self.assertEqual(body["messages"][1]["content"][0]["text"], "PROMPT")
 
+    async def test_a_piece_without_speech_never_goes_to_the_model(self):
+        saved, d.speech_seconds = d.speech_seconds, lambda pcm: 0.05
+        try:
+            dictation = self.dictation({"min_speech_seconds": 0.3})
+            self.assertEqual(await dictation.piece(LOUD, 1), "")
+            self.assertEqual(self.fake.completions(), [])
+            self.assertEqual(self.metrics("piece_skipped")[0]["speech_seconds"], 0.05)
+        finally:
+            d.speech_seconds = saved
+
+    async def test_a_text_far_too_long_for_its_speech_is_dropped(self):
+        saved, d.speech_seconds = d.speech_seconds, lambda pcm: 0.1
+        try:  # the fake model answers "text from llama", 15 characters: more than 60 per second of 0.1 s
+            dictation = self.dictation({"min_speech_seconds": 0.05, "max_chars_per_speech_second": 60})
+            self.assertEqual(await dictation.piece(LOUD, 1), "")
+            self.assertEqual(self.metrics("piece")[0]["dropped_chars"], 15)
+            dictation = self.dictation({"min_speech_seconds": 0.05, "max_chars_per_speech_second": 200})
+            self.assertEqual(await dictation.piece(LOUD, 2), "text from llama")
+        finally:
+            d.speech_seconds = saved
+
     def test_the_default_prompt_asks_for_punctuation_and_keeps_russian_imperatives(self):
         self.assertIn("punctuation and capital letters", d.prompt("en"))
         self.assertIn("imperative mood", d.prompt("ru"))

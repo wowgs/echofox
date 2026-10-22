@@ -30,6 +30,14 @@ KNOBS = [
     Knob("minLastPieceSeconds", "min_last_piece_seconds", float, lambda v: 0 <= v <= constants.MODEL_MAX_SECONDS, 5.0,
          True, True, "while the speaker talks, a piece is cut only once this much more was heard after it, so the "
          "piece after the stop is never shorter"),
+    # From the speech that Silero VAD found in the 2038 saved pieces (2026-10-15 to 2026-10-22): the 35 pieces with
+    # 0 to 0.06 s of it all got text of the model's own or copied from the context; the shortest real answer had
+    # 0.51 s. Real pieces had at most 22.6 characters per second of speech in 99 % of them; a reply made up around
+    # one short word had 216.
+    Knob("minSpeechSeconds", "min_speech_seconds", float, lambda v: v >= 0, 0.3, True, True,
+         "a piece with less speech than this (Silero VAD) does not go to the model and gives no text; 0: every piece goes"),
+    Knob("maxCharsPerSpeechSecond", "max_chars_per_speech_second", float, lambda v: v >= 0, 60.0, True, True,
+         "a piece's text longer than this per second of its speech is the model's own and is dropped; 0: never"),
     Knob("thresholdDb", "threshold_db", float, lambda v: v < 0, -45.0, True, True, "the lowest loudness of speech, dBFS"),
     Knob("speechAboveNoiseDb", "speech_above_noise_db", float, lambda v: v >= 0, 12.0, True, True,
          "speech is at least this much louder than the recording's noise floor, dB"),
