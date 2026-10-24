@@ -3,5 +3,3 @@ server/.venv/
 __pycache__/
 .DS_Store
 .claude/settings.local.json
-# docs-local: old files kept by docsync
-/.docsync-trash/
