@@ -1,0 +1,24 @@
+# The tests of the server and the checks of the app, on every push (docs/design/7-distribution.md). They need no
+# model and no llama-server.
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: The server's packages
+        run: |
+          python -m venv server/.venv
+          server/.venv/bin/pip install --disable-pip-version-check -r server/requirements.txt
+      - name: The server's tests
+        run: server/.venv/bin/python -m unittest discover -s server
+      - name: The app's checks
+        run: swift run --package-path macos lv-tests

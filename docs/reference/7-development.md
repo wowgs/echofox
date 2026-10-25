@@ -36,6 +36,13 @@ server/test_server.sh stop
 
 The ports are in `server/constants.py`.
 
+## CI
+
+GitHub Actions runs two workflows:
+
+- `.github/workflows/tests.yml` runs the tests of the server and the checks of the app on every push.
+- `.github/workflows/release.yml` runs on a tag `v*`. It builds `LocalVoice.dmg` with `macos/build-app.sh --dmg` and puts it into a GitHub Release. With the Developer ID secrets (listed at the top of the file), it signs the app with Developer ID and notarizes the dmg. Without them, it signs ad hoc, which is only for tests.
+
 ## Update the working server
 
 Restart the working server between two dictations, with `launchctl kickstart -k gui/$(id -u)/local-voice.gemma-voice`. On a restart, the server takes no new recording. It lets a running recording finish for up to 200 s, and launchd waits 210 s for it (`STOP_WAIT_S`, `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). But you cannot dictate until it is back.

@@ -1,0 +1,66 @@
+# A release on a tag v*: the bundled app (macos/build-app.sh --dmg) as LocalVoice.dmg in a GitHub Release
+# (docs/design/7-distribution.md). With the Developer ID secrets, the app is signed with Developer ID and the hardened
+# runtime, and the dmg is notarized and stapled; without them, the app is signed ad hoc, for tests only.
+#
+# Secrets:
+#   DEVELOPER_ID_P12           the Developer ID Application certificate with its key, as a .p12 file in base64
+#   DEVELOPER_ID_P12_PASSWORD  its password
+#   DEVELOPER_ID_NAME          its name, for example "Developer ID Application: Alex Minaev (TEAMID)"
+#   NOTARY_KEY_P8              an App Store Connect API key for notarytool, the .p8 file in base64
+#   NOTARY_KEY_ID, NOTARY_ISSUER_ID
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: The cache of the pinned Python and llama-server
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: macos/.cache
+          key: bundle-${{ hashFiles('macos/pins.sh') }}
+      - name: The Developer ID certificate, in a keychain of this run
+        if: env.HAS_DEVELOPER_ID == 'true'
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain=$RUNNER_TEMP/signing.keychain-db
+          password=$(uuidgen)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/developer-id.p12"
+      - name: The bundled app and its dmg
+        env:
+          LOCAL_VOICE_SIGN: ${{ secrets.DEVELOPER_ID_NAME }}
+        run: macos/build-app.sh --dmg
+      - name: Sign, notarize and staple the dmg
+        if: env.HAS_DEVELOPER_ID == 'true'
+        env:
+          IDENTITY: ${{ secrets.DEVELOPER_ID_NAME }}
+          KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          codesign --force --sign "$IDENTITY" --timestamp macos/build/LocalVoice.dmg
+          echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool submit macos/build/LocalVoice.dmg --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait
+          xcrun stapler staple macos/build/LocalVoice.dmg
+          rm "$RUNNER_TEMP/notary.p8"
+      - name: The GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" macos/build/LocalVoice.dmg --title "Local Voice $GITHUB_REF_NAME" --generate-notes
