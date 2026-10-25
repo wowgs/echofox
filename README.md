@@ -8,15 +8,14 @@ The model also reads the conversation that you write into, for example a Claude 
 
 ## How it works
 
-![You tap a key in any app and speak. Local Voice records you, the dictation server cuts the speech into pieces, an adapter reads the conversation of that app, Gemma 4 turns each piece into text, and the text goes into the text box where the cursor was](img/how-it-works.svg)
+![You tap the key in any app and speak. Local Voice reads the chat of that app, records your voice, and writes the text into the text box where the cursor was](img/how-it-works.svg)
 
-The key works in every app. You do not switch to Local Voice to dictate.
+1. You tap the key in any app and speak. You do not switch to Local Voice.
+2. Local Voice records your voice and reads the chat of that app.
+3. Gemma 4 writes the text, with the names and terms of the chat.
+4. The text appears in the text box where your cursor was.
 
-1. You tap the right Option key in any app, speak, and tap the key again. Local Voice records your voice and notes where the cursor is.
-2. The dictation server finds the speech in the recording and cuts it into pieces.
-3. The server asks the adapter of that app for the conversation. An adapter is a small plugin for one app. The Claude adapter reads the open Claude Code session, and the Telegram adapter reads the open chat.
-4. The server sends each piece to Gemma 4 with the latest messages of the conversation. So Gemma 4 writes the names and terms of the conversation correctly.
-5. Local Voice puts the text into the text box where the cursor was.
+Adapters are the parts of Local Voice that read the chat of one app. Local Voice has adapters for Claude and Telegram, and you can add your own.
 
 ## While you speak
 
@@ -26,7 +25,7 @@ The model works on the first pieces while you still speak. After you stop, only 
 
 ## Privacy
 
-- The app, the server and the model run on your Mac. They send no analytics and no metrics.
+- Local Voice and its model run on your Mac. They send no analytics and no metrics.
 - The only connection to the internet is the download of the model, when you ask for it.
 - A second key starts a private dictation. The app then reads nothing on the screen, and nothing of the dictation is saved.
 - Other recordings are saved on your Mac, so that you can correct them and train the model on your voice later. You can turn this off in the settings.

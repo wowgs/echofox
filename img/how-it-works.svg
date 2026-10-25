@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="960" height="380">
   <title>How Local Voice works</title>
   <rect width="100%" height="100%" fill="#ffffff"/>
   <defs>
@@ -7,77 +7,63 @@
     </marker>
   </defs>
   <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="#111827">
-    <!-- The key: a tap in any app starts and stops a dictation -->
-    <rect x="314" y="16" width="80" height="52" rx="8" fill="#ffffff" stroke="#374151" stroke-width="1.5"/>
-    <rect x="318" y="20" width="72" height="44" rx="6" fill="#f3f4f6"/>
-    <text x="354" y="46" font-size="20" text-anchor="middle">⌥</text>
-    <text x="354" y="60" font-size="10" fill="#4b5563" text-anchor="middle">right Option</text>
-    <text x="406" y="38" font-size="13">Tap the key in any app,</text>
-    <text x="406" y="56" font-size="13">speak, and tap it again</text>
-    <line x1="354" y1="68" x2="354" y2="122" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <!-- Before: any app, its chat, an empty text box with the cursor -->
+    <text x="106" y="56" font-size="13" fill="#4b5563" text-anchor="middle">Before</text>
+    <rect x="16" y="70" width="180" height="180" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+    <rect x="16" y="70" width="180" height="24" rx="8" fill="#f3f4f6"/>
+    <circle cx="30" cy="82" r="4" fill="#f87171"/>
+    <circle cx="42" cy="82" r="4" fill="#fbbf24"/>
+    <circle cx="54" cy="82" r="4" fill="#34d399"/>
+    <text x="66" y="86" font-size="11" fill="#4b5563">any app</text>
+    <rect x="28" y="106" width="110" height="16" rx="8" fill="#e5e7eb"/>
+    <rect x="72" y="128" width="112" height="16" rx="8" fill="#dbeafe"/>
+    <rect x="28" y="150" width="96" height="16" rx="8" fill="#e5e7eb"/>
+    <rect x="28" y="196" width="156" height="40" rx="6" fill="#ffffff" stroke="#9ca3af"/>
+    <line x1="38" y1="205" x2="38" y2="227" stroke="#2563eb" stroke-width="2"/>
 
-    <!-- Any app: its conversation and the text box with the cursor -->
-    <rect x="24" y="110" width="160" height="164" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
-    <rect x="24" y="110" width="160" height="24" rx="8" fill="#f3f4f6"/>
-    <circle cx="38" cy="122" r="4" fill="#f87171"/>
-    <circle cx="50" cy="122" r="4" fill="#fbbf24"/>
-    <circle cx="62" cy="122" r="4" fill="#34d399"/>
-    <text x="74" y="126" font-size="11" fill="#4b5563">Claude, Telegram, Mail</text>
-    <rect x="36" y="144" width="104" height="16" rx="8" fill="#e5e7eb"/>
-    <rect x="72" y="166" width="100" height="16" rx="8" fill="#dbeafe"/>
-    <rect x="36" y="188" width="92" height="16" rx="8" fill="#e5e7eb"/>
-    <rect x="36" y="222" width="136" height="38" rx="6" fill="#ffffff" stroke="#9ca3af"/>
-    <text x="44" y="245" font-size="11" fill="#4b5563">your text here</text>
-    <line x1="128" y1="230" x2="128" y2="252" stroke="#2563eb" stroke-width="2"/>
+    <!-- The key, in any app -->
+    <rect x="16" y="278" width="180" height="72" rx="8" fill="#f9fafb" stroke="#6b7280" stroke-width="1.5"/>
+    <rect x="28" y="290" width="48" height="48" rx="7" fill="#ffffff" stroke="#374151" stroke-width="1.5"/>
+    <text x="52" y="321" font-size="20" text-anchor="middle">⌥</text>
+    <text x="86" y="310" font-size="12">Tap in any app,</text>
+    <text x="86" y="328" font-size="12">then speak</text>
 
-    <!-- The programs of Local Voice -->
-    <rect x="274" y="124" width="160" height="96" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-    <text x="354" y="164" font-size="15" font-weight="600" text-anchor="middle">Local Voice</text>
-    <text x="354" y="186" font-size="12" fill="#4b5563" text-anchor="middle">in the menu bar</text>
+    <!-- Local Voice: everything it needs is inside -->
+    <rect x="236" y="40" width="488" height="320" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="256" y="66" font-size="15" font-weight="600">Local Voice</text>
+    <text x="350" y="66" font-size="12" fill="#4b5563">on your Mac</text>
 
-    <rect x="524" y="124" width="160" height="96" rx="6" fill="#f0fdf4" stroke="#059669" stroke-width="1.5"/>
-    <text x="604" y="164" font-size="15" font-weight="600" text-anchor="middle">Dictation server</text>
-    <text x="604" y="186" font-size="12" fill="#4b5563" text-anchor="middle">finds speech, cuts pieces</text>
+    <rect x="266" y="88" width="200" height="72" rx="6" fill="#ffffff" stroke="#059669" stroke-width="1.5"/>
+    <text x="366" y="120" font-size="13" text-anchor="middle">Reads the chat</text>
+    <text x="366" y="140" font-size="11" fill="#4b5563" text-anchor="middle">adapters: Claude, Telegram, …</text>
 
-    <rect x="774" y="124" width="160" height="96" rx="6" fill="#fff7ed" stroke="#d97706" stroke-width="1.5"/>
-    <text x="854" y="164" font-size="15" font-weight="600" text-anchor="middle">Gemma 4</text>
-    <text x="854" y="186" font-size="12" fill="#4b5563" text-anchor="middle">llama-server, on the GPU</text>
+    <rect x="266" y="270" width="200" height="72" rx="6" fill="#ffffff" stroke="#059669" stroke-width="1.5"/>
+    <text x="366" y="311" font-size="13" text-anchor="middle">Records your voice</text>
 
-    <rect x="524" y="318" width="160" height="80" rx="6" fill="#f0fdf4" stroke="#059669" stroke-width="1.5" stroke-dasharray="5 3"/>
-    <text x="604" y="352" font-size="15" font-weight="600" text-anchor="middle">Adapter</text>
-    <text x="604" y="374" font-size="12" fill="#4b5563" text-anchor="middle">a plugin for each app</text>
+    <rect x="516" y="176" width="180" height="80" rx="6" fill="#ffffff" stroke="#d97706" stroke-width="1.5"/>
+    <text x="606" y="210" font-size="13" text-anchor="middle">Writes the text</text>
+    <text x="606" y="230" font-size="11" fill="#4b5563" text-anchor="middle">Gemma 4 in llama.cpp</text>
 
-    <!-- Any app and Local Voice -->
-    <line x1="184" y1="150" x2="272" y2="150" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="229" y="130" font-size="12" text-anchor="middle">where the</text>
-    <text x="229" y="144" font-size="12" text-anchor="middle">cursor is</text>
-    <line x1="274" y1="241" x2="174" y2="241" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="229" y="234" font-size="12" text-anchor="middle">the text</text>
+    <!-- After: the same app, the text in the text box -->
+    <text x="854" y="56" font-size="13" fill="#4b5563" text-anchor="middle">After</text>
+    <rect x="764" y="70" width="180" height="180" rx="8" fill="#ffffff" stroke="#6b7280" stroke-width="1.5"/>
+    <rect x="764" y="70" width="180" height="24" rx="8" fill="#f3f4f6"/>
+    <circle cx="778" cy="82" r="4" fill="#f87171"/>
+    <circle cx="790" cy="82" r="4" fill="#fbbf24"/>
+    <circle cx="802" cy="82" r="4" fill="#34d399"/>
+    <text x="814" y="86" font-size="11" fill="#4b5563">the same app</text>
+    <rect x="776" y="106" width="110" height="16" rx="8" fill="#e5e7eb"/>
+    <rect x="820" y="128" width="112" height="16" rx="8" fill="#dbeafe"/>
+    <rect x="776" y="150" width="96" height="16" rx="8" fill="#e5e7eb"/>
+    <rect x="776" y="196" width="156" height="40" rx="6" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="786" y="220" font-size="12">Your text is here.</text>
+    <line x1="890" y1="205" x2="890" y2="227" stroke="#2563eb" stroke-width="2"/>
 
-    <!-- Local Voice and the server -->
-    <line x1="434" y1="150" x2="522" y2="150" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="479" y="130" font-size="12" text-anchor="middle">your voice and</text>
-    <text x="479" y="144" font-size="12" text-anchor="middle">the cursor place</text>
-    <line x1="524" y1="198" x2="436" y2="198" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="479" y="214" font-size="12" text-anchor="middle">the text</text>
-
-    <!-- The server and Gemma -->
-    <line x1="684" y1="150" x2="772" y2="150" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="729" y="116" font-size="12" text-anchor="middle">a piece of</text>
-    <text x="729" y="130" font-size="12" text-anchor="middle">your voice, the</text>
-    <text x="729" y="144" font-size="12" text-anchor="middle">conversation</text>
-    <line x1="774" y1="198" x2="686" y2="198" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="729" y="214" font-size="12" text-anchor="middle">its text</text>
-
-    <!-- The server and the adapter -->
-    <line x1="584" y1="220" x2="584" y2="316" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="576" y="272" font-size="12" text-anchor="end">where the cursor is</text>
-    <line x1="624" y1="318" x2="624" y2="222" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="632" y="266" font-size="12">latest messages,</text>
-    <text x="632" y="280" font-size="12">names and terms</text>
-
-    <!-- The adapter reads the conversation of that app -->
-    <path d="M524,372 L104,372 L104,276" fill="none" stroke="#059669" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
-    <text x="314" y="392" font-size="12" fill="#047857" text-anchor="middle">reads the conversation of that app</text>
+    <!-- The arrows, from left to right -->
+    <line x1="196" y1="124" x2="264" y2="124" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="196" y1="306" x2="264" y2="306" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M466,124 L491,124 L491,200 L514,200" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M466,306 L491,306 L491,232 L514,232" fill="none" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="696" y1="216" x2="774" y2="216" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow)"/>
   </g>
 </svg>
