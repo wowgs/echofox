@@ -194,7 +194,7 @@ struct PageView: View {
     var body: some View {
         Form {
             if model.info == nil && [.recognition, .adapters, .recordings].contains(page) {
-                Text("The dictation server did not answer yet. Its settings show here when it answers.")
+                Text("The dictation server is not answering. Its settings appear here when it answers.")
                     .foregroundStyle(.secondary)
             }
             ForEach(model.sections(page), id: \.section) { section in
@@ -216,22 +216,17 @@ struct ItemView: View {
     var body: some View {
         switch id {
         case "dictationKey": KeyPicker(model: model, path: "dictationKey", title: "Dictation",
-                                       note: "Tap the key to start a recording, and tap it again to stop. The text "
-                                           + "goes where the cursor was.")
+                                       note: "Tap to start and stop. The text goes where the cursor was.")
         case "privateDictationKey": KeyPicker(model: model, path: "privateDictationKey", title: "Private dictation",
-                                              note: "The same as dictation, but the app reads nothing on the screen "
-                                                  + "and saves nothing.")
+                                              note: "Reads nothing on the screen and saves nothing.")
         case "language": LanguagePicker(model: model)
         case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for the model",
-                                           note: "Rules about this language for the model, one rule on each line. "
-                                               + "They go after the instructions for the model.")
+                                           note: "Rules about this language for the model, one on each line.")
         case "languageFillers": LanguageList(model: model, field: "fillers", title: "Hesitation sounds",
-                                             note: "Sounds such as \"um\" that are taken out of the text. Separate "
-                                                 + "them with commas.")
+                                             note: "Removed from the text. Separate them with commas.")
         case "silenceStopSeconds": AppNumberRow(model: model, path: ["silenceStopSeconds"], title: "Stop after silence",
                                                 unit: "s", fallback: model.config.silenceStopSeconds,
-                                                note: "The recording stops by itself after this many seconds without "
-                                                    + "speech.")
+                                                note: "Recording stops after this long without speech.")
         case "microphone": MicrophonePicker(model: model)
         case "inputVolume": VolumeRow(model: model)
         case "model": ModelPicker(model: model)
@@ -251,17 +246,22 @@ struct ItemView: View {
     }
 }
 
-/// The default and the range of a number, as sentences: "Default: 15. Allowed: from 5 to 30." `default` nil: no
-/// default sentence (the row says where its value comes from).
-func rangeNote(_ s: SettingInfo, default d: SettingValue?) -> String {
-    var out = d.map { "Default: \(show($0))." } ?? ""
-    guard s.kind == "number" || s.kind == "integer" else { return out }
-    var parts: [String] = []
-    if let lo = s.min { parts.append((s.minExclusive == true ? "over " : "from ") + show(.number(lo))) }
-    if let hi = s.max { parts.append((s.maxExclusive == true ? "under " : "to ") + show(.number(hi))) }
-    if !parts.isEmpty { out += (out.isEmpty ? "" : " ") + "Allowed: " + parts.joined(separator: " ") + "." }
-    return out
+/// What to type when a number was refused, next to its field (Apple HIG, Writing: say how to enter it correctly):
+/// "Enter a number from 5 to 30."
+func allowedValues(_ s: SettingInfo) -> String {
+    let what = s.kind == "integer" ? "a whole number" : "a number"
+    let lo = s.min.map { show(.number($0)) }, hi = s.max.map { show(.number($0)) }
+    let above = s.minExclusive == true, below = s.maxExclusive == true
+    switch (lo, hi) {
+    case let (l?, h?): return "Enter \(what) " + (above ? "above \(l)" : "from \(l)") + (below ? " and below \(h)." : " to \(h).")
+    case let (l?, nil): return "Enter \(what) " + (above ? "above \(l)." : "of \(l) or more.")
+    case let (nil, h?): return "Enter \(what) " + (below ? "below \(h)." : "of \(h) or less.")
+    default: return "Enter \(what)."
+    }
 }
+
+/// A setting's description, or none when the title says it all.
+func note(_ help: String) -> String? { help.isEmpty ? nil : help }
 
 func show(_ v: SettingValue?) -> String {
     switch v {
@@ -284,16 +284,16 @@ struct SettingRow: View {
     private var shown: String { show(value) == "none" ? "" : show(value) }
 
     var body: some View {
-        SettingLine(title: setting.title, note: setting.help + range, refused: model.refused.contains(id),
+        SettingLine(title: setting.title, note: refused ? allowedValues(setting) : note(setting.help), refused: refused,
                     pending: model.drafts[id].map { $0 != shown } ?? false) {
             control
-            ResetButton(visible: set, help: "Go back to the default (\(show(setting.default)))") {
+            ResetButton(visible: set, help: "Restore the default (\(show(setting.default)))") {
                 if let p = path { model.done(id); model.remove(p) }
             }
         }
     }
 
-    private var range: String { " " + rangeNote(setting, default: setting.default) }
+    private var refused: Bool { model.refused.contains(id) }
 
     @ViewBuilder private var control: some View {
         switch setting.kind {
@@ -345,7 +345,8 @@ struct AppNumberRow: View {
     private var shown: String { show(.number(fallback)) }
 
     var body: some View {
-        SettingLine(title: title, note: note, refused: model.refused.contains(id),
+        SettingLine(title: title, note: model.refused.contains(id) ? "Enter a number above 0." : note,
+                    refused: model.refused.contains(id),
                     pending: model.drafts[id].map { $0 != shown } ?? false) {
             InputField(text: model.draft(id, shown: shown), width: 80, number: true,
                        refused: model.refused.contains(id)) {
@@ -373,8 +374,7 @@ struct KeyPicker: View {
     }
 
     var body: some View {
-        SettingLine(title: title, note: clash ? "The other dictation uses the same key. Only one of them can work."
-                                              : note + " A tap means that you press and release the key alone.",
+        SettingLine(title: title, note: clash ? "The other dictation uses this key too. Choose another one." : note,
                     refused: clash) {
             Picker(title, selection: Binding(get: { current }, set: { v in
                 model.write([path], v)
@@ -400,8 +400,8 @@ struct LanguagePicker: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Picker("Language of the speech", selection: Binding(get: { model.config.language }, set: { model.write(["language"], $0) })) {
-            Text("The language that you speak").tag("")
+        Picker("Language", selection: Binding(get: { model.config.language }, set: { model.write(["language"], $0) })) {
+            Text("Any").tag("")
             ForEach(model.info?.languages ?? [], id: \.code) { Text($0.name).tag($0.code) }
             if !model.config.language.isEmpty, !(model.info?.languages ?? []).contains(where: { $0.code == model.config.language }) {
                 Text(model.config.language).tag(model.config.language)
@@ -471,13 +471,11 @@ struct PromptEditor: View {
             TextEditor(text: model.draft(id, shown: shown)).font(.system(.body, design: .monospaced))
                 .frame(minHeight: 160).inputBox()
             HStack {
-                Text((own == nil ? "The instructions for the model, from its catalog. "
-                                 : "Your own instructions for the model. ")
-                     + "{LANGUAGE} becomes the name of the language. The notes of the language go after them.")
+                Text("{LANGUAGE} is replaced with the language. Its notes come after the prompt.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if own != nil {
-                    Button("Use the Catalog's Template") { if let p = path { model.done(id); model.remove(p) } }
+                    Button("Restore Default") { if let p = path { model.done(id); model.remove(p) } }
                 }
                 Button("Save") {
                     let t = text
@@ -510,13 +508,13 @@ struct LanguageList: View {
 
     var body: some View {
         if code.isEmpty {
-            Text("Choose a language to see its notes and hesitation sounds.").foregroundStyle(.secondary)
+            Text("Choose a language to see its notes and sounds.").foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(title)
                     Spacer()
-                    ResetButton(visible: own != nil, help: "Go back to the defaults of the language") {
+                    ResetButton(visible: own != nil, help: "Restore the defaults of the language") {
                         model.done(id)
                         model.remove(path)
                     }
@@ -527,7 +525,7 @@ struct LanguageList: View {
                     InputField(text: model.draft(id, shown: shown), width: 360) { save() }
                 }
                 HStack {
-                    Text(note + (own == nil ? " These are the defaults of the language." : "")).font(.caption).foregroundStyle(.secondary)
+                    Text(note).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if field == "notes" { Button("Save") { save() }.disabled((model.drafts[id] ?? shown) == shown) }
                 }
@@ -557,7 +555,7 @@ struct AdapterList: View {
                 }
             }
         } else {
-            Text("No adapters. The server did not answer, or it has no adapters.").foregroundStyle(.secondary)
+            Text("No adapters. The server is not answering, or it has none.").foregroundStyle(.secondary)
         }
     }
 }
@@ -581,8 +579,7 @@ struct AdapterDefaults: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Text("These values apply to every adapter, in place of its own defaults. A value that you set on the page "
-             + "of an adapter wins over them.")
+        Text("These values apply to every adapter. A value set on an adapter's page wins.")
             .font(.caption).foregroundStyle(.secondary)
         ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
             AdapterValueRow(model: model, setting: s, adapter: nil)
@@ -614,7 +611,7 @@ struct AdapterPage: View {
                     }
                 }
                 if adapter.electronTree {
-                    LabeledContent("Accessibility") { Text("Asks the app to show its content to Accessibility.") }
+                    LabeledContent("Accessibility") { Text("Asks the app to expose its window content.") }
                 }
             }
             Section("Context") {
@@ -645,19 +642,18 @@ struct AdapterValueRow: View {
     /// What is in force without a value here, and where it comes from.
     private var inherited: (value: SettingValue?, from: String) {
         if let v = shared { return (v, "Defaults for all adapters") }
-        if let v = adapterDefault { return (v, "the default of \(adapterTitle(adapter!.name))") }
+        if let v = adapterDefault { return (v, "\(adapterTitle(adapter!.name)) defaults") }
         return (setting.default, "the built-in default")
     }
     private var shown: String { own.map { show($0) } ?? "" }
-    private var source: String {
-        own != nil ? (adapter == nil ? "Set here for every adapter." : "Set here.")
-                   : "Now \(show(inherited.value)), from \(inherited.from)."
-    }
+    /// Where the value in force comes from; the value itself is in the field (its placeholder) or the switch.
+    private var source: String { own != nil ? "Set here." : "From \(inherited.from)." }
+    private var refused: Bool { model.refused.contains(id) }
 
     var body: some View {
         SettingLine(title: setting.title,
-                    note: setting.help + " " + source + " " + rangeNote(setting, default: nil),
-                    refused: model.refused.contains(id), pending: model.drafts[id].map { $0 != shown } ?? false) {
+                    note: refused ? allowedValues(setting) : [setting.help, source].filter { !$0.isEmpty }.joined(separator: " "),
+                    refused: refused, pending: model.drafts[id].map { $0 != shown } ?? false) {
             if setting.kind == "boolean" {
                 Toggle("", isOn: Binding(get: { if case .bool(true)? = own ?? inherited.value { return true } else { return false } },
                                          set: { model.write(path, $0) }))
@@ -667,7 +663,7 @@ struct AdapterValueRow: View {
                            number: true, refused: model.refused.contains(id)) { commit() }
                 UnitLabel(unit: unit(of: setting.key))
             }
-            ResetButton(visible: own != nil, help: "Go back to \(inherited.from)") { model.done(id); model.remove(path) }
+            ResetButton(visible: own != nil, help: "Restore \(inherited.from)") { model.done(id); model.remove(path) }
         }
         .disabled(adapter.map { model.config.adapters[$0.name] != true } ?? false)
     }
@@ -693,7 +689,7 @@ struct ServerStatus: View {
         LabeledContent("Dictation server") { Text(model.config.serverURL.absoluteString).textSelection(.enabled) }
         LabeledContent("State") {
             if let p = model.problem { Text(p).foregroundStyle(.red) }
-            else if model.info != nil { Text("answers") } else { Text("not asked yet").foregroundStyle(.secondary) }
+            else if model.info != nil { Text("Running") } else { Text("Not checked yet").foregroundStyle(.secondary) }
         }
         LabeledContent("Model") { Text(model.config.model ?? "none") }
         HStack {

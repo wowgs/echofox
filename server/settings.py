@@ -105,12 +105,11 @@ SETTINGS = [
     Setting("adapterDefaults", "adapter_defaults", dict, good_adapter_defaults, {}, "recording"),
     Setting("languages", "languages", dict, good_languages, {}, "recording"),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
-            "Save recordings", "Keep each recording on disk with its pieces and their texts. A private dictation "
-            "is never saved."),
+            "Save recordings", "Keeps each recording and its text. Private dictations are never saved."),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
-            "Recordings folder", "The folder where the recordings are saved."),
+            "Recordings folder", ""),
     Setting("labeled", "labeled", str, bool, constants.LABELED, "recording", "server",
-            "Labels folder", "The folder for the pieces that you labeled with their correct text."),
+            "Labels folder", "Holds the pieces that you labeled."),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server"),
     *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server") for k in tuning.KNOBS
       if k.owner == "server"),

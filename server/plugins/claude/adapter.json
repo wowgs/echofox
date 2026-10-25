@@ -3,7 +3,7 @@
   "version": "1.0",
   "author": "local-voice",
   "source": "https://github.com/wowgs/local-voice",
-  "description": "Anthropic's Claude: Claude Desktop's Code tab (the session in focus) and Claude Code sessions that a client names.",
+  "description": "Reads the Claude Code session open in the Code tab of Claude Desktop.",
   "interface": 2,
   "apps": [
     "com.anthropic.claudefordesktop"

@@ -236,7 +236,7 @@ do {
         ("topK", "model", "sampling"), ("chatTermsTokenBudget", "adapter", "context"), ("brandNew", "server", "new")]
     let recognition = SettingsLayout.sections(of: .recognition, serverKeys: keys)
     let model = SettingsLayout.sections(of: .model, serverKeys: keys)
-    check(recognition.contains { $0.section == "Cutting into pieces" && $0.ids == ["pieceSeconds"] }
+    check(recognition.contains { $0.section == "Pieces" && $0.ids == ["pieceSeconds"] }
           && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
           && !recognition.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
           "settings: the server's page \(recognition)")

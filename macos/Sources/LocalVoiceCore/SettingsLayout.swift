@@ -76,13 +76,13 @@ public enum SettingsLayout {
     /// Where a server setting goes when `places` has no line for it: "owner.group" → its page and section. An
     /// adapter's settings show under each adapter (the page Adapters), not here.
     public static let groups: [String: (SettingsPage, String)] = [
-        "server.cutting": (.recognition, "Cutting into pieces"),
+        "server.cutting": (.recognition, "Pieces"),
         "server.speech": (.recognition, "Speech"),
         "server.recording": (.recognition, "Recording"),
         "server.storage": (.recordings, "Recordings"),
         "model.sampling": (.model, "Sampling"),
-        "model.output": (.model, "Length of the text"),
-        "model.context": (.model, "Context"),
+        "model.output": (.model, "Text"),
+        "model.context": (.model, "Chat"),
     ]
 
     /// The page of an owner's setting whose group has no line in `groups`.

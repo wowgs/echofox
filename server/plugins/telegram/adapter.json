@@ -3,7 +3,7 @@
   "version": "1.0",
   "author": "local-voice",
   "source": "https://github.com/wowgs/local-voice",
-  "description": "Telegram Desktop: the messages of the chat open in the window, from its accessibility tree.",
+  "description": "Reads the open chat in Telegram Desktop.",
   "interface": 2,
   "apps": [
     "com.tdesktop.Telegram"
