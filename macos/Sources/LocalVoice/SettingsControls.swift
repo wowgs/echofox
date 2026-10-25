@@ -31,7 +31,9 @@ struct SettingLine<Control: View>: View {
 }
 
 /// A text or number field that looks like one. The placeholder shows inside the empty field, grey; the field has no
-/// title of its own: in a grouped Form, SwiftUI shows a TextField's title as a label next to it.
+/// title of its own: in a grouped Form, SwiftUI shows a TextField's title as a label next to it. What is typed is
+/// applied on Return and when the field loses the focus (Apple HIG, Text fields: validate when people switch to
+/// another field).
 struct InputField: View {
     var placeholder = ""
     @Binding var text: String
@@ -40,6 +42,7 @@ struct InputField: View {
     var number = false
     var refused = false
     var onSubmit: () -> Void = {}
+    @FocusState private var focused: Bool
 
     var body: some View {
         TextField("", text: $text, prompt: placeholder.isEmpty ? nil : Text(placeholder))
@@ -49,7 +52,9 @@ struct InputField: View {
             .font(number ? .body.monospacedDigit() : .body)
             .frame(width: width)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: refused ? 1.5 : 0))
+            .focused($focused)
             .onSubmit(onSubmit)
+            .onChange(of: focused) { now in if !now { onSubmit() } }
     }
 }
 

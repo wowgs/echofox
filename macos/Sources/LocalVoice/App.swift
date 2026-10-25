@@ -171,6 +171,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         }
     }
 
+    func askServer() { server.refresh(Config.load().serverURL) }
+
     /// The hotkeys from the config: the dictation's key and the private dictation's.
     func keysChanged() {
         let config = Config.load()

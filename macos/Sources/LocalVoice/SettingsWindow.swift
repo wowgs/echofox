@@ -5,12 +5,16 @@
 // the labels, the server's state) have views of their own. The window only reads and writes the config and asks the
 // App; it decides nothing.
 import AppKit
+import Combine
 import LocalVoiceCore
 import SwiftUI
 
 protocol SettingsActions: AnyObject {
     func serverState() -> (info: ServerInfo?, problem: String?)
+    /// Asks the server for its info once it applied a change of the config; the window hears the answer (refresh).
     func refreshServer()
+    /// Asks the server for its info now.
+    func askServer()
     @discardableResult func write(_ path: [String], _ value: Any, _ done: String) -> Bool
     @discardableResult func remove(_ path: [String], _ done: String) -> Bool
     func choose(microphone: String)
@@ -20,41 +24,41 @@ protocol SettingsActions: AnyObject {
     func openLog()
 }
 
+/// The settings window (Apple HIG, Settings): its minimize and zoom buttons dimmed, its title the visible page's, and
+/// it opens again on the page last viewed, with the same Advanced sections open.
 final class SettingsWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var model: SettingsModel?
+    private var titles: AnyCancellable?
     weak var actions: SettingsActions?
 
     func show() {
-        if let window {
-            model?.reload()
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        let model = SettingsModel(actions: actions)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-                         styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = "Local Voice Settings"
-        w.isReleasedWhenClosed = false
-        w.minSize = NSSize(width: 640, height: 420)
-        w.contentView = NSHostingView(rootView: SettingsView(model: model))
-        w.center()
-        w.setFrameAutosaveName("LocalVoiceSettings")
-        w.delegate = self
-        window = w
+        let model = self.model ?? SettingsModel(actions: actions)
         self.model = model
         model.reload()
-        w.makeKeyAndOrderFront(nil)
+        if window == nil {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            w.isReleasedWhenClosed = false
+            w.minSize = NSSize(width: 640, height: 420)
+            w.contentView = NSHostingView(rootView: SettingsView(model: model))
+            w.standardWindowButton(.zoomButton)?.isEnabled = false
+            w.center()
+            w.setFrameAutosaveName("LocalVoiceSettings")
+            w.delegate = self
+            titles = model.$selection.sink { [weak w] item in w?.title = item?.title ?? "Settings" }
+            window = w
+        }
+        window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// The config or the server changed elsewhere (the menu, the server's info): the window shows it.
-    func refresh() { model?.reload() }
+    /// The server's info changed: the window shows it.
+    func refresh() { model?.serverChanged() }
 
     func windowWillClose(_ notification: Notification) {
         window = nil
-        model = nil
+        titles = nil
     }
 }
 
@@ -64,7 +68,11 @@ final class SettingsModel: ObservableObject {
     @Published var problem: String?
     @Published var inputs: [AudioInput] = []
     @Published var volume: Float?
-    @Published var selection: SidebarItem? = .page(.general)
+    /// The page shown; kept for the next launch (a viewer's convenience, so UserDefaults).
+    @Published var selection: SidebarItem? = SidebarItem(saved: UserDefaults.standard.string(forKey: "settingsPage"))
+                                                ?? .page(.general) {
+        didSet { UserDefaults.standard.set(selection?.saved, forKey: "settingsPage") }
+    }
     @Published var adaptersOpen = true
     /// The Advanced sections that are open, by page or adapter: closed until a click.
     @Published var advancedOpen: Set<String> = []
@@ -121,13 +129,21 @@ final class SettingsModel: ObservableObject {
 
     init(actions: SettingsActions?) { self.actions = actions }
 
+    /// Everything the window shows, read again: when it opens.
     func reload() {
         config = Config.load()
-        (info, problem) = actions?.serverState() ?? (nil, nil)
+        serverChanged()
+        microphoneChanged()
+        labels = Self.labelStats(config.labeled)
+    }
+
+    func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
+
+    func microphoneChanged() {
+        config = Config.load()
         inputs = AudioInputs.all()
         let device = AudioInputs.chosen(config.microphone).input?.id ?? AudioInputs.defaultInput()
         volume = device.flatMap(AudioInputs.volume)
-        labels = Self.labelStats(config.labeled)
     }
 
     /// The server's settings and the app's own.
@@ -169,6 +185,29 @@ final class SettingsModel: ObservableObject {
 enum SidebarItem: Hashable {
     case page(SettingsPage)
     case adapter(String)
+
+    var title: String {
+        switch self {
+        case let .page(p): return p.title
+        case let .adapter(name): return adapterTitle(name)
+        }
+    }
+
+    /// As UserDefaults keeps it: "page.model", "adapter.claude".
+    var saved: String {
+        switch self {
+        case let .page(p): return "page." + p.rawValue
+        case let .adapter(name): return "adapter." + name
+        }
+    }
+
+    init?(saved: String?) {
+        guard let saved, let dot = saved.firstIndex(of: ".") else { return nil }
+        let kind = saved[..<dot], name = String(saved[saved.index(after: dot)...])
+        if kind == "page", let p = SettingsPage(rawValue: name) { self = .page(p) }
+        else if kind == "adapter", !name.isEmpty { self = .adapter(name) }
+        else { return nil }
+    }
 }
 
 /// An adapter's name for people: "claude" → "Claude".
@@ -252,7 +291,6 @@ struct PageView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(page.title)
     }
 }
 
@@ -438,15 +476,22 @@ struct LanguagePicker: View {
 struct MicrophonePicker: View {
     @ObservedObject var model: SettingsModel
 
+    /// The config's microphone is one of the choices: a connected device, the built-in one, or macOS's input.
+    private var chosenIsListed: Bool {
+        let m = model.config.microphone
+        return m == Config.builtInMicrophone || m == Config.systemMicrophone || model.inputs.contains { $0.uid == m }
+    }
+
     var body: some View {
         Picker("Microphone", selection: Binding(get: { model.config.microphone }, set: {
             model.actions?.choose(microphone: $0)
-            model.reload()
+            model.microphoneChanged()
         })) {
             ForEach(model.inputs, id: \.uid) { input in
                 Text(input.name + (input.builtIn ? " (built-in)" : "")).tag(input.builtIn ? Config.builtInMicrophone : input.uid)
             }
             Text("Follow macOS's input").tag(Config.systemMicrophone)
+            if !chosenIsListed { Text("Not connected").tag(model.config.microphone) }
         }
     }
 }
@@ -483,7 +528,7 @@ struct ModelPicker: View {
 /// The model's prompt template: its own in the config, or its catalog entry's. The language's notes follow it.
 struct PromptEditor: View {
     @ObservedObject var model: SettingsModel
-    private let id = "prompt"
+    private var id: String { "prompt." + (model.config.model ?? "") }
 
     private var path: [String]? { model.config.model.map { ["models", $0, "prompt"] } }
     private var own: String? { path.flatMap { model.config.value($0) as? String } }
@@ -521,7 +566,7 @@ struct LanguageList: View {
     let field: String, title: String, note: String
 
     private var code: String { String(model.config.language.prefix(while: { $0 != "-" })) }
-    private var id: String { "language.\(field)" }
+    private var id: String { "language.\(code).\(field)" }
     private var path: [String] { ["languages", code, field] }
     private var own: [String]? { model.config.value(path) as? [String] }
     private var defaults: [String] {
@@ -580,10 +625,19 @@ struct AdvancedSection<Content: View>: View {
             DisclosureGroup(isExpanded: model.isOpen(id)) {
                 content()
             } label: {
-                HStack {
-                    Text(SettingsLayout.advanced)
-                    if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
+                // The whole row, not only the triangle: a click anywhere on it opens or closes the section.
+                Button {
+                    withAnimation { model.isOpen(id).wrappedValue.toggle() }
+                } label: {
+                    HStack {
+                        Text(SettingsLayout.advanced)
+                        if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows or hides the advanced settings")
             }
         }
     }
@@ -667,7 +721,6 @@ struct AdapterPage: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(adapterTitle(adapter.name))
     }
 }
 
@@ -683,10 +736,7 @@ struct ServerStatus: View {
         LabeledContent("Model") { Text(model.config.model ?? "none") }
         HStack {
             Spacer()
-            Button("Ask Again") {
-                model.actions?.refreshServer()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { model.reload() }
-            }
+            Button("Ask Again") { model.actions?.askServer() }
         }
     }
 }
