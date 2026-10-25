@@ -40,8 +40,8 @@ The ports are in `server/constants.py`.
 
 GitHub Actions runs two workflows:
 
-- `.github/workflows/tests.yml` runs the tests of the server and the checks of the app on every push.
-- `.github/workflows/release.yml` runs on a tag `v*`. It builds `LocalVoice.dmg` with `macos/build-app.sh --dmg` and puts it into a GitHub Release. With the Developer ID secrets (listed at the top of the file), it signs the app with Developer ID and notarizes the dmg. Without them, it signs ad hoc, which is only for tests.
+- `.github/workflows/tests.yml` runs the tests of the server and the checks of the app on a clean Mac. It runs when you start it (Actions, Run workflow) and before every release. A push does not start it: the tests run on your Mac before each commit.
+- `.github/workflows/release.yml` runs on a tag `v*`, or when you start it. It runs the tests first, then builds `LocalVoice.dmg` with `macos/build-app.sh --dmg`. On a tag, the dmg goes into a GitHub Release. Started by hand, the dmg stays as an artifact of the run for 14 days. With the Developer ID secrets (listed at the top of the file), it signs the app with Developer ID and notarizes the dmg. Without them, it signs ad hoc, which is only for tests.
 
 ## Update the working server
 

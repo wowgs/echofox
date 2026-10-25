@@ -1,6 +1,7 @@
-# A release on a tag v*: the bundled app (macos/build-app.sh --dmg) as LocalVoice.dmg in a GitHub Release
-# (docs/design/7-distribution.md). With the Developer ID secrets, the app is signed with Developer ID and the hardened
-# runtime, and the dmg is notarized and stapled; without them, the app is signed ad hoc, for tests only.
+# The bundled app (macos/build-app.sh --dmg) as LocalVoice.dmg (docs/design/7-distribution.md), after the tests
+# (tests.yml). On a tag v*, the dmg goes into a GitHub Release of that tag; by the button (Actions, Run workflow), it
+# is kept as an artifact of the run. With the Developer ID secrets, the app is signed with Developer ID and the
+# hardened runtime, and the dmg is notarized and stapled; without them, the app is signed ad hoc, for tests only.
 #
 # Secrets:
 #   DEVELOPER_ID_P12           the Developer ID Application certificate with its key, as a .p12 file in base64
@@ -12,10 +13,14 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
   release:
+    needs: tests
     runs-on: macos-26
     env:
       HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_P12 != '' }}
@@ -60,7 +65,15 @@ jobs:
             --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait
           xcrun stapler staple macos/build/LocalVoice.dmg
           rm "$RUNNER_TEMP/notary.p8"
-      - name: The GitHub Release
+      - name: The GitHub Release of the tag
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" macos/build/LocalVoice.dmg --title "Local Voice $GITHUB_REF_NAME" --generate-notes
+      - name: The dmg as an artifact of a run by the button
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: LocalVoice-dmg
+          path: macos/build/LocalVoice.dmg
+          retention-days: 14

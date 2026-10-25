@@ -1,9 +1,11 @@
-# The tests of the server and the checks of the app, on every push (docs/design/7-distribution.md). They need no
-# model and no llama-server.
+# The tests of the server and the checks of the app (docs/design/7-distribution.md), on a clean Mac: by the button
+# (Actions, Run workflow), and before every release (release.yml calls this workflow). Not on a push: the tests run
+# on the author's Mac before each commit, and a push should not spend macOS minutes. They need no model and no
+# llama-server.
 name: Tests
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
