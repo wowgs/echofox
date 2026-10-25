@@ -6,7 +6,7 @@ adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
                 focused window (a messenger's messages); see FOCUS in adapters/__init__.py],
                 "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
-                chatHistoryMessages; the user's entry in the config changes them}}
+                chatHistoryTokenBudget; the user's entry in the config changes them}}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
                 import the plugin's other modules (from . import helpers)
 A plugin the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its

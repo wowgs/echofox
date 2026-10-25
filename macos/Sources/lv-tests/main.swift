@@ -200,7 +200,7 @@ do {
     {
       "model": "a",
       "models": {"a": {"llamaServer": "http://h:1", "options": {"topK": 2, "temperature": 1}}},
-      "adapters": {"claude": {"enabled": true, "chatHistoryMessages": 3}},
+      "adapters": {"claude": {"enabled": true, "chatTermsTokenBudget": 3}},
       "server": {"port": 8090, "cutSearchSeconds": 2}
     }
 
@@ -212,7 +212,7 @@ do {
     let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","default":64,"help":"h"}"#.utf8))
     check(SettingStore.path(of: topK, model: "a") == ["models", "a", "options", "topK"]
           && SettingStore.value(of: topK, in: config, model: "a") == .number(2), "settings: a model's in its options")
-    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatHistoryMessages","owner":"adapter","group":"context","kind":"integer","default":null,"help":"h"}"#.utf8))
+    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","default":null,"help":"h"}"#.utf8))
     let claude = info.adapters.first { $0.name == "claude" }!
     check(SettingStore.value(of: messages, in: config, model: "a", adapter: claude) == .number(3),
           "settings: an adapter's in its entry")
@@ -233,12 +233,12 @@ do {
     check(SettingsLayout.menu == ["permissions", "microphone", "inputVolume", "labelRecordings"],
           "settings: the menu \(SettingsLayout.menu)")
     let keys: [(key: String, owner: String, group: String)] = [("pieceSeconds", "server", "cutting"),
-        ("topK", "model", "sampling"), ("chatHistoryMessages", "adapter", "context"), ("brandNew", "server", "new")]
+        ("topK", "model", "sampling"), ("chatTermsTokenBudget", "adapter", "context"), ("brandNew", "server", "new")]
     let recognition = SettingsLayout.sections(of: .recognition, serverKeys: keys)
     let model = SettingsLayout.sections(of: .model, serverKeys: keys)
     check(recognition.contains { $0.section == "Cutting into pieces" && $0.ids == ["pieceSeconds"] }
           && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
-          && !recognition.contains { $0.ids.contains("topK") || $0.ids.contains("chatHistoryMessages") },
+          && !recognition.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
           "settings: the server's page \(recognition)")
     check(model.first?.section == "Model" && model.contains { $0.section == "Sampling" && $0.ids == ["topK"] },
           "settings: the model's page \(model)")

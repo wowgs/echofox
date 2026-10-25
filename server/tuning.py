@@ -97,9 +97,6 @@ KNOBS = [
          "tokens of the context's messages before the audio; 0 turns the context off", group="context", low=0),
     Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, None, "adapter",
          "tokens of the context's terms; none: a tenth of chatHistoryTokenBudget", group="context", low=0),
-    Knob("chatHistoryMessages", "chat_history_messages", int, None, "adapter",
-         "how many of the newest messages go in whole; the older ones give only their terms; none: as many as fit",
-         group="context", low=0),
     Knob("proseOnly", "prose_only", bool, True, "adapter",
          "keep only the messages' lines of prose: a line goes when less than 60 % of its characters are letters "
          "(a table row of numbers, a list of paths); its terms are taken before", group="context"),

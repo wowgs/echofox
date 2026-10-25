@@ -109,14 +109,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
 
-    async def test_only_the_newest_messages_go_in_whole_when_the_option_says_so(self):
-        d = self.dictation({"chat_history_token_budget": 100, "chat_history_messages": 1})
-        await d.prepare({"messages": [{"from": "Assistant", "text": "new reply here"},
-                                      {"from": "Speaker", "text": "a question asked"}], "terms": ["GitHub"]})
-        self.assertIn("Assistant: new reply here", d.text)
-        self.assertNotIn("a question asked", d.text)
-        self.assertIn("Terms: GitHub", d.text)
-
     async def test_the_context_can_go_in_a_system_turn(self):
         d = self.dictation({"chat_history_token_budget": 100, "context_as_system": True})
         await d.prepare({"messages": [{"from": "Anna", "text": "hello there"}], "terms": []})
@@ -151,18 +143,19 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     def test_an_adapters_settings_come_from_its_manifest_then_the_config_then_the_client(self):
         server = args()
-        server.adapter_options = {"claude": {"chat_history_messages": 2}}
+        budget = "chat_history_token_budget"
+        server.adapter_options = {"claude": {budget: 2}}
         plain = d.Dictation(self.fake.model(), "PROMPT", {}, server, {})
-        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 2)        # the user's entry
+        self.assertEqual(plain.adapter_options("claude")[budget], 2)                          # the user's entry
         self.assertEqual(plain.adapter_options("claude")["chat_terms_token_budget"], 200)    # the manifest's
-        client = d.Dictation(self.fake.model(), "PROMPT", {}, server, {}, client_options={"chat_history_messages": 3})
-        self.assertEqual(client.adapter_options("claude")["chat_history_messages"], 3)       # the client's wins
+        client = d.Dictation(self.fake.model(), "PROMPT", {}, server, {}, client_options={budget: 3})
+        self.assertEqual(client.adapter_options("claude")[budget], 3)                         # the client's wins
         server.adapter_options = {}
-        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 1)        # the manifest's
-        server.adapter_defaults = {"chat_history_messages": 4}
-        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 4)        # every adapter's
-        server.adapter_options = {"claude": {"chat_history_messages": 2}}
-        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 2)        # its own over that
+        self.assertEqual(plain.adapter_options("claude")[budget], 1000)                       # the manifest's
+        server.adapter_defaults = {budget: 4}
+        self.assertEqual(plain.adapter_options("claude")[budget], 4)                          # every adapter's
+        server.adapter_options = {"claude": {budget: 2}}
+        self.assertEqual(plain.adapter_options("claude")[budget], 2)                          # its own over that
 
     async def test_an_adapter_may_keep_the_lines_that_are_not_prose(self):
         context = {"messages": [{"from": "A", "text": "Готово.\n20–40 с: 4,38 / 5,70"}], "terms": []}

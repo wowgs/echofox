@@ -124,9 +124,6 @@ class Dictation:
         if tuning.value("prose_only", options, self.server):  # the terms were taken before (adapters.context)
             messages = [{**m, "text": t} for m in messages if (t := adapters.prose(str(m.get("text", ""))))]
         lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}" for m in messages]  # newest first
-        whole = tuning.value("chat_history_messages", options, self.server)
-        if whole is not None:
-            lines = lines[:whole]  # the older messages gave their terms (adapters.context)
         left = budget - used
         n_lines, _ = self._fit(lines, left, lambda ls: "\n\n".join(ls))
         kept = lines[:n_lines]
