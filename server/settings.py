@@ -95,6 +95,21 @@ SETTINGS = [
 BY_KEY = {s.key: s for s in SETTINGS}
 
 
+def schema(st):
+    """The settings a client may show and change (info's "settings"), with the values in force: the knobs
+    (tuning.Knob.schema) and the recordings. The models, the adapters and the fillers have pages of their own."""
+    out = [k.schema(getattr(st, k.name, k.default)) for k in tuning.KNOBS]
+    save, folder = BY_KEY["saveRecordings"], BY_KEY["recordings"]
+    out.append({"key": save.key, "group": "recording", "kind": "boolean", "default": save.default,
+                **({"value": st.save_recordings} if getattr(st, "save_recordings", save.default) != save.default else {}),
+                "where": ["config"], "help": "save each recording, its pieces and their texts"})
+    out.append({"key": folder.key, "group": "recording", "kind": "string", "default": folder.default,
+                **({"value": st.recordings} if getattr(st, "recordings", None) not in (None, constants.path(folder.default))
+                   else {}),
+                "where": ["server"], "help": folder.help})
+    return out
+
+
 def config_file():
     return os.environ.get("LOCAL_VOICE_CONFIG") or constants.path(constants.CONFIG)
 
