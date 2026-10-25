@@ -58,11 +58,16 @@ struct InputField: View {
     }
 }
 
-/// The unit after a number field, or nothing.
+/// The unit after a number field, in a column as wide as the widest unit, there even without a unit: so every number
+/// field of a page ends at the same place, as in macOS's own settings.
 struct UnitLabel: View {
     let unit: String?
     var body: some View {
-        if let unit { Text(unit).foregroundStyle(.secondary) }
+        ZStack(alignment: .leading) {
+            ForEach(units, id: \.self) { Text($0).hidden() }
+            Text(unit ?? "").foregroundStyle(.secondary)
+        }
+        .accessibilityHidden(unit == nil)
     }
 }
 
@@ -92,14 +97,12 @@ extension View {
     }
 }
 
-/// The unit of a server setting, from its key: "maxRecordingMinutes" is in minutes, "chatHistoryTokenBudget" in
-/// tokens.
-func unit(of key: String) -> String? {
-    if key.hasSuffix("Minutes") { return "min" }
-    if key.hasSuffix("Seconds") { return "s" }
-    if key.hasSuffix("TokenBudget") { return "tokens" }
-    return nil
-}
+/// The units of the settings, by the end of their keys: "maxRecordingMinutes" is in minutes, "chatHistoryTokenBudget"
+/// in tokens.
+private let unitsByKeyEnd: [(end: String, unit: String)] = [("Minutes", "min"), ("Seconds", "s"), ("TokenBudget", "tokens")]
+let units = unitsByKeyEnd.map(\.unit)
+
+func unit(of key: String) -> String? { unitsByKeyEnd.first { key.hasSuffix($0.end) }?.unit }
 
 /// A folder chosen in the system's open panel, or nil.
 func chooseFolder(starting path: String) -> String? {
