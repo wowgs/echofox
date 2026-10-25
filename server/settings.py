@@ -7,6 +7,7 @@ The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 4. Each se
    "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
                          "prompt": "…", "options": {the model's knobs}}},
    "adapters": {"<plugin>": {"enabled": true, the adapter's knobs}},
+   "adapterDefaults": {the adapters' knobs for every adapter: over each manifest's defaults, under an adapter's entry},
    "languages": {"<code>": {"notes": ["…"], "fillers": ["э", "мм"]}},
    "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, the server's knobs}}
 The app's settings the server does not read. adapters: the adapter plugins that work (adapters/registry.py); none:
@@ -78,6 +79,15 @@ def good_adapters(v):
                for k, e in v.items())
 
 
+def good_adapter_defaults(v):
+    """The user's values of the adapters' knobs for every adapter."""
+    try:
+        tuning.parse(v, "adapter", "adapterDefaults")
+        return True
+    except ValueError:
+        return False
+
+
 def good_languages(v):
     """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional."""
     def strings(w):
@@ -93,6 +103,7 @@ SETTINGS = [
     Setting("models", "models", dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT,
             "model", flag=False),
     Setting("adapters", "adapters", dict, good_adapters, {}, "recording", flag=False),
+    Setting("adapterDefaults", "adapter_defaults", dict, good_adapter_defaults, {}, "recording", flag=False),
     Setting("languages", "languages", dict, good_languages, {}, "recording", flag=False),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server", flag=False,
             help="save each recording, its pieces and their texts (never a private dictation)"),
@@ -126,8 +137,8 @@ def schema(st, model_entry=None):
         elif k.owner == "model":
             d = defaults.get(k.name, k.default)
             out.append(k.schema(d, own.get(k.name, d)))
-        else:
-            out.append(k.schema(k.default, k.default))
+        else:  # an adapter's: the fallback, and the user's value for every adapter (adapterDefaults)
+            out.append(k.schema(k.default, (getattr(st, "adapter_defaults", None) or {}).get(k.name, k.default)))
     for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string")):
         s = BY_KEY[key]
         now = getattr(st, s.name, s.default)
@@ -222,6 +233,7 @@ def recording_settings(now, into=None):
     st.labeled = constants.path(now["labeled"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
+    st.adapter_defaults = tuning.parse(now["adapterDefaults"], "adapter", "adapterDefaults")
     return st
 
 

@@ -159,6 +159,10 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.adapter_options("claude")["chat_history_messages"], 3)       # the client's wins
         server.adapter_options = {}
         self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 1)        # the manifest's
+        server.adapter_defaults = {"chat_history_messages": 4}
+        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 4)        # every adapter's
+        server.adapter_options = {"claude": {"chat_history_messages": 2}}
+        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 2)        # its own over that
 
     async def test_an_adapter_may_keep_the_lines_that_are_not_prose(self):
         context = {"messages": [{"from": "A", "text": "Готово.\n20–40 с: 4,38 / 5,70"}], "terms": []}
