@@ -41,7 +41,7 @@ Use `enabled` to turn an adapter on or off. Budgets use the selected model’s t
 
 | Adapter | Supported app | Context source |
 |---|---|---|
-| `claude` | Claude Desktop's Code tab | The local transcript matching the open session. Only completed assistant responses are used. |
+| `claude` | Claude Desktop: the Code tab and chats | In the Code tab, the local transcript of the open session. In a chat, the messages that the window shows, read from the accessibility tree. Only Claude's completed responses are used. |
 | `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. Enable this adapter yourself in Settings. |
 
 ### Claude session matching
@@ -51,6 +51,12 @@ The Code tab exposes a URL of the form `https://claude.ai/epitaxy/local_<id>`. T
 If the record is missing, the adapter uses the web-area title only when exactly one transcript matches. This storage format is undocumented and may change.
 
 User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
+
+### Claude chats
+
+A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So the manifest requests `"screen": ["outline"]`, and the adapter reads the messages from the outline of the page.
+
+In the outline, each message is a group labelled "Message N of M". Claude's replies are in a container with the DOM class `group/message-row`. The adapter keeps their paragraphs, list items and link texts. It leaves out hidden headings, buttons, the status rows of tools such as "Searched the web", and the source chips after sentences. It can use only the messages that the window has loaded. This page structure is not documented and may change.
 
 ### Telegram screen access
 
@@ -71,7 +77,7 @@ An adapter is a Python plugin with two required files.
 | `apps` | Bundle IDs of supported apps. |
 | `electronTree` | Whether the app needs to enable the Electron accessibility tree. |
 | `reads` | Declared file access. |
-| `screen` | Additional screen data; currently supports `lists`. |
+| `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
 | `context` | This adapter's default context settings. |
 
 `adapter.py` contains a subclass of `adapters.Adapter`:
@@ -99,4 +105,4 @@ swift build -c release --package-path macos
 macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
 
-For an adapter that reads the screen, `--lists` adds the rows of the lists. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.
+For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

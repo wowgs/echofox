@@ -2,7 +2,8 @@
 // hotkey, and sends it to the dictation server, whose adapters decide whose conversation it is
 // (server/adapters/__init__.py has the fields). Service fields go in, never the text of input fields. Screen content
 // goes in only when the caller asks: `lists` takes the rows of the lists in the focused window (a messenger's
-// messages), and the app asks only for the apps of an enabled adapter whose manifest wants them.
+// messages), `outline` the tree of the focused web page or window (a web app's chat, whose messages are not in lists),
+// and the app asks only for the apps of an enabled adapter whose manifest wants them.
 //
 // Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps (Claude Desktop,
 // VS Code) build their accessibility tree only on request: without AXManualAccessibility set, Claude Desktop showed
@@ -28,6 +29,14 @@ public enum FocusSnapshot {
     static let maxLists = 6
     static let maxListRows = 150
     static let maxListChars = 30_000
+    /// The outline: how many elements and characters of text at most, and how deep under its root. A chat's newest
+    /// messages are at the end of the tree, so a big tree keeps its end. A chat of 4 messages in Claude Desktop had 547
+    /// elements, 32 levels deep (2026-10-25).
+    static let maxOutlineNodes = 3000
+    static let maxOutlineChars = 30_000
+    static let maxOutlineDepth = 80
+    /// The roles whose AXValue is text shown on the screen; an input field's value never goes in.
+    static let shownTextRoles: Set<String> = ["AXStaticText", "AXListMarker"]
 
     /// A snapshot and the element it was taken of: the element with the keyboard focus, where the text goes later.
     public struct Capture {
@@ -37,9 +46,9 @@ public enum FocusSnapshot {
     }
 
     /// The snapshot of the frontmost app (or of `app`), as a JSON-ready dictionary.
-    public static func take(enableElectron: Bool = true, lists: Bool = false,
+    public static func take(enableElectron: Bool = true, lists: Bool = false, outline: Bool = false,
                             of app: NSRunningApplication? = nil) -> [String: Any] {
-        capture(full: true, enableElectron: enableElectron, lists: lists, of: app).snapshot
+        capture(full: true, enableElectron: enableElectron, lists: lists, outline: outline, of: app).snapshot
     }
 
     /// The snapshot of the frontmost app (or of `target`, any running app: for tools), with its focused element and
@@ -47,7 +56,7 @@ public enum FocusSnapshot {
     /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
     /// the text goes into later.
     public static func capture(full: Bool = true, enableElectron: Bool = true, lists: Bool = false,
-                               of target: NSRunningApplication? = nil) -> Capture {
+                               outline: Bool = false, of target: NSRunningApplication? = nil) -> Capture {
         let started = Date()
         guard let front = target ?? NSWorkspace.shared.frontmostApplication else {
             return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
@@ -71,7 +80,9 @@ public enum FocusSnapshot {
             out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
             return Capture(snapshot: out, focused: focused, pid: pid)
         }
-        if let w = element(app, "AXFocusedWindow") {
+        let window = element(app, "AXFocusedWindow")
+        var webArea: AXUIElement?
+        if let w = window {
             out["window"] = compact(["title": string(w, "AXTitle"), "document": string(w, "AXDocument")])
             if lists {
                 out["lists"] = windowLists(w)
@@ -89,10 +100,14 @@ public enum FocusSnapshot {
                 ancestors.append(d)
                 if out["webArea"] == nil, (d["role"] as? String) == "AXWebArea" {
                     out["webArea"] = compact(["url": d["url"], "title": d["title"]])
+                    webArea = e
                 }
                 if (d["role"] as? String) == "AXWindow" { break }
             }
             out["ancestors"] = ancestors
+        }
+        if outline, let root = webArea ?? window {
+            out["outline"] = self.outline(root, root: webArea == nil ? "window" : "webArea")
         }
         out["processes"] = descendants(of: pid)
         out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
@@ -186,6 +201,36 @@ public enum FocusSnapshot {
             }
             return compact(["frame": frame(list), "rowCount": rows.count, "rows": Array(kept.reversed())])
         }
+    }
+
+    /// The tree under `root`, flat in the tree's order: each element's depth under the root, its service fields, and
+    /// the shown text of a static text or a list marker. It is walked from the end, last child first, so that when a
+    /// limit stops the walk the outline keeps the end of the tree; "complete" says whether it has all of it.
+    static func outline(_ root: AXUIElement, root name: String) -> [String: Any] {
+        var nodes: [[String: Any]] = [], chars = 0, stopped = false, complete = true
+        func visit(_ e: AXUIElement, _ depth: Int) {
+            if depth < maxOutlineDepth {
+                for c in children(e).reversed() {
+                    visit(c, depth + 1)
+                    if stopped { return }
+                }
+            } else if !children(e).isEmpty {
+                complete = false
+            }
+            var d = describe(e)
+            d["depth"] = depth
+            if let role = d["role"] as? String, shownTextRoles.contains(role), let text = string(e, "AXValue") {
+                d["text"] = text
+                chars += text.count
+            }
+            nodes.append(d)
+            if nodes.count >= maxOutlineNodes || chars >= maxOutlineChars {
+                stopped = true
+                complete = false
+            }
+        }
+        visit(root, 0)
+        return ["root": name, "complete": complete, "nodes": Array(nodes.reversed())]
     }
 
     // MARK: Processes

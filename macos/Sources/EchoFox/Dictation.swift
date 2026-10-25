@@ -21,7 +21,7 @@ final class Dictation {
     private let config: Config
     private let sampleRate: Int
     private let textWait: TimeInterval
-    private let full: Bool, tree: Bool, lists: Bool
+    private let full: Bool, tree: Bool, lists: Bool, outline: Bool
     /// A private dictation (the private dictation's hotkey): the screen is not read. The capture keeps only the
     /// focused element, for the insertion; the server gets no snapshot, no adapter runs, nothing is saved.
     let isPrivate: Bool
@@ -36,9 +36,10 @@ final class Dictation {
 
     /// `server`: what the server said of itself (nil: not known yet; the defaults then). `full`: an enabled adapter
     /// reads the frontmost app, so the snapshot has its window, ancestors and processes. `tree`: the app is an
-    /// Electron app whose tree an enabled adapter needs. `lists`: an enabled adapter reads the rows of the app's window
-    /// lists (its manifest's "screen").
-    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false, isPrivate: Bool = false) {
+    /// Electron app whose tree an enabled adapter needs. `lists`, `outline`: an enabled adapter reads the rows of the
+    /// app's window lists, or the tree of its page or window (its manifest's "screen").
+    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false, outline: Bool = false,
+         isPrivate: Bool = false) {
         self.isPrivate = isPrivate
         self.config = config
         self.sampleRate = server?.sampleRate ?? Tuning.defaultSampleRate
@@ -46,6 +47,7 @@ final class Dictation {
         self.full = full
         self.tree = tree
         self.lists = lists
+        self.outline = outline
         let (input, why) = AudioInputs.chosen(config.microphone)
         self.recorder = Recorder(sampleRate: Double(sampleRate), device: input?.id)
         self.microphone = "\(input?.name ?? "macOS's input") (\(why))"
@@ -58,12 +60,14 @@ final class Dictation {
         receive()
         let config = self.config, rate = self.sampleRate, isPrivate = self.isPrivate
         let full = self.full && !isPrivate, tree = self.tree && !isPrivate, lists = self.lists && !isPrivate
+        let outline = self.outline && !isPrivate
         queue.async { [weak self] in
-            let capture = FocusSnapshot.capture(full: full, enableElectron: tree, lists: lists)
+            let capture = FocusSnapshot.capture(full: full, enableElectron: tree, lists: lists, outline: outline)
             DispatchQueue.main.async { self?.capture = capture }
             Log.write("snapshot: app \(capture.snapshot["app"].flatMap { ($0 as? [String: Any])?["bundleId"] } ?? "none"), "
                       + "focused \(capture.focused != nil), web area \(capture.snapshot["webArea"] != nil), "
                       + "lists \((capture.snapshot["lists"] as? [Any])?.count ?? 0), "
+                      + "outline \(((capture.snapshot["outline"] as? [String: Any])?["nodes"] as? [Any])?.count ?? 0) elements, "
                       + "\(capture.snapshot["tookMs"] ?? "?") ms")
             self?.send(.string(ClientMessage.start(model: config.model, language: config.language, sampleRate: rate,
                                                    client: Dictation.client, snapshot: isPrivate ? [:] : capture.snapshot,

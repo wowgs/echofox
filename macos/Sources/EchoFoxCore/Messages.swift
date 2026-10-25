@@ -78,6 +78,10 @@ public struct ServerInfo: Decodable, Equatable {
     public var listApps: Set<String> {
         Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap(\.apps))
     }
+    /// Apps whose page or window tree an enabled adapter reads (a web app's chat): the snapshot takes its outline.
+    public var outlineApps: Set<String> {
+        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("outline") }.flatMap(\.apps))
+    }
 
     public static func decode(_ data: Data) throws -> ServerInfo {
         let info = try JSONDecoder().decode(ServerInfo.self, from: data)

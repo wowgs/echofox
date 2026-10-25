@@ -21,7 +21,7 @@ Local dictation for Mac, built for conversations where your language and English
 
 Conversation context comes from adapters, one for each app:
 
-- **Claude Desktop**, the Code tab
+- **Claude Desktop**: chats and the Code tab
 - **Telegram Desktop**
 - More are coming.
 

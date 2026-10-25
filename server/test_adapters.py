@@ -256,7 +256,7 @@ class ClaudeDesktopTest(Fixture):
 
     def test_desktop_without_the_code_tab_in_focus_is_not_claimed(self):
         self.put("b", "newest", [reply("m2", "свежая", entrypoint="claude-desktop")])
-        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}}))  # no Accessibility, the Chat tab, …
+        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}}))  # no Accessibility, another window, …
         self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}}))
 
     def test_a_title_that_several_transcripts_share_gives_no_context(self):
@@ -272,6 +272,94 @@ class ClaudeDesktopTest(Fixture):
 
     def test_a_bad_desktop_id_reads_no_file(self):
         self.assertIsNone(sys.modules["echofox_plugin_claude.desktop"].record("local_../../etc"))
+
+
+CHAT = "0f8e2a6c-1b3d-4e5f-8a7b-9c0d1e2f3a4b"
+
+
+def node(depth, role, classes=(), label=None, text=None):
+    n = {"depth": depth, "role": role}
+    if classes:
+        n["domClasses"] = list(classes)
+    if label:
+        n["description"] = label
+    if text is not None:
+        n["text"] = text
+    return n
+
+
+def chat_message(depth, n, total, own, lines):
+    """A message of a Claude Desktop chat as its outline shows it (measured 2026-10-25, Claude Desktop 3.6556.2)."""
+    out = [node(depth, "AXGroup", ["rounded-lg"], f"Message {n} of {total}")]
+    heading = ("You said: " if own else "Claude responded: ") + lines[0][:20]
+    if own:
+        out += [node(depth + 1, "AXHeading", ["sr-only", "select-none"]), node(depth + 2, "AXStaticText", text=heading),
+                node(depth + 1, "AXGroup", ["relative", "flex"]),
+                node(depth + 2, "AXGroup", ["whitespace-pre-wrap", "break-words"]),
+                node(depth + 3, "AXStaticText", text="\n".join(lines))]
+    else:
+        d = depth + 1
+        out += [node(d, "AXGroup", ["group/message-row", "relative"]),
+                node(d + 1, "AXHeading", ["sr-only", "select-none"]), node(d + 2, "AXStaticText", text=heading),
+                node(d + 1, "AXGroup", ["flex", "text-start"]),  # a tool's status row
+                node(d + 2, "AXGroup", ["group/morph", "inline-grid"]), node(d + 3, "AXStaticText", text="Searched the web"),
+                node(d + 2, "AXButton", ["cds-reset"], "Searched the web"),
+                node(d + 1, "AXGroup", ["sr-only"]), node(d + 2, "AXStaticText", text="Searched the web"),
+                node(d + 1, "AXGroup"), node(d + 2, "AXStaticText", text=lines[0])]
+        if len(lines) > 1:
+            out.append(node(d + 1, "AXList"))
+            for item in lines[1:]:
+                out += [node(d + 2, "AXGroup"), node(d + 3, "AXListMarker", text="• "),
+                        node(d + 3, "AXStaticText", text=item[:6]),
+                        node(d + 3, "AXGroup"), node(d + 4, "AXLink", ["underline"], item[6:]),
+                        node(d + 5, "AXStaticText", text=item[6:]),
+                        node(d + 3, "AXGroup", ["inline-flex"]), node(d + 4, "AXLink", ["group/tag"], "source"),
+                        node(d + 5, "AXStaticText", text="source")]
+        out.append(node(d, "AXButton", ["sr-only"], "Show message actions"))
+    out.append(node(depth + 1, "AXButton", ["sr-only"], "Show message actions"))
+    return out
+
+
+def chat_focus(messages, complete=True, title="Выгрузка данных"):
+    nodes = [node(0, "AXWebArea"), node(1, "AXGroup", label="Sidebar"), node(2, "AXStaticText", text="Recents"),
+             node(1, "AXGroup", label="Chat messages")]
+    for i, (own, lines) in enumerate(messages, 1):
+        nodes += chat_message(2, i, len(messages), own, lines)
+    nodes += [node(1, "AXTextArea", ["ProseMirror"], "Write your prompt to Claude")]
+    return {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/chat/{CHAT}", "title": f"{title} - Claude"},
+            "outline": {"root": "webArea", "complete": complete, "nodes": nodes}}
+
+
+class ClaudeChatTest(Fixture):
+    def test_a_chat_gives_claudes_replies_newest_first_without_hidden_parts_buttons_and_chips(self):
+        c = adapters.context(chat_focus([(True, ["Как выгрузить данные?"]),
+                                         (False, ["Напишите в поддержку.", "Пишите Data Protection Officer"]),
+                                         (True, ["А кто уже пробовал?"]),
+                                         (False, ["Отчётов нет."])]))
+        self.assertEqual((c["adapter"], c["confidence"], c["details"]["replies"]), ("claude", 1.0, 2))
+        self.assertEqual(c["messages"], [{"from": "Claude", "text": "Отчётов нет."},
+                                         {"from": "Claude", "text": "Напишите в поддержку. • Пишите Data Protection Officer"}])  # clean joins the lines
+        self.assertEqual(c["about"], "a chat with Claude, an AI assistant, titled “Выгрузка данных”")
+
+    def test_the_speakers_messages_are_read_but_left_out_of_the_context(self):
+        chat = sys.modules["echofox_plugin_claude.chat"]
+        found = chat.messages(chat_focus([(True, ["Первая строка", "вторая"]), (False, ["Ответ."])])["outline"])
+        self.assertEqual(found, [{"from": "the speaker", "text": "Первая строка\nвторая"}, {"from": "Claude", "text": "Ответ."}])
+
+    def test_a_cut_outline_skips_the_message_it_starts_in(self):
+        focus = chat_focus([(False, ["Старый ответ."]), (False, ["Новый ответ."])], complete=False)
+        nodes = focus["outline"]["nodes"]
+        start = next(i for i, n in enumerate(nodes) if n.get("description") == "Message 1 of 2")
+        focus["outline"]["nodes"] = nodes[start + 3:]  # the walk stopped inside message 1
+        c = adapters.context(focus)
+        self.assertEqual(c["messages"], [{"from": "Claude", "text": "Новый ответ."}])
+        self.assertFalse(c["details"]["outlineComplete"])
+
+    def test_a_chat_without_an_outline_is_claimed_with_no_messages(self):
+        focus = chat_focus([])
+        del focus["outline"]
+        c = adapters.context(focus)
+        self.assertEqual((c["adapter"], c["details"]["replies"]), ("claude", 0))
 
 
 if __name__ == "__main__":

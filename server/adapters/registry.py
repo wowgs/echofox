@@ -4,7 +4,8 @@ adapters/ ($ECHOFOX_PLUGINS). Each plugin is a folder with:
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads],
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
-                focused window (a messenger's messages); see FOCUS in adapters/__init__.py],
+                focused window (a messenger's messages); "outline", the tree of the focused web page or window, for
+                messages that are not in lists (a chat in a web app); see FOCUS in adapters/__init__.py],
                 "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
                 chatHistoryTokenBudget; the user's entry in the config changes them}}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
@@ -28,7 +29,7 @@ import constants
 import tuning
 
 INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
-SCREEN = {"lists"}  # what of the screen a plugin can ask the client for (its manifest's "screen")
+SCREEN = {"lists", "outline"}  # what of the screen a plugin can ask the client for (its manifest's "screen")
 BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins")
 log = logging.getLogger("gemma_voice")
 

@@ -784,7 +784,9 @@ struct AdapterPage: View {
                 }
                 if let screen = adapter.screen, !screen.isEmpty {
                     LabeledContent("Screen") {
-                        Text(screen.contains("lists") ? "the rows of the lists in the focused window" : screen.joined(separator: ", "))
+                        Text(screen.map { $0 == "lists" ? "the rows of the lists in the focused window"
+                                            : $0 == "outline" ? "the text of the focused page or window" : $0 }
+                            .joined(separator: "; "))
                     }
                 }
                 if adapter.electronTree {
