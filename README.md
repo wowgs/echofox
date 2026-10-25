@@ -16,14 +16,12 @@ You'll need an Apple Silicon Mac running macOS 13 or later, with at least 16 GB 
 
 **The packaged app includes everything needed to run recognition:** llama.cpp, the dictation server, Python, and its dependencies. You don't need to install Homebrew, use the terminal, or find model files yourself.
 
-1. Open `LocalVoice.dmg` and drag Local Voice to Applications.
+1. Download `LocalVoice.dmg` from [Releases](https://github.com/wowgs/local-voice/releases), open it, and drag Local Voice to Applications.
 2. Open Local Voice and grant Microphone and Accessibility permissions when prompted. Its icon appears in the menu bar.
 3. In the setup window, choose one of the two model variants and click **Download**. The app recommends a variant for your Mac and shows download progress.
 4. Once the download finishes, click a text field and tap **right Option** to dictate.
 
 The large model files are downloaded separately so app updates don't require downloading them again. Local Voice handles their download, verification, and setup.
-
-**Download availability:** the packaged build and in-app model downloader are implemented, but no DMG has been published in [Releases](https://github.com/wowgs/local-voice/releases) yet. Developers can [build the packaged app](docs/reference/7-development.md#build-a-distributable-app).
 
 ### Choose a model variant
 
