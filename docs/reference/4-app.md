@@ -30,6 +30,8 @@ After recording stops, the app waits up to 180 seconds for each next piece of te
 
 ## The first start
 
+The packaged app includes llama.cpp, Python, and the dictation server. You only choose a model variant and start its download in the app; no separate runtime or manual model installation is needed.
+
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**.

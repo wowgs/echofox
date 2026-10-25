@@ -6,7 +6,7 @@ Local Voice is a Mac dictation app with local speech recognition and conversatio
 
 Tap the right Option key, speak, and tap it again to insert the text into the app you're using.
 
-Speech recognition runs on your Mac, using Gemma 4 E4B through [llama.cpp](https://github.com/ggml-org/llama.cpp). Once you've downloaded the model, you can dictate offline. Your audio and transcripts stay on your Mac.
+Speech recognition runs on your Mac. The app includes [llama.cpp](https://github.com/ggml-org/llama.cpp) and downloads the Gemma 4 E4B speech model for you at first launch. After that, you can dictate offline. Your audio and transcripts stay on your Mac.
 
 In supported apps, Local Voice can also use the current conversation to help recognize names and technical terms. Elsewhere, it works without conversation context.
 
@@ -14,14 +14,18 @@ In supported apps, Local Voice can also use the current conversation to help rec
 
 You'll need an Apple Silicon Mac running macOS 13 or later, with at least 16 GB of memory and enough disk space for a model. The app has been tested on an Apple M5 with 24 GB of memory running macOS 27; older macOS versions have not been verified.
 
-There are no published releases yet. For now, follow the [build from source guide](docs/reference/7-development.md#build-from-source).
+**The packaged app includes everything needed to run recognition:** llama.cpp, the dictation server, Python, and its dependencies. You don't need to install Homebrew, use the terminal, or find model files yourself.
 
-When a packaged release is available, installation will be:
+1. Open `LocalVoice.dmg` and drag Local Voice to Applications.
+2. Open Local Voice and grant Microphone and Accessibility permissions when prompted. Its icon appears in the menu bar.
+3. In the setup window, choose one of the two model variants and click **Download**. The app recommends a variant for your Mac and shows download progress.
+4. Once the download finishes, click a text field and tap **right Option** to dictate.
 
-1. Download `LocalVoice.dmg` from [Releases](https://github.com/wowgs/local-voice/releases), open it, and drag Local Voice to Applications.
-2. Open Local Voice. Its icon appears in the menu bar.
-3. Grant Microphone and Accessibility permissions. Accessibility lets the app respond to the dictation keys, read conversation context in supported apps, and insert text.
-4. Choose a model and click **Download**. The app recommends a variant based on your Mac's memory.
+The large model files are downloaded separately so app updates don't require downloading them again. Local Voice handles their download, verification, and setup.
+
+**Download availability:** the packaged build and in-app model downloader are implemented, but no DMG has been published in [Releases](https://github.com/wowgs/local-voice/releases) yet. Developers can [build the packaged app](docs/reference/7-development.md#build-a-distributable-app).
+
+### Choose a model variant
 
 Both variants use the same speech model at different levels of compression:
 

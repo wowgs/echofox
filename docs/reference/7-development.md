@@ -2,6 +2,8 @@
 
 Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
 
+The packaged app already includes its runtime and dependencies. The Homebrew instructions below are for developing from a checkout, not for using a packaged app. To create the self-contained package, see [Build a distributable app](#build-a-distributable-app).
+
 ## Build from source
 
 Run these commands from the repository root on an Apple Silicon Mac. You need Homebrew and Swift build tools. This development setup runs the dictation server from the checkout and uses Homebrew’s `llama-server`.
