@@ -1,9 +1,8 @@
 // Where a setting's value lives in the config, what is in force, and where that comes from: one rule for every
 // setting of the settings window, the server's, the models', the adapters' and the app's (docs/design/4-hld.md,
 // "Настройки"). The user's value is at the owner; without one, the value comes from the level under it:
-//   an adapter's setting, for one adapter: its entry, then adapterDefaults, then the adapter's manifest (its info's
-//     context), then the fallback (the setting's default);
-//   the same setting for every adapter (adapterDefaults): each adapter's own default stays under it;
+//   an adapter's setting: the adapter's entry, then its manifest (its info's context), then the fallback (the
+//     setting's default);
 //   any other setting: the owner's default (SettingInfo.default).
 // A value equal to the one under it is no change: it is not written (edit), and one already in the file does not
 // count as changed.
@@ -15,20 +14,14 @@ public enum SettingScope: Equatable {
     case owner
     /// An adapter's setting for this adapter: its entry.
     case adapter(ServerInfo.Adapter)
-    /// An adapter's setting for every adapter: adapterDefaults.
-    case allAdapters
 }
 
 /// Where the value in force comes from, when the config has none at this level.
 public enum SettingSource: Equatable {
     /// The owner's default (the server's, the model's catalog, the app's), or an adapter setting's fallback.
     case ownerDefault
-    /// adapterDefaults, for an adapter's setting.
-    case allAdapters
     /// The adapter's manifest.
     case adapter(String)
-    /// Each adapter's own default (a value of adapterDefaults not set).
-    case eachAdapter
 }
 
 public struct SettingState: Equatable {
@@ -36,8 +29,7 @@ public struct SettingState: Equatable {
     public let path: [String]?
     /// The config's value here when it differs from the inherited one; nil: no change.
     public let own: SettingValue?
-    /// What is in force without a value here, and where it comes from; nil: nothing one value can say (each
-    /// adapter's own default).
+    /// What is in force without a value here, and where it comes from.
     public let inherited: SettingValue?
     public let source: SettingSource
 
@@ -59,7 +51,6 @@ public enum SettingStore {
     public static func path(of s: SettingInfo, model: String?, scope: SettingScope = .owner) -> [String]? {
         switch scope {
         case let .adapter(a): return ["adapters", a.name, s.key]
-        case .allAdapters: return ["adapterDefaults", s.key]
         case .owner:
             switch s.owner {
             case "server": return ["server", s.key]
@@ -75,10 +66,8 @@ public enum SettingStore {
         let inherited: SettingValue?, source: SettingSource
         switch scope {
         case let .adapter(a):
-            if let v = at(["adapterDefaults", s.key], config) { (inherited, source) = (v, .allAdapters) }
-            else if let v = a.context?[s.key] { (inherited, source) = (v, .adapter(a.name)) }
+            if let v = a.context?[s.key] { (inherited, source) = (v, .adapter(a.name)) }
             else { (inherited, source) = (s.default, .ownerDefault) }
-        case .allAdapters: (inherited, source) = (nil, .eachAdapter)
         case .owner: (inherited, source) = (s.default, .ownerDefault)
         }
         let here = path.flatMap { at($0, config) }

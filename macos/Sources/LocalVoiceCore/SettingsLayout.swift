@@ -3,12 +3,12 @@
 // for the server's, the models' and the adapters' settings (SettingInfo), and from the app for its own. Where it is
 // shown is the app's alone, here: to move a setting between the menu and the window, change its line in `places`. A
 // server setting without a line goes to its owner's page, in its group's section, so a new one always shows up; an
-// advanced one goes to that page's Advanced, a section that opens on a click; an adapter's settings show under each
-// adapter, in its Advanced.
+// advanced one goes to that page's Advanced, a section that opens on a click; an adapter's settings show on its own
+// page, in its Advanced. The sidebar's Adapters is a heading with a row per adapter, not a page.
 import Foundation
 
 public enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, microphone, language, model, adapters, recordings, diagnostics
+    case general, microphone, language, model, recordings, diagnostics
 
     public var id: String { rawValue }
 
@@ -18,7 +18,6 @@ public enum SettingsPage: String, CaseIterable, Identifiable {
         case .microphone: return "Microphone"
         case .language: return "Language"
         case .model: return "Model"
-        case .adapters: return "Adapters"
         case .recordings: return "Recordings & Labels"
         case .diagnostics: return "Diagnostics"
         }
@@ -31,11 +30,18 @@ public enum SettingsPage: String, CaseIterable, Identifiable {
         case .microphone: return "mic"
         case .language: return "character.bubble"
         case .model: return "cpu"
-        case .adapters: return "puzzlepiece.extension"
         case .recordings: return "tray.full"
         case .diagnostics: return "stethoscope"
         }
     }
+}
+
+public enum SidebarEntry: Hashable {
+    case page(SettingsPage)
+    /// The heading "Adapters": no page of its own.
+    case adapters
+
+    public static let adaptersTitle = "Adapters", adaptersSymbol = "puzzlepiece.extension"
 }
 
 public enum SettingPlace: Equatable {
@@ -62,8 +68,6 @@ public enum SettingsLayout {
         "languageFillers": [.page(.language, section: "Language", order: 2)],
         "model": [.page(.model, section: "Model", order: 0)],
         "prompt": [.page(.model, section: "Prompt", order: 0)],
-        "adapterList": [.page(.adapters, section: "Adapters", order: 0)],
-        "adapterDefaults": [.page(.adapters, section: SettingsLayout.advanced, order: 1)],
         "serverStatus": [.page(.diagnostics, section: "Server", order: 0)],
         "openLog": [.page(.diagnostics, section: "Logs", order: 0)],
         // The server's settings placed by hand
@@ -71,6 +75,11 @@ public enum SettingsLayout {
         "recordings": [.page(.recordings, section: "Recordings", order: 1)],
         "labeled": [.page(.recordings, section: "Labels", order: 2)],
     ]
+
+    /// The sidebar, top to bottom: the pages, and the adapters' heading, which opens and closes the rows of the
+    /// adapters.
+    public static let sidebar: [SidebarEntry] = [.page(.general), .page(.microphone), .page(.language), .page(.model),
+                                                 .adapters, .page(.recordings), .page(.diagnostics)]
 
     /// The app's own settings that a SettingRow shows, described as the server describes its own.
     public static let appSettings = [

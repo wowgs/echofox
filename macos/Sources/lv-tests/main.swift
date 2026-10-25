@@ -84,7 +84,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 6
+  "version": 7
 }
 
 """
@@ -104,7 +104,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 6,
+  "version": 7,
   "adapters": {"enabled": true}
 }
 
@@ -221,16 +221,11 @@ do {
     st = SettingStore.state(of: terms, in: config, scope: .adapter(claude))
     check(st.path == ["adapters", "claude", "chatTermsTokenBudget"] && st.own == .number(3)
           && st.inherited == .number(200) && st.source == .adapter("claude"), "settings: an adapter's over its manifest")
-    try Config.set(["adapterDefaults", "chatTermsTokenBudget"], to: 150, in: file)
     try Config.remove(["adapters", "claude", "chatTermsTokenBudget"], in: file)
     config = Config.load(from: file)
     st = SettingStore.state(of: terms, in: config, scope: .adapter(claude))
-    check(!st.changed && st.value == .number(150) && st.source == .allAdapters,
-          "settings: adapterDefaults over the manifest")
-    let every = SettingStore.state(of: terms, in: config, scope: .allAdapters)
-    check(every.path == ["adapterDefaults", "chatTermsTokenBudget"] && every.own == .number(150)
-          && every.inherited == nil && every.source == .eachAdapter, "settings: the value for every adapter")
-    check(SettingStore.edit("150", of: terms, state: st) == .remove && SettingStore.edit("90", of: terms, state: st) == .write(.number(90))
+    check(!st.changed && st.value == .number(200) && st.source == .adapter("claude"), "settings: then the manifest's")
+    check(SettingStore.edit("200", of: terms, state: st) == .remove && SettingStore.edit("90", of: terms, state: st) == .write(.number(90))
           && SettingStore.edit("", of: terms, state: st) == .remove && SettingStore.edit("-1", of: terms, state: st) == .refuse
           && SettingStore.edit("2.5", of: terms, state: st) == .refuse && SettingStore.edit("abc", of: terms, state: st) == .refuse,
           "settings: an edit equal to the inherited value takes the value out; one out of range is refused")
@@ -265,15 +260,14 @@ do {
         ("chatTermsTokenBudget", "adapter", "context", true), ("brandNew", "server", "new", false)]
     let general = SettingsLayout.sections(of: .general, serverKeys: keys)
     let model = SettingsLayout.sections(of: .model, serverKeys: keys)
-    let adapters = SettingsLayout.sections(of: .adapters, serverKeys: keys)
     check(general.contains { $0.section == "Recording" && $0.ids == ["silenceStopSeconds", "maxRecordingMinutes"] }
           && general.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
           && !general.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
           "settings: the server's settings on General \(general)")
     check(model.first?.section == "Model" && model.last?.section == "Advanced" && model.last?.ids == ["topK"],
           "settings: the model's page, its sampler in Advanced \(model)")
-    check(adapters.last?.section == "Advanced" && adapters.last?.ids == ["adapterDefaults"],
-          "settings: the adapters' defaults in Advanced \(adapters)")
+    check(SettingsLayout.sidebar.contains(.adapters) && !SettingsLayout.places.keys.contains { $0.hasPrefix("adapter") },
+          "settings: Adapters is a heading of the sidebar, not a page")
 } catch {
     check(false, "settings: \(error)")
 }

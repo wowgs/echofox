@@ -3,8 +3,8 @@
   server   the default is here; the user's change is in the config's section "server"
   model    the default is its catalog entry's "options" (catalog.json), else here; the user's change is in a model's
            "options" in the config
-  adapter  the default is its manifest's "context", else here; the user's change is in an adapter's entry in the
-           config, or for every adapter in "adapterDefaults"
+  adapter  the default is its manifest's "context", else here; the user's change is in that adapter's entry in the
+           config
 A knob is a setting of the user's (`user`): "basic", shown at once in the settings window, or "advanced", for those
 who tune the model and the context, behind the page's Advanced. A knob with no `user` is a constant: a guard or a
 number chosen by measurement, which the config does not set; only an experiment's start message changes it

@@ -1,12 +1,12 @@
 // The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
-// version 6 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
+// version 7 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
 // recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
 // value out to go back to its default.
 import Foundation
 
 public struct Config: Equatable {
-    public static let version = 6
+    public static let version = 7
     public static let defaultHost = "127.0.0.1"
     public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
     public static let defaultRecordings = "~/speech/recordings"  // the server's own default (constants.py RECORDINGS)

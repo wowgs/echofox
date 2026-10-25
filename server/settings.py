@@ -1,14 +1,13 @@
 """The server's settings and the config file it shares with its clients.
 
-The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 6. Each setting has one owner
+The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 7. Each setting has one owner
 (docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only; the knobs
 that are constants (tuning.py) are not in it:
-  {"version": 6,
+  {"version": 7,
    "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
    "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
                          "prompt": "…", "options": {the model's knobs}}},
-   "adapters": {"<plugin>": {"enabled": true, the adapter's knobs}},
-   "adapterDefaults": {the adapters' knobs for every adapter: over each manifest's defaults, under an adapter's entry},
+   "adapters": {"<plugin>": {"enabled": true, the adapter's knobs: over its manifest's defaults}},
    "languages": {"<code>": {"notes": ["…"], "fillers": ["э", "мм"]}},
    "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, "maxRecordingMinutes": 30}}
 The app's settings the server does not read. adapters: the adapter plugins that work (adapters/registry.py); none:
@@ -80,15 +79,6 @@ def good_adapters(v):
                for k, e in v.items())
 
 
-def good_adapter_defaults(v):
-    """The user's values of the adapters' knobs for every adapter."""
-    try:
-        tuning.parse(v, "adapter", "adapterDefaults")
-        return True
-    except ValueError:
-        return False
-
-
 def good_languages(v):
     """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional."""
     def strings(w):
@@ -103,7 +93,6 @@ SETTINGS = [
     Setting("models", "models", dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT,
             "model"),
     Setting("adapters", "adapters", dict, good_adapters, {}, "recording"),
-    Setting("adapterDefaults", "adapter_defaults", dict, good_adapter_defaults, {}, "recording"),
     Setting("languages", "languages", dict, good_languages, {}, "recording"),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
             "Save recordings", "Keeps each recording and its text. Private dictations are never saved."),
@@ -137,8 +126,8 @@ def schema(st, model_entry=None):
         elif k.owner == "model":
             d = defaults.get(k.name, k.default)
             out.append(k.schema(d, own.get(k.name, d)))
-        else:  # an adapter's: the fallback, and the user's value for every adapter (adapterDefaults)
-            out.append(k.schema(k.default, (getattr(st, "adapter_defaults", None) or {}).get(k.name, k.default)))
+        else:  # an adapter's: the fallback (each adapter's own defaults are in info's adapters, "context")
+            out.append(k.schema(k.default, k.default))
     for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string")):
         s = BY_KEY[key]
         now = getattr(st, s.name, s.default)
@@ -221,7 +210,6 @@ def recording_settings(now, into=None):
     st.labeled = constants.path(now["labeled"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
-    st.adapter_defaults = tuning.parse(now["adapterDefaults"], "adapter", "adapterDefaults")
     return st
 
 
@@ -242,11 +230,41 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
-    """The config brought to this version, step by step (migrate_2 to migrate_5)."""
+    """The config brought to this version, step by step (migrate_2 to migrate_6)."""
     migrate_2(path)
     migrate_3(path)
     migrate_4(path)
     migrate_5(path)
+    migrate_6(path)
+
+
+def migrate_6(path):
+    """Version 6 → 7: "adapterDefaults", the adapters' values for every adapter, is gone: an adapter's defaults are
+    its manifest's, and the user's change is in its entry. Each of its values goes to every adapter's entry that has
+    none of its own, so nothing changes. The file keeps its order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(c, dict) or c.get("version") != 6:
+        return
+    shared = c.pop("adapterDefaults", None)
+    moved = []
+    if isinstance(shared, dict):
+        for name, entry in (c.get("adapters") or {}).items():
+            if isinstance(entry, dict):
+                for k, v in shared.items():
+                    if k not in entry:
+                        entry[k] = v
+                        moved.append(f"adapters.{name}.{k}={v!r}")
+    c["version"] = 7
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    log.info("config %s: version 6 → 7; adapterDefaults %s", path,
+             f"moved to the adapters: {', '.join(moved)}" if moved else "was empty" if shared is not None else "none")
 
 
 # Version 5 → 6: the knobs that became constants (tuning.py) leave the file; contextAsSystem is gone; the

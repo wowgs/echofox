@@ -97,11 +97,8 @@ final class SettingsModel: ObservableObject {
         SettingStore.state(of: s, in: config, scope: scope)
     }
 
-    /// The settings that a page item shows, with their scope: one setting, or every adapter setting (adapterDefaults).
-    func shown(_ id: String) -> [(SettingInfo, SettingScope)] {
-        if id == "adapterDefaults" { return adapterSettings.map { ($0, .allAdapters) } }
-        return setting(id).map { [($0, .owner)] } ?? []
-    }
+    /// The setting that a page item shows, if it is one.
+    func shown(_ id: String) -> [(SettingInfo, SettingScope)] { setting(id).map { [($0, .owner)] } ?? [] }
 
     /// How many of these settings differ from what they would be without a value here: for an Advanced's title.
     func changed(_ settings: [(SettingInfo, SettingScope)]) -> Int {
@@ -233,17 +230,28 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selection) {
-                ForEach(SettingsPage.allCases) { page in
-                    if page == .adapters {
+                ForEach(SettingsLayout.sidebar, id: \.self) { entry in
+                    switch entry {
+                    case let .page(page):
+                        Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                    case .adapters:
+                        // A heading, not a page: a click anywhere on it opens or closes the adapters' rows.
                         DisclosureGroup(isExpanded: $model.adaptersOpen) {
                             ForEach(model.info?.adapters ?? [], id: \.name) { a in
                                 AdapterSidebarRow(model: model, adapter: a).tag(SidebarItem.adapter(a.name))
                             }
                         } label: {
-                            Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                            Button {
+                                withAnimation { model.adaptersOpen.toggle() }
+                            } label: {
+                                HStack {
+                                    Label(SidebarEntry.adaptersTitle, systemImage: SidebarEntry.adaptersSymbol)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                    } else {
-                        Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
                     }
                 }
             }
@@ -291,7 +299,7 @@ struct PageView: View {
 
     var body: some View {
         Form {
-            if model.info == nil && [.general, .model, .adapters, .recordings].contains(page) {
+            if model.info == nil && [.general, .model, .recordings].contains(page) {
                 Text("The dictation server is not answering. Its settings appear here when it answers.")
                     .foregroundStyle(.secondary)
             }
@@ -332,8 +340,6 @@ struct ItemView: View {
         case "inputVolume": VolumeRow(model: model)
         case "model": ModelPicker(model: model)
         case "prompt": PromptEditor(model: model)
-        case "adapterList": AdapterList(model: model)
-        case "adapterDefaults": AdapterDefaults(model: model)
         case "labelStats":
             LabeledContent("Labeled") {
                 Text("\(model.labels.count) pieces, \(String(format: "%.1f", model.labels.seconds / 60)) min")
@@ -370,14 +376,11 @@ func show(_ v: SettingValue?) -> String {
     }
 }
 
-/// Where the value in force comes from, for an adapter's setting: the row says it, as the value may come from
-/// another page.
+/// Where the value in force comes from, for an adapter's setting: its own default, or the built-in one.
 func sourceNote(_ state: SettingState) -> String {
     if state.changed { return "Set here." }
     switch state.source {
-    case .allAdapters: return "From the values for every adapter."
     case let .adapter(name): return "From the \(adapterTitle(name)) defaults."
-    case .eachAdapter: return "Each adapter keeps its own default."
     case .ownerDefault: return "The built-in default."
     }
 }
@@ -393,7 +396,6 @@ struct SettingRow: View {
         switch scope {
         case .owner: return "setting." + setting.key
         case let .adapter(a): return "adapter.\(a.name).\(setting.key)"
-        case .allAdapters: return "adapter.*.\(setting.key)"
         }
     }
     private var state: SettingState { model.state(setting, scope) }
@@ -661,24 +663,6 @@ struct AdvancedSection<Content: View>: View {
     }
 }
 
-/// The adapters, each with its switch; a click on its name in the sidebar opens its page.
-struct AdapterList: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        if let adapters = model.info?.adapters, !adapters.isEmpty {
-            ForEach(adapters, id: \.name) { a in
-                SettingLine(title: adapterTitle(a.name), note: a.error ?? a.description, refused: a.error != nil) {
-                    Button("Open") { model.selection = .adapter(a.name) }.buttonStyle(.borderless)
-                    AdapterSwitch(model: model, adapter: a)
-                }
-            }
-        } else {
-            Text("No adapters. The server is not answering, or it has none.").foregroundStyle(.secondary)
-        }
-    }
-}
-
 struct AdapterSwitch: View {
     @ObservedObject var model: SettingsModel
     let adapter: ServerInfo.Adapter
@@ -689,18 +673,6 @@ struct AdapterSwitch: View {
             model.actions?.refreshServer()
         }))
         .labelsHidden().toggleStyle(.switch)
-    }
-}
-
-/// The adapters' settings for every adapter (adapterDefaults): over each adapter's own defaults, under a value set on
-/// an adapter's page.
-struct AdapterDefaults: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        Text("Values for every adapter. A value set on an adapter's page wins.")
-            .font(.caption).foregroundStyle(.secondary)
-        ForEach(model.adapterSettings, id: \.key) { s in SettingRow(model: model, setting: s, scope: .allAdapters) }
     }
 }
 

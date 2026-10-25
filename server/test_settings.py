@@ -204,7 +204,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate_2(f)  # a version-3 file stays as it is
             self.assertEqual(json.load(open(f, encoding="utf-8")), c)
 
-    def test_version_3_becomes_6_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_7_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -218,7 +218,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 6)
+            self.assertEqual(c["version"], 7)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude"]["chatHistoryTokenBudget"], 1000)   # its own value stays
@@ -228,7 +228,7 @@ class MigrateTest(unittest.TestCase):
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
 
-    def test_version_4_becomes_6_without_the_second_ways_and_the_order_kept(self):
+    def test_version_4_becomes_7_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v4 = {"model": "m", "version": 4,
@@ -244,18 +244,34 @@ class MigrateTest(unittest.TestCase):
             with self.assertLogs("gemma_voice", "INFO") as logs:
                 s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(list(c), list(v4))
-            self.assertEqual(c["version"], 6)
+            self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])
+            self.assertEqual(c["version"], 7)
             self.assertEqual(c["server"], {"maxRecordingMinutes": 10})
             self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
             self.assertNotIn("options", c["models"]["n"])
-            self.assertEqual(c["adapters"]["claude"], {"enabled": False})  # a budget of 0 was the switch
-            self.assertEqual(c["adapterDefaults"], {"proseOnly": False})
+            # a budget of 0 was the switch; adapterDefaults' proseOnly went to every adapter
+            self.assertEqual(c["adapters"], {"claude": {"enabled": False, "proseOnly": False},
+                                             "telegram": {"enabled": True, "proseOnly": False}})
             self.assertIn("thresholdDb=-45", logs.output[0])
             self.assertEqual(s.file_settings(f)["maxRecordingMinutes"], 10.0)
 
 
-    def test_version_5_becomes_6_without_the_constants_and_with_minutes(self):
+    def test_version_6_becomes_7_with_adapter_defaults_in_each_adapter(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            v6 = {"version": 6, "adapters": {"claude": {"enabled": True, "chatTermsTokenBudget": 50},
+                                             "telegram": {"enabled": True}},
+                  "adapterDefaults": {"chatTermsTokenBudget": 150, "proseOnly": False}, "model": "m"}
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump(v6, fh)
+            s.migrate(f)
+            c = json.load(open(f, encoding="utf-8"))
+            self.assertEqual(list(c), ["version", "adapters", "model"])
+            self.assertEqual(c["version"], 7)
+            self.assertEqual(c["adapters"], {"claude": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
+                                             "telegram": {"enabled": True, "chatTermsTokenBudget": 150, "proseOnly": False}})
+
+    def test_version_5_becomes_7_without_the_constants_and_with_minutes(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v5 = {"version": 5, "server": {"port": 8090, "pieceSeconds": 15, "cutSearchSeconds": 3,
@@ -268,7 +284,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v5, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 6)
+            self.assertEqual(c["version"], 7)
             self.assertEqual(c["server"], {"port": 8090, "maxRecordingMinutes": 30})
             self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})
             self.assertNotIn("options", c["models"]["n"])
