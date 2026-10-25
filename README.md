@@ -4,11 +4,13 @@
 
 [Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Docs](docs/README.md)
 
-Local dictation for Mac, built for conversations where your language and English technical terms naturally mix.
+Private, on-device dictation for Mac, built for conversations where your language and English technical terms mix. Your voice, your text and your conversations never leave your Mac.
+
+Works offline · No account · No cloud · No telemetry
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/how-it-works-dark.svg">
-  <img alt="Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available." src="img/how-it-works.svg">
+  <img alt="Tap a key, speak, and get text in your app. EchoFox reads the chat through adapters for Claude, Telegram and more, and everything runs on your Mac: nothing goes to the internet." src="img/how-it-works.svg">
 </picture>
 
 ## Made for the way you speak

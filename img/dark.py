@@ -32,6 +32,8 @@ COLORS = {
     "#f87171": "#f87171",  # window buttons stay
     "#fbbf24": "#fbbf24",
     "#34d399": "#34d399",
+    "#d97757": "#d97757",  # the Claude logo (Simple Icons)
+    "#26a5e4": "#26a5e4",  # the Telegram logo (Simple Icons)
 }
 # The page: the first rect of the drawing, white
 PAGE = re.compile(r'<rect [^>]*fill="#ffffff"/>')
