@@ -1,0 +1,108 @@
+// The parts the app's windows share for what the user changes, so that every editable field looks editable, the same
+// way everywhere (the look of macOS's own settings): a row with the title and its explanation on the leading side and
+// the control on the trailing side; text and number fields with a rounded border on the text background, a red one
+// when the value is refused; a reset button that always keeps its place, so rows do not jump; a box for longer text.
+import AppKit
+import SwiftUI
+
+/// A row of a settings page: the title, its explanation under it, and the control on the trailing side.
+struct SettingLine<Control: View>: View {
+    let title: String
+    var note: String? = nil
+    var refused = false
+    /// A value is typed and not applied yet: say how to apply it.
+    var pending = false
+    @ViewBuilder var control: () -> Control
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 6) { control() }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let note {
+                    Text(note).font(.caption).foregroundStyle(refused ? Color.red : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if pending { Text("Press Return to apply.").font(.caption).foregroundStyle(Color.accentColor) }
+            }
+        }
+    }
+}
+
+/// A text or number field that looks like one.
+struct InputField: View {
+    var placeholder = ""
+    @Binding var text: String
+    var width: CGFloat = 90
+    /// A number: aligned on the trailing side, in digits of one width.
+    var number = false
+    var refused = false
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(number ? .trailing : .leading)
+            .font(number ? .body.monospacedDigit() : .body)
+            .frame(width: width)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: refused ? 1.5 : 0))
+            .onSubmit(onSubmit)
+    }
+}
+
+/// The unit after a number field, or nothing.
+struct UnitLabel: View {
+    let unit: String?
+    var body: some View {
+        if let unit { Text(unit).foregroundStyle(.secondary) }
+    }
+}
+
+/// Takes the value out of the config, back to its default; it keeps its place when there is nothing to reset.
+struct ResetButton: View {
+    let visible: Bool
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { Image(systemName: "arrow.uturn.backward.circle") }
+            .buttonStyle(.borderless)
+            .help(help)
+            .accessibilityLabel("Reset to default")
+            .opacity(visible ? 1 : 0)
+            .disabled(!visible)
+    }
+}
+
+extension View {
+    /// A box for longer text (a TextEditor): the text background, a separator-coloured border, an inset.
+    func inputBox(cornerRadius: CGFloat = 6) -> some View {
+        scrollContentBackground(.hidden)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: cornerRadius).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color(nsColor: .separatorColor)))
+    }
+}
+
+/// The unit of a server setting, from its key: "pieceSeconds" is in seconds, "thresholdDb" in dB.
+func unit(of key: String) -> String? {
+    if key.hasSuffix("PerSpeechSecond") { return "chars/s" }
+    if key.hasSuffix("PerSecond") { return "tokens/s" }
+    if key.hasSuffix("Seconds") { return "s" }
+    if key.hasSuffix("Db") { return "dB" }
+    if key.hasSuffix("TokenBudget") || key.hasSuffix("Tokens") || key.hasSuffix("TokensBase") { return "tokens" }
+    return nil
+}
+
+/// A folder chosen in the system's open panel, or nil.
+func chooseFolder(starting path: String) -> String? {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.directoryURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    guard panel.runModal() == .OK, let url = panel.url else { return nil }
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    return url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
+}

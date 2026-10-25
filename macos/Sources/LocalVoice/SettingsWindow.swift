@@ -217,28 +217,21 @@ struct SettingRow: View {
     @ObservedObject var model: SettingsModel
     let setting: SettingInfo
     private var id: String { "setting." + setting.key }
-    private var bad: Bool { model.refused.contains(id) }
 
     private var path: [String]? { SettingStore.path(of: setting, in: model.config, model: model.config.model) }
     private var value: SettingValue? { SettingStore.value(of: setting, in: model.config, model: model.config.model) }
     private var set: Bool { path.map { model.config.value($0) != nil } ?? false }
+    private var shown: String { show(value) == "none" ? "" : show(value) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title(of: setting.key))
-                Spacer()
-                control
-                if set {
-                    Button { if let p = path { model.remove(p) } } label: { Image(systemName: "arrow.uturn.backward") }
-                        .buttonStyle(.borderless).help("Back to the default (\(show(setting.default)))")
-                }
+        SettingLine(title: title(of: setting.key), note: setting.help + range, refused: model.refused.contains(id),
+                    pending: model.drafts[id].map { $0 != shown } ?? false) {
+            control
+            ResetButton(visible: set, help: "Back to the default (\(show(setting.default)))") {
+                if let p = path { model.done(id); model.remove(p) }
             }
-            Text(setting.help + range).font(.caption).foregroundStyle(bad ? .red : .secondary)
         }
     }
-
-    private var shown: String { show(value) == "none" ? "" : show(value) }
 
     private var range: String {
         var parts: [String] = []
@@ -254,11 +247,18 @@ struct SettingRow: View {
             Toggle("", isOn: Binding(get: { if case .bool(true)? = value { return true } else { return false } },
                                      set: { on in if let p = path { model.write(p, on) } }))
                 .labelsHidden().toggleStyle(.switch)
+        case "string":
+            InputField(text: model.draft(id, shown: shown), width: 240, refused: model.refused.contains(id),
+                       onSubmit: commit)
+            if setting.key == "recordings" {
+                Button("Choose…") {
+                    if let folder = chooseFolder(starting: shown), let p = path { model.done(id); model.write(p, folder) }
+                }
+            }
         default:
-            TextField("", text: model.draft(id, shown: shown))
-                .frame(width: setting.kind == "string" ? 260 : 90)
-                .multilineTextAlignment(.trailing)
-                .onSubmit(commit)
+            InputField(placeholder: show(setting.default), text: model.draft(id, shown: shown), width: 80, number: true,
+                       refused: model.refused.contains(id), onSubmit: commit)
+            UnitLabel(unit: unit(of: setting.key))
         }
     }
 
@@ -267,6 +267,11 @@ struct SettingRow: View {
         if setting.kind == "string" {
             model.done(id)
             model.write(p, text)
+            return
+        }
+        if text.isEmpty {  // an empty field: back to the default
+            model.done(id)
+            if set { model.remove(p) }
             return
         }
         guard let n = Double(text.replacingOccurrences(of: ",", with: ".")), setting.allows(n) else {
@@ -283,25 +288,23 @@ struct AppNumberRow: View {
     @ObservedObject var model: SettingsModel
     let path: [String], title: String, unit: String, fallback: Double, note: String
     private var id: String { "app." + path.joined(separator: ".") }
+    private var shown: String { show(.number(fallback)) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                Spacer()
-                TextField("", text: model.draft(id, shown: show(.number(fallback)))).frame(width: 70)
-                    .multilineTextAlignment(.trailing).onSubmit {
-                        guard let text = model.drafts[id] else { return }
-                        if let n = Double(text.replacingOccurrences(of: ",", with: ".")), n >= 0 {
-                            model.done(id)
-                            model.write(path, n)
-                        } else {
-                            model.refused.insert(id)
-                        }
-                    }
-                Text(unit).foregroundStyle(.secondary)
+        SettingLine(title: title, note: note, refused: model.refused.contains(id),
+                    pending: model.drafts[id].map { $0 != shown } ?? false) {
+            InputField(text: model.draft(id, shown: shown), width: 80, number: true,
+                       refused: model.refused.contains(id)) {
+                guard let text = model.drafts[id] else { return }
+                if let n = Double(text.replacingOccurrences(of: ",", with: ".")), n >= 0 {
+                    model.done(id)
+                    model.write(path, n)
+                } else {
+                    model.refused.insert(id)
+                }
             }
-            Text(note).font(.caption).foregroundStyle(model.refused.contains(id) ? .red : .secondary)
+            UnitLabel(unit: unit)
+            ResetButton(visible: false, help: "") {}
         }
     }
 }
@@ -316,7 +319,9 @@ struct KeyPicker: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        SettingLine(title: title, note: clash ? "The other dictation has the same key: only one of them works."
+                                              : note + " A tap: the key pressed and released alone.",
+                    refused: clash) {
             Picker(title, selection: Binding(get: { current }, set: { v in
                 model.write([path], v)
                 model.actions?.keysChanged()
@@ -324,8 +329,8 @@ struct KeyPicker: View {
                 ForEach(TapKeyChoice.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 Text("None").tag("none")
             }
-            Text(note + " A tap: the key pressed and released alone.").font(.caption).foregroundStyle(.secondary)
-            if clash { Text("The other dictation has the same key: only one of them works.").font(.caption).foregroundStyle(.red) }
+            .labelsHidden()
+            .fixedSize()
         }
     }
 
@@ -407,7 +412,8 @@ struct PromptEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: model.draft(id, shown: own ?? "")).font(.system(.body, design: .monospaced)).frame(minHeight: 160)
+            TextEditor(text: model.draft(id, shown: own ?? "")).font(.system(.body, design: .monospaced))
+                .frame(minHeight: 160).inputBox()
             HStack {
                 Text(own == nil ? "Google's template is used: the model has no prompt of its own."
                                 : "{LANGUAGE} becomes the language of the speech.")
@@ -418,7 +424,10 @@ struct PromptEditor: View {
                     let t = text
                     model.done(id)
                     if let p = path { model.write(p, t) }
-                }.disabled(text == (own ?? ""))
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .disabled(text == (own ?? ""))
             }
         }
     }
@@ -435,6 +444,7 @@ struct AdapterList: View {
                         model.write(["adapters", a.name, "enabled"], on)
                         model.actions?.refreshServer()
                     }))
+                    .toggleStyle(.switch)
                     if let d = a.description { Text(d).font(.caption).foregroundStyle(.secondary) }
                     if let e = a.error { Text(e).font(.caption).foregroundStyle(.red) }
                     if model.config.adapters[a.name] == true {
@@ -458,32 +468,28 @@ struct AdapterSettingRow: View {
 
     private var path: [String] { ["adapters", adapter, setting.key] }
     private var own: SettingValue? { SettingValue(json: model.config.value(path)).flatMap { $0 == .null ? nil : $0 } }
+    private var shown: String { own.map { show($0) } ?? "" }
 
     var body: some View {
-        HStack {
-            Text("  " + title(of: setting.key)).font(.callout)
-            Spacer()
-            TextField(show(setting.value ?? setting.default), text: model.draft(id, shown: own.map { show($0) } ?? ""))
-                .frame(width: 80)
-                .multilineTextAlignment(.trailing)
-                .onSubmit {
-                    guard let text = model.drafts[id] else { return }
-                    if text.isEmpty {
-                        model.done(id)
-                        model.remove(path)
-                    } else if let n = Double(text), setting.allows(n) {
-                        model.done(id)
-                        model.write(path, Int(n))
-                    } else {
-                        model.refused.insert(id)
-                    }
+        SettingLine(title: title(of: setting.key), note: setting.help, refused: model.refused.contains(id),
+                    pending: model.drafts[id].map { $0 != shown } ?? false) {
+            InputField(placeholder: show(setting.value ?? setting.default), text: model.draft(id, shown: shown),
+                       width: 80, number: true, refused: model.refused.contains(id)) {
+                guard let text = model.drafts[id] else { return }
+                if text.isEmpty {
+                    model.done(id)
+                    if own != nil { model.remove(path) }
+                } else if let n = Double(text), setting.allows(n) {
+                    model.done(id)
+                    model.write(path, Int(n))
+                } else {
+                    model.refused.insert(id)
                 }
-            if own != nil {
-                Button { model.remove(path) } label: { Image(systemName: "arrow.uturn.backward") }.buttonStyle(.borderless)
             }
+            UnitLabel(unit: unit(of: setting.key))
+            ResetButton(visible: own != nil, help: "Back to the model's value") { model.done(id); model.remove(path) }
         }
-        .help(setting.help)
-        .foregroundStyle(model.refused.contains(id) ? .red : .primary)
+        .padding(.leading, 16)
     }
 }
 

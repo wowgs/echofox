@@ -206,10 +206,7 @@ struct LabelView: View {
             }
             TextEditor(text: $model.text)
                 .font(.system(size: 15))
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
+                .inputBox(cornerRadius: 8)
             Text("Write what you meant to write: no э, мм, а-а, no repeats; after a slip, only what you corrected it to.")
                 .font(.caption).foregroundStyle(.secondary)
             if let e = model.error { Text(e).font(.caption).foregroundStyle(.red) }
