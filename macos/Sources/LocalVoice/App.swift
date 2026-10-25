@@ -15,6 +15,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private lazy var menu = MenuBar(actions: self)
     private let labeling = LabelWindow()
     private let settings = SettingsWindow()
+    private let firstRun = FirstRunWindow()
     private let prepareQueue = DispatchQueue(label: "local-voice.prepare")
     private var current: Dictation?
     private var waiting: [Dictation] = []
@@ -32,7 +33,9 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
             self?.prepareAll()
             self?.menu.update()
             self?.settings.refresh()
+            self?.firstRun.showIfNeeded(self?.server.info)
         }
+        firstRun.askServer = { [weak self] in self?.askServer() }
         permissions.start()
         server.refresh(Config.load().serverURL)
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {

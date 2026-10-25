@@ -93,6 +93,12 @@ class VariantTest(unittest.TestCase):
         with open(constants.path(f"{constants.LAUNCH_AGENTS}/x.test.plist"), "rb") as f:
             self.assertIn("gemma-4-E4B-it-Q4_0.gguf", plistlib.load(f)["ProgramArguments"][2])
 
+    def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
+        f = os.path.join(self.folder, "config.json")
+        with open(f, "w") as fh:
+            json.dump({"version": constants.CONFIG_VERSION, "models": {"gemma-e4b": {"variant": "q4_0"}}}, fh)
+        self.assertEqual(s.file_settings(f)["models"]["gemma-e4b"], {**s.MODEL_DEFAULT["gemma-e4b"], "variant": "q4_0"})
+
     def test_the_info_says_which_variants_are_downloaded(self):
         self.put("gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
         v = protocol.variants({"catalog": "gemma-4-e4b"}, self.folder)

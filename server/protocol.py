@@ -57,6 +57,7 @@ def info(args, models=None):
                                   "fillers": table[c].get("fillers", [])} for c in codes if c in table),
                                 key=lambda l: l["name"]),
             "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()],
+            "models": list(entries),
             "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
                       "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
                       **(variants(entry, getattr(args, "models_folder", None)) if entry else {})},
@@ -124,6 +125,7 @@ def variants(entry, models_folder):
     for v, spec in (catalog.of(entry).get("variants") or {}).items():
         paths = catalog.files({**entry, "variant": v}, folder)
         out.append({"id": v, "name": spec["name"], "bytes": sum(f["bytes"] for f in spec["files"].values()),
+                    **({"memoryBytes": spec["memoryBytes"]} if "memoryBytes" in spec else {}),
                     "downloaded": all(os.path.isfile(p) for p in paths.values()),
                     **({"downloading": True} if (entry.get("catalog", catalog.DEFAULT), v) in running else {})})
     return {"variant": vid, "variants": out}

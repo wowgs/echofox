@@ -564,8 +564,9 @@ struct ModelPicker: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Picker("Model", selection: Binding(get: { model.config.model ?? "" }, set: { model.write(["model"], $0) })) {
-            ForEach(model.config.models, id: \.self) { Text($0).tag($0) }
+        Picker("Model", selection: Binding(get: { model.config.model ?? model.info?.model?.name ?? "" },
+                                           set: { model.write(["model"], $0) })) {
+            ForEach(model.info?.models ?? model.config.models, id: \.self) { Text($0).tag($0) }
         }
         if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
     }
@@ -580,7 +581,7 @@ struct VariantPicker: View {
     private var info: ServerInfo.Model? { model.info?.model }
 
     var body: some View {
-        if let variants = info?.variants, !variants.isEmpty, let name = model.config.model {
+        if let variants = info?.variants, !variants.isEmpty, let name = model.config.model ?? info?.name {
             SettingLine(title: "Quantization",
                         note: "A smaller one uses less memory and is faster. The model starts again after the recording.") {
                 Picker("Quantization", selection: Binding(get: { info?.variant ?? "" }, set: { v in

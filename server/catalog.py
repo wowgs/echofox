@@ -10,6 +10,9 @@ defaults (docs/design/4-hld.md, "Настройки"):
                      size and sha256 (Hugging Face's for that revision; the same as the files on the author's Mac,
                      2026-10-25); the variants share a file of the same name
   defaultVariant     the variant of a registry entry that names none
+  memoryBytes        a variant's memory while it is loaded: llama-server's own footprint and the model file in memory.
+                     Q8_0: 2.13 GiB and 7.46 GiB (footprint, mincore; Apple M5, 2026-10-25); Q4_0: 2.19 GB footprint
+                     (one run) and its file, 4.59 GB, taken as all in memory as Q8_0's was
   languages          the codes of the languages its prompt names (languages.json has their names)
   prompt             the prompt's template; {LANGUAGE} becomes the language's name. Gemma 4's is Google's speech
                      recognition prompt and formatting rules from the model card, and one rule of ours, punctuation

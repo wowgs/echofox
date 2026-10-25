@@ -190,6 +190,10 @@ do {
           && settings[0].advanced == nil && settings[1].advanced == true, "settings: decoded \(settings.map(\.key))")
     check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
           "settings: the model and the languages")
+    let gib: UInt64 = 1 << 30
+    let pick = { (m: UInt64) in ServerInfo.Variant.recommended(info.model?.variants ?? [], memory: m * gib) }
+    check(pick(8) == "q4_0" && pick(16) == "q4_0" && pick(24) == "q8_0" && pick(64) == "q8_0",
+          "settings: the variant for 8, 16, 24 and 64 GB: \([8, 16, 24, 64].map { pick(UInt64($0)) })")
     check(info.model?.variant == "q8_0" && info.model?.variants?.map(\.id) == ["q4_0", "q8_0"]
           && info.model?.variants?.first?.downloaded == false, "settings: the model's variants")
     let cut = settings[0], temperature = settings[1]
@@ -302,6 +306,18 @@ do {
     try? FileManager.default.removeItem(at: tmp)
 } catch {
     check(false, "server agent: \(error)")
+}
+
+// A config that is not there yet gets created at the first value.
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-first-\(getpid())")
+    let file = dir.appendingPathComponent("config.json")
+    try Config.set(["models", "gemma-e4b", "variant"], to: "q4_0", in: file)
+    let c = Config.load(from: file)
+    check(c.value(["models", "gemma-e4b", "variant"]) as? String == "q4_0" && c.error == nil, "first start: a new config")
+    try? FileManager.default.removeItem(at: dir)
+} catch {
+    check(false, "first start: \(error)")
 }
 
 print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")

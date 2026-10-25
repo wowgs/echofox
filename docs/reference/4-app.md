@@ -21,6 +21,10 @@ The app first inserts the text with Accessibility, in place of the selected text
 
 After the stop, the app waits up to 180 s for each next piece of text.
 
+## The first start
+
+If no quantization of the model is downloaded, the app opens a window that asks which one to download. It shows the size of the download and the memory of each, and it recommends the biggest one that takes at most half of the Mac's memory: Q4_0 on 16 GB, Q8_0 on 24 GB and more. The dictation server downloads it, with its progress in the window.
+
 ## The menu and the settings window
 
 The menu has the things that you use often:

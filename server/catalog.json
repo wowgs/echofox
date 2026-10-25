@@ -21,7 +21,8 @@
             "bytes": 991552256,
             "sha256": "f77995e4b6a569ab8f0d1bfdb7e8da4a0fa5b9e6f309b9bf3bdb76164d75e29f"
           }
-        }
+        },
+        "memoryBytes": 6900000000
       },
       "q8_0": {
         "name": "Q8_0",
@@ -36,7 +37,8 @@
             "bytes": 991552256,
             "sha256": "f77995e4b6a569ab8f0d1bfdb7e8da4a0fa5b9e6f309b9bf3bdb76164d75e29f"
           }
-        }
+        },
+        "memoryBytes": 10400000000
       }
     },
     "languages": [

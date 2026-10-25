@@ -42,11 +42,20 @@ public struct ServerInfo: Decodable, Equatable {
     public struct Variant: Decodable, Equatable {
         public let id: String
         public let name: String
-        /// The size of its files.
+        /// The size of its files, and its memory while it is loaded.
         public let bytes: Double
+        public let memoryBytes: Double?
         /// Whether all its files are in the models folder, and whether the server downloads them now.
         public let downloaded: Bool
         public let downloading: Bool?
+
+        /// The variant to offer for a Mac with this much memory: the biggest that takes at most half of it, so that
+        /// macOS and the other apps keep the rest; else the smallest.
+        public static func recommended(_ variants: [Variant], memory: UInt64) -> String {
+            let size = { (v: Variant) in v.memoryBytes ?? v.bytes }
+            let fits = variants.filter { size($0) <= Double(memory) / 2 }
+            return (fits.max { size($0) < size($1) } ?? variants.min { size($0) < size($1) })?.id ?? ""
+        }
     }
     public let interface: Int
     public let sampleRate: Int
@@ -58,6 +67,8 @@ public struct ServerInfo: Decodable, Equatable {
     /// The settings the server describes; an older server sends none.
     public let settings: [SettingInfo]?
     public let model: Model?
+    /// The names of the server's model registry.
+    public let models: [String]?
 
     /// Apps whose focus an enabled adapter reads.
     public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }

@@ -147,8 +147,18 @@ def config_file():
     return os.environ.get("LOCAL_VOICE_CONFIG") or constants.path(constants.CONFIG)
 
 
+def with_defaults(models):
+    """The config's registry with the default entries' fields under an entry of the same name: an app that writes only
+    a variant of the default model ({"gemma-e4b": {"variant": "q4_0"}}) writes a whole entry."""
+    if not isinstance(models, dict):
+        return models
+    return {n: {**MODEL_DEFAULT[n], **e} if n in MODEL_DEFAULT and isinstance(e, dict) else e for n, e in models.items()}
+
+
 def _checked(s, value):
     """The value of a setting, of its kind and in its range; raises ValueError otherwise."""
+    if s.key == "models":
+        value = with_defaults(value)
     if s.key in tuning.BY_KEY:
         return tuning.check(tuning.BY_KEY[s.key], value)
     if s.kind is dict:

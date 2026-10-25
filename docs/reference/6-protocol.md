@@ -42,13 +42,14 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
  "languages": [{"code", "name", "notes", "fillers"}],
  "adapters": [{"name", "enabled", "builtin", "version", "author", "source", "description", "apps",
                "electronTree", "reads", "screen", "context", "error"}],
+ "models": ["<name>"],
  "model": {"name", "catalog", "prompt", "maxAudioSeconds", "variant",
-           "variants": [{"id", "name", "bytes", "downloaded"}]},
+           "variants": [{"id", "name", "bytes", "memoryBytes", "downloaded", "downloading"}]},
  "settings": [{"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
                "minExclusive", "maxExclusive", "help"}]}
 ```
 
-The app takes from it the format of the audio, the wait for the text, the time limit of a recording, the languages, the adapters, the menu's model and the settings. `model.variants` are the quantizations of the menu's model: the size of the files of each, and whether they are all in the models folder. `model.variant` is the one in force.
+The app takes from it the format of the audio, the wait for the text, the time limit of a recording, the languages, the adapters, the menu's model and the settings. `models` are the names of the registry. `model.variants` are the quantizations of the menu's model: the size of the files of each, its memory while it is loaded, whether its files are all in the models folder, and whether they download now. `model.variant` is the one in force.
 
 `settings` describes each setting that the settings window can show and change:
 

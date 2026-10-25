@@ -91,7 +91,12 @@ public struct Config: Equatable {
     /// Writes `value` at `path` (keys of nested objects): the menu's model, language and adapters. Only that value
     /// changes in the text, so the file keeps its order and layout (JSONEdit); the edit is kept only if the file then
     /// parses to its old contents with the new value. Otherwise the file is written again from its parsed contents.
+    /// A file that is not there yet (the first start) starts as `{"version": …}`.
     public static func set(_ path: [String], to value: Any, in url: URL = Config.url) throws {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("{\n  \"version\": \(version)\n}\n".utf8).write(to: url, options: .atomic)
+        }
         let text = try String(contentsOf: url, encoding: .utf8)
         guard let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
             throw MessageError("\(url.path) is not a JSON object")
