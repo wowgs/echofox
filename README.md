@@ -2,7 +2,8 @@
 
 Local Voice is dictation for the Mac. Tap a key, speak, and tap the key again. The text appears where your cursor was, in any app.
 
-A speech model on your Mac turns the speech into text: Gemma 4 E4B in [llama.cpp](https://github.com/ggml-org/llama.cpp). The audio and the text do not leave your Mac.
+A speech model on your Mac turns the speech into text: Gemma 4 E4B in [llama.cpp](https://github.com/ggml-org/llama.cpp). 
+*The audio and the text do not leave your Mac.*
 
 The model also reads the conversation that you write into, for example a Claude Code session or a Telegram chat. With it, the model writes the names and terms of the conversation the way the conversation writes them.
 
