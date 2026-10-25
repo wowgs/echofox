@@ -1,5 +1,6 @@
-"""The models: each a llama.cpp llama-server (server/llama_launchd.sh) behind its launchd agent, and the registry that
-keeps only one of them in memory."""
+"""The models: each a llama.cpp llama-server behind its launchd agent, and the registry that keeps only one of them in
+memory. The server writes the agent of a model itself (write_agent): the files of its variant in the models folder
+(catalog.py), its address, and its catalog entry's arguments."""
 import abc
 import asyncio
 import base64
@@ -10,12 +11,15 @@ import http.client
 import json
 import logging
 import os
+import plistlib
+import shutil
 import subprocess
 import threading
 import time
 import urllib.parse
 import urllib.request
 
+import catalog
 import constants
 import tuning
 from audio import wav
@@ -93,8 +97,7 @@ def listening_pid(port):
 
 class LlamaModel(Model):
     """A model behind llama.cpp's llama-server, at the URL of its registry entry (http or https, with a path prefix
-    if it has one). Its model, quantization, context and slots are set where llama-server starts
-    (server/llama_launchd.sh)."""
+    if it has one). Its files, context and slots are set where llama-server starts (agent)."""
 
     def __init__(self, name, entry):
         self.name, self.url = name, entry["llamaServer"].rstrip("/")
@@ -225,6 +228,54 @@ def agent_running(label):
     return launchd("print", f"{domain()}/{label}")[0] == 0
 
 
+def llama_server():
+    """llama.cpp's server: Homebrew's, else the first on the PATH."""
+    return constants.LLAMA_SERVER if os.path.exists(constants.LLAMA_SERVER) else shutil.which("llama-server")
+
+
+def agent(entry, models_folder):
+    """The launchd agent of a registry entry, as a plist's contents: llama-server with the files of the entry's
+    variant, on the address of its llamaServer, with its catalog entry's arguments. Raises RuntimeError if a file of
+    the variant or llama-server is missing."""
+    vid, spec = catalog.variant(entry)
+    if spec is None:
+        raise RuntimeError(f"the catalog has no variant {vid!r} of {entry.get('catalog') or catalog.DEFAULT}")
+    files = catalog.files(entry, models_folder)
+    missing = [p for p in files.values() if not os.path.isfile(p)]
+    if missing:
+        raise RuntimeError(f"the files of variant {vid} are missing: {', '.join(missing)}")
+    binary = llama_server()
+    if not binary:
+        raise RuntimeError("llama-server is not installed (brew install llama.cpp)")
+    url = urllib.parse.urlparse(entry["llamaServer"])
+    log_file = constants.path(f"{constants.LOGS}/llama-server.log")
+    return {"Label": entry["launchd"],
+            "ProgramArguments": [binary, "-m", files["model"], "--mmproj", files["mmproj"],
+                                 "--host", url.hostname, "--port", str(url.port or 80),
+                                 *catalog.of(entry)["llamaServer"]["args"]],
+            "RunAtLoad": True, "KeepAlive": True, "ProcessType": "Interactive",
+            "StandardOutPath": log_file, "StandardErrorPath": log_file}
+
+
+def write_agent(entry, models_folder):
+    """Writes the launchd agent of a registry entry if it is not what it must be; True if it changed."""
+    plist = constants.path(f"{constants.LAUNCH_AGENTS}/{entry['launchd']}.plist")
+    want = agent(entry, models_folder)
+    try:
+        with open(plist, "rb") as f:
+            if plistlib.load(f) == want:
+                return False
+    except (OSError, plistlib.InvalidFileException):
+        pass
+    os.makedirs(os.path.dirname(plist), exist_ok=True)
+    os.makedirs(os.path.dirname(want["StandardOutPath"]), exist_ok=True)
+    with open(plist + ".tmp", "wb") as f:
+        plistlib.dump(want, f)
+    os.replace(plist + ".tmp", plist)
+    log.info("wrote the launchd agent %s: %s", entry["launchd"], " ".join(want["ProgramArguments"][:5]))
+    return True
+
+
 def start_agent(label):
     """Starts the launchd agent from its plist; raises RuntimeError if launchctl refuses."""
     if agent_running(label):
@@ -267,15 +318,19 @@ class Models:
     llama-server's launchd agent runs, the others' agents are stopped (unless `manage` is off: the test server).
     `make(name, entry)` makes the model object (tests put a stub here)."""
 
-    def __init__(self, entries, make=LlamaModel, manage=True):
+    def __init__(self, entries, make=LlamaModel, manage=True, models_folder=None):
         self.entries, self.make, self.models, self.manage = dict(entries), make, {}, manage
+        self.models_folder = models_folder or constants.path(constants.MODELS_FOLDER)
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()
 
-    def reconfigure(self, entries):
-        """New model entries: the next recording, or the menu's choice, starts its model again."""
+    def reconfigure(self, entries, models_folder=None):
+        """New model entries or a new models folder: the next recording, or the menu's choice, starts its model
+        again."""
         self.entries, self.models = dict(entries), {}
+        if models_folder:
+            self.models_folder = models_folder
 
     def name_for(self, name):
         """The model a client asks for by name; no name: the default."""
@@ -298,6 +353,8 @@ class Models:
                 if e.get("launchd") and n != name:
                     await asyncio.to_thread(stop_agent, e["launchd"])
             if entry is not None and entry.get("launchd"):
+                if await asyncio.to_thread(write_agent, entry, self.models_folder):  # another variant or folder
+                    await asyncio.to_thread(stop_agent, entry["launchd"])
                 await asyncio.to_thread(start_agent, entry["launchd"])
         if entry is not None and not await asyncio.to_thread(wait_healthy, entry["llamaServer"].rstrip("/")):
             raise RuntimeError(f"llama-server of {name} at {entry['llamaServer']} does not answer")

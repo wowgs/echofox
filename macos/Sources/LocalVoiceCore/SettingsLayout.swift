@@ -67,6 +67,8 @@ public enum SettingsLayout {
         "languageNotes": [.page(.language, section: "Language", order: 1)],
         "languageFillers": [.page(.language, section: "Language", order: 2)],
         "model": [.page(.model, section: "Model", order: 0)],
+        "variant": [.page(.model, section: "Model", order: 1)],
+        "modelsFolder": [.page(.model, section: "Model", order: 2)],
         "prompt": [.page(.model, section: "Prompt", order: 0)],
         "serverStatus": [.page(.diagnostics, section: "Server", order: 0)],
         "openLog": [.page(.diagnostics, section: "Logs", order: 0)],

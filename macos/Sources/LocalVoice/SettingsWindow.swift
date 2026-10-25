@@ -339,6 +339,7 @@ struct ItemView: View {
         case "microphone": MicrophonePicker(model: model)
         case "inputVolume": VolumeRow(model: model)
         case "model": ModelPicker(model: model)
+        case "variant": VariantPicker(model: model)
         case "prompt": PromptEditor(model: model)
         case "labelStats":
             LabeledContent("Labeled") {
@@ -434,7 +435,7 @@ struct SettingRow: View {
                 .labelsHidden().toggleStyle(.switch)
         case "string":
             InputField(text: model.draft(id, shown: shown), width: 240, refused: refused, onSubmit: commit)
-            if setting.key == "recordings" {
+            if setting.key.hasSuffix("Folder") || setting.key == "recordings" || setting.key == "labeled" {
                 Button("Choose…") {
                     if let folder = chooseFolder(starting: shown) {
                         model.apply(SettingStore.edit(folder, of: setting, state: state), to: setting, scope, id: id)
@@ -542,6 +543,34 @@ struct ModelPicker: View {
             ForEach(model.config.models, id: \.self) { Text($0).tag($0) }
         }
         if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
+    }
+}
+
+/// The variant of the menu's model: one quantization of it, with the size of its files. Only a variant whose files are
+/// in the models folder can be chosen; the others say so.
+struct VariantPicker: View {
+    @ObservedObject var model: SettingsModel
+
+    private var info: ServerInfo.Model? { model.info?.model }
+
+    var body: some View {
+        if let variants = info?.variants, !variants.isEmpty, let name = model.config.model {
+            SettingLine(title: "Quantization",
+                        note: "A smaller one uses less memory and is faster. The model starts again after the recording.") {
+                Picker("Quantization", selection: Binding(get: { info?.variant ?? "" }, set: { v in
+                    guard variants.first(where: { $0.id == v })?.downloaded == true else { return }  // its files first
+                    model.write(["models", name, "variant"], v)
+                    model.actions?.refreshServer()
+                })) {
+                    ForEach(variants, id: \.id) { v in
+                        Text("\(v.name), \(String(format: "%.1f", v.bytes / 1e9)) GB" + (v.downloaded ? "" : " (not downloaded)"))
+                            .tag(v.id)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
     }
 }
 

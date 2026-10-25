@@ -2,6 +2,43 @@
   "gemma-4-e4b": {
     "name": "Gemma 4 E4B",
     "maxAudioSeconds": 30,
+    "source": {
+      "repo": "ggml-org/gemma-4-E4B-it-GGUF",
+      "revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc"
+    },
+    "defaultVariant": "q8_0",
+    "variants": {
+      "q4_0": {
+        "name": "Q4_0",
+        "files": {
+          "model": {
+            "file": "gemma-4-E4B-it-Q4_0.gguf",
+            "bytes": 4590807392,
+            "sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2"
+          },
+          "mmproj": {
+            "file": "mmproj-gemma-4-E4B-it-BF16.gguf",
+            "bytes": 991552256,
+            "sha256": "f77995e4b6a569ab8f0d1bfdb7e8da4a0fa5b9e6f309b9bf3bdb76164d75e29f"
+          }
+        }
+      },
+      "q8_0": {
+        "name": "Q8_0",
+        "files": {
+          "model": {
+            "file": "gemma-4-E4B-it-Q8_0.gguf",
+            "bytes": 8031242688,
+            "sha256": "34be82b17b4942d389b9b527170c4b058027abdd32531fda063d3d97dd8ce80a"
+          },
+          "mmproj": {
+            "file": "mmproj-gemma-4-E4B-it-BF16.gguf",
+            "bytes": 991552256,
+            "sha256": "f77995e4b6a569ab8f0d1bfdb7e8da4a0fa5b9e6f309b9bf3bdb76164d75e29f"
+          }
+        }
+      }
+    },
     "languages": [
       "cs",
       "da",

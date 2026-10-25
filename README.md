@@ -47,18 +47,17 @@ An estimate for other Macs, not measured: with 16 GB of memory, the model fits, 
    brew install llama.cpp python hf
    ```
 
-2. Download the model and its audio encoder into `~/models/gemma-4-E4B-gguf`:
+2. Download the model and its audio encoder into the models folder. This is the Q8_0 variant. For Q4_0, which is smaller, download `gemma-4-E4B-it-Q4_0.gguf` instead and choose Q4_0 in the settings window.
 
    ```
-   hf download ggml-org/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q8_0.gguf mmproj-gemma-4-E4B-it-BF16.gguf --local-dir ~/models/gemma-4-E4B-gguf
+   hf download ggml-org/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q8_0.gguf mmproj-gemma-4-E4B-it-BF16.gguf --local-dir "$HOME/Library/Application Support/Local Voice/models/gemma-4-E4B-it-GGUF"
    ```
 
-3. Set up the dictation server, then start the model and the server as launchd agents. They start again at each login.
+3. Set up the dictation server and start it as a launchd agent. It starts again at each login, and it starts the model itself.
 
    ```
    python3 -m venv server/.venv
    server/.venv/bin/pip install -r server/requirements.txt
-   server/llama_launchd.sh install
    server/launchd.sh install
    ```
 

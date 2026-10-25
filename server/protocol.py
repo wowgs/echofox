@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -38,7 +39,7 @@ log = logging.getLogger("gemma_voice")
 def info(args, models=None):
     """What a client needs to know of this server: the protocol, the audio, the waits, the languages the menu's model
     names (with their notes and hesitation sounds), the adapters (with their context defaults), the menu's model (its
-    catalog entry and prompt template), and the settings it may show and change (settings.schema)."""
+    catalog entry, prompt template and variants), and the settings it may show and change (settings.schema)."""
     enabled = set(getattr(args, "adapters", None) or [])
     entries = getattr(models, "entries", None) or {}
     name = settings.selected_model(settings.config_file(), models) if models else None
@@ -55,8 +56,22 @@ def info(args, models=None):
                                 key=lambda l: l["name"]),
             "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()],
             "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
-                      "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds")},
+                      "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
+                      **(variants(entry, getattr(args, "models_folder", None)) if entry else {})},
             "settings": settings.schema(args, entry)}
+
+
+def variants(entry, models_folder):
+    """The variants of a registry entry's model, for the settings window: the one in force, and each with its name,
+    the bytes of its files and whether they are all in the models folder."""
+    vid, _ = catalog.variant(entry)
+    folder = models_folder or constants.path(constants.MODELS_FOLDER)
+    out = []
+    for v, spec in (catalog.of(entry).get("variants") or {}).items():
+        paths = catalog.files({**entry, "variant": v}, folder)
+        out.append({"id": v, "name": spec["name"], "bytes": sum(f["bytes"] for f in spec["files"].values()),
+                    "downloaded": all(os.path.isfile(p) for p in paths.values())})
+    return {"variant": vid, "variants": out}
 
 
 @dataclass

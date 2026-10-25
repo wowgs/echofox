@@ -22,6 +22,8 @@ LOGS = "~/Library/Logs/local-voice"
 METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
+MODELS_FOLDER = "~/Library/Application Support/Local Voice/models"  # the model files, a folder for each model
+LLAMA_SERVER = "/opt/homebrew/bin/llama-server"  # llama.cpp's server (Homebrew); launchd's PATH does not have it
 PLUGINS = "~/Library/Application Support/Local Voice/adapters"  # $LOCAL_VOICE_PLUGINS sets another
 CONFIG_VERSION = 7
 

@@ -32,7 +32,7 @@ The menu has the things that you use often:
 
 The icon shows the state: recording, private recording, waiting for the text, or a problem.
 
-The settings window has one page for each owner of settings: General, Microphone, Language, Model, the adapters, Recordings & Labels and Diagnostics. Settings for people who tune the model and the context are in the Advanced section of their page. Advanced opens on a click, and its title says how many of its values you changed. The server describes its own settings, so a new one shows in the window by itself.
+The settings window has one page for each owner of settings: General, Microphone, Language, Model, the adapters, Recordings & Labels and Diagnostics. On the page Model you choose the model, its quantization (only one whose files are downloaded), the models folder and the prompt. Settings for people who tune the model and the context are in the Advanced section of their page. Advanced opens on a click, and its title says how many of its values you changed. The server describes its own settings, so a new one shows in the window by itself.
 
 ## Label recordings
 

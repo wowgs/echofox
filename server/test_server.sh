@@ -36,7 +36,7 @@ case ${1:-start} in
     p=$(pids); [[ -n $p ]] && echo "running: pids $p, ws://127.0.0.1:$PORT, llama-server :$LLAMA_PORT" || echo "not running";;
   start)
     stop_tests
-    [[ -f $LLAMA_PLIST ]] || { echo "no $LLAMA_PLIST: server/llama_launchd.sh install first" >&2; exit 1; }
+    [[ -f $LLAMA_PLIST ]] || { echo "no $LLAMA_PLIST: the working dictation server writes it when it starts its model" >&2; exit 1; }
     mkdir -p $STATE $LOGS
     # The working llama-server's arguments, with the test port.
     llama=(${(f)"$(python3 -c '

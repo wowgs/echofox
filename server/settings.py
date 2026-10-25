@@ -55,11 +55,13 @@ class Setting:
 
 
 def good_model(m):
-    """A registry entry: llamaServer, and optionally its catalog entry, launchd, prompt and options (the model's
-    knobs only)."""
+    """A registry entry: llamaServer, and optionally its catalog entry, its variant (one of the catalog entry's),
+    launchd, prompt and options (the model's knobs only)."""
     if not isinstance(m, dict) or not str(m.get("llamaServer", "")).startswith("http") \
             or not isinstance(m.get("launchd", ""), str) or not isinstance(m.get("prompt", ""), str) \
             or len(m.get("prompt", "")) > MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
+        return False
+    if "variant" in m and catalog.variant(m)[1] is None:
         return False
     try:
         tuning.parse(m.get("options"), "model")
@@ -100,6 +102,8 @@ SETTINGS = [
             "Recordings folder", ""),
     Setting("labeled", "labeled", str, bool, constants.LABELED, "recording", "server",
             "Labels folder", "Holds the pieces that you labeled."),
+    Setting("modelsFolder", "models_folder", str, bool, constants.MODELS_FOLDER, "model", "server",
+            "Models folder", "The folder for the model files."),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server"),
     *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server") for k in tuning.KNOBS
       if k.owner == "server" and k.user),
@@ -128,7 +132,8 @@ def schema(st, model_entry=None):
             out.append(k.schema(d, own.get(k.name, d)))
         else:  # an adapter's: the fallback (each adapter's own defaults are in info's adapters, "context")
             out.append(k.schema(k.default, k.default))
-    for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string")):
+    for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string"),
+                      ("modelsFolder", "string")):
         s = BY_KEY[key]
         now = getattr(st, s.name, s.default)
         shown = constants.path(s.default) if kind == "string" else s.default
@@ -208,6 +213,7 @@ def recording_settings(now, into=None):
             setattr(st, s.name, now[s.key])
     st.recordings = constants.path(now["recordings"])
     st.labeled = constants.path(now["labeled"])
+    st.models_folder = constants.path(now["modelsFolder"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
     return st
@@ -490,7 +496,7 @@ class ConfigWatcher:
                             return False
                         apply(now, self.st)
                         if "model" in levels:
-                            self.models.reconfigure(now["models"])
+                            self.models.reconfigure(now["models"], constants.path(now["modelsFolder"]))
                             self.chosen_known = False  # start the chosen model again, with the new entries
                             log.info("models: %s", ", ".join(now["models"]))
                         self.current.clear()

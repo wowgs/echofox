@@ -190,6 +190,8 @@ do {
           && settings[0].advanced == nil && settings[1].advanced == true, "settings: decoded \(settings.map(\.key))")
     check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
           "settings: the model and the languages")
+    check(info.model?.variant == "q8_0" && info.model?.variants?.map(\.id) == ["q4_0", "q8_0"]
+          && info.model?.variants?.first?.downloaded == false, "settings: the model's variants")
     let cut = settings[0], temperature = settings[1]
     check(cut.value == nil && cut.default == .number(30) && cut.minExclusive == true
           && temperature.value == .number(0.7), "settings: values")

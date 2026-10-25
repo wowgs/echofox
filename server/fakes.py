@@ -111,16 +111,21 @@ def stub_models(entries=ENTRIES, make=None):
 
 
 class FakeAgents:
-    """start_agent and stop_agent of the server, recorded instead of run."""
+    """start_agent, stop_agent and write_agent of the server, recorded instead of run; `rewrite`: the labels whose
+    agent write_agent says it changed."""
+
+    def __init__(self, rewrite=()):
+        self.rewrite = set(rewrite)
 
     def __enter__(self):
-        self.calls, self.saved = [], (llama.start_agent, llama.stop_agent)
+        self.calls, self.saved = [], (llama.start_agent, llama.stop_agent, llama.write_agent)
         llama.start_agent = lambda label: self.calls.append(("start", label))
         llama.stop_agent = lambda label: self.calls.append(("stop", label))
+        llama.write_agent = lambda entry, folder: entry["launchd"] in self.rewrite
         return self
 
     def __exit__(self, *exc):
-        llama.start_agent, llama.stop_agent = self.saved
+        llama.start_agent, llama.stop_agent, llama.write_agent = self.saved
 
 
 class FakeLlamaServer:

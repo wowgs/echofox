@@ -42,6 +42,4 @@ Restart the working server between two dictations, with `launchctl kickstart -k 
 
 ## Install the server by hand
 
-`server/launchd.sh install` and `server/llama_launchd.sh install` make the launchd agents. `status` and `uninstall` do what they say. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`.
-
-`server/llama_launchd.sh install MODEL.gguf MMPROJ.gguf` installs another model file. `CATALOG=<id>` chooses its entry in `server/catalog.json`.
+`server/launchd.sh install` makes the launchd agent of the dictation server. `status` and `uninstall` do what they say. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`.

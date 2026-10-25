@@ -42,7 +42,11 @@ The sampler is the one that Google gives for Gemma 4: temperature 1.0, top_k 64,
 
 The config file has a registry of models. Each model is one `llama-server` with its own launchd agent. Only the model that you choose is in memory. When you choose another model, the server starts the launchd agent of that model and stops the others.
 
-The model catalog, `server/catalog.json`, gives what each model needs: the longest audio of one request, the languages that its prompt names, its prompt templates, its sampler, its limit of the text, and the arguments of its `llama-server`. `server/llama_launchd.sh` takes the arguments from there.
+The model catalog, `server/catalog.json`, gives what each model needs: the longest audio of one request, the languages that its prompt names, its prompt templates, its sampler, its limit of the text, the arguments of its `llama-server`, and its variants.
+
+A variant is one quantization of the model with its files. Gemma 4 E4B has two: Q4_0 and Q8_0 (the default). Both come from the Hugging Face repository `ggml-org/gemma-4-E4B-it-GGUF` at a fixed revision, and the catalog has the size and the SHA-256 of each file. The files are in the models folder (`server.modelsFolder`), in a folder with the name of the repository: `gemma-4-E4B-it-GGUF/`. The two variants share their audio encoder file.
+
+The server writes the launchd agent of the chosen model itself: `llama-server` with the files of the variant, the address of the model and the arguments of the catalog. When you choose another variant or another models folder, the server writes the agent again and restarts `llama-server` after the recording that runs.
 
 For Gemma 4 E4B, `llama-server` runs on `127.0.0.1:8092` with these arguments:
 

@@ -35,6 +35,17 @@ public struct ServerInfo: Decodable, Equatable {
         public let catalog: String?
         public let prompt: String?
         public let maxAudioSeconds: Double?
+        /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
+        public let variant: String?
+        public let variants: [Variant]?
+    }
+    public struct Variant: Decodable, Equatable {
+        public let id: String
+        public let name: String
+        /// The size of its files.
+        public let bytes: Double
+        /// Whether all its files are in the models folder.
+        public let downloaded: Bool
     }
     public let interface: Int
     public let sampleRate: Int

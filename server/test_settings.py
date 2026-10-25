@@ -3,6 +3,7 @@ import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import json
 import os
+import plistlib
 import tempfile
 import time
 import types
@@ -12,6 +13,7 @@ import catalog
 import constants
 import llama
 import metrics
+import protocol
 import settings as s
 import tuning
 from fakes import FakeAgents, StubModel
@@ -27,6 +29,66 @@ class ModelsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agents.calls[:2], [("stop", "x.b"), ("start", "x.a")])
             await models.get("b")
             self.assertEqual(agents.calls[-2:], [("stop", "x.a"), ("start", "x.b")])
+
+
+    async def test_an_agent_written_again_starts_again(self):
+        entries = {"a": {"llamaServer": "http://h:1", "launchd": "x.a"}}
+        with FakeAgents(rewrite={"x.a"}) as agents:  # another variant or models folder
+            await llama.Models(entries, make=StubModel).get("a")
+            self.assertEqual(agents.calls, [("stop", "x.a"), ("start", "x.a")])
+
+
+class VariantTest(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix="models-", dir=os.path.dirname(constants.path("~/x")))
+        self.binary = os.path.join(self.folder, "llama-server")
+        open(self.binary, "w").close()
+        self.saved, constants.LLAMA_SERVER = constants.LLAMA_SERVER, self.binary
+
+    def tearDown(self):
+        constants.LLAMA_SERVER = self.saved
+
+    def put(self, *names):
+        d = os.path.join(self.folder, "gemma-4-E4B-it-GGUF")
+        os.makedirs(d, exist_ok=True)
+        for n in names:
+            open(os.path.join(d, n), "w").close()
+
+    def test_a_registry_entry_has_its_catalogs_default_variant_unless_it_names_one(self):
+        self.assertEqual(catalog.variant({"catalog": "gemma-4-e4b"})[0], "q8_0")
+        vid, spec = catalog.variant({"catalog": "gemma-4-e4b", "variant": "q4_0"})
+        self.assertEqual((vid, spec["files"]["model"]["file"]), ("q4_0", "gemma-4-E4B-it-Q4_0.gguf"))
+        self.assertFalse(s.good_model({"llamaServer": "http://h:1", "variant": "q2_k"}))
+        self.assertTrue(s.good_model({"llamaServer": "http://h:1", "variant": "q4_0"}))
+        self.assertEqual(catalog.files({"variant": "q4_0"}, "/m"),
+                         {"model": "/m/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0.gguf",
+                          "mmproj": "/m/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf"})
+        self.assertEqual(catalog.url({}, "gemma-4-E4B-it-Q4_0.gguf"),
+                         "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/"
+                         "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q4_0.gguf")
+
+    def test_the_agent_runs_the_variants_files_and_is_written_only_when_it_changes(self):
+        entry = {"llamaServer": "http://127.0.0.1:8092", "launchd": "x.test", "catalog": "gemma-4-e4b"}
+        with self.assertRaisesRegex(RuntimeError, "files of variant q8_0 are missing"):
+            llama.agent(entry, self.folder)
+        self.put("gemma-4-E4B-it-Q8_0.gguf", "gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
+        a = llama.agent(entry, self.folder)["ProgramArguments"]
+        self.assertEqual(a[:9], [self.binary, "-m", f"{self.folder}/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q8_0.gguf",
+                                 "--mmproj", f"{self.folder}/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf",
+                                 "--host", "127.0.0.1", "--port", "8092"])
+        self.assertEqual(a[9:], catalog.of(entry)["llamaServer"]["args"])
+        self.assertTrue(llama.write_agent(entry, self.folder))
+        self.assertFalse(llama.write_agent(entry, self.folder))  # the same: not written again
+        self.assertTrue(llama.write_agent({**entry, "variant": "q4_0"}, self.folder))
+        with open(constants.path(f"{constants.LAUNCH_AGENTS}/x.test.plist"), "rb") as f:
+            self.assertIn("gemma-4-E4B-it-Q4_0.gguf", plistlib.load(f)["ProgramArguments"][2])
+
+    def test_the_info_says_which_variants_are_downloaded(self):
+        self.put("gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
+        v = protocol.variants({"catalog": "gemma-4-e4b"}, self.folder)
+        self.assertEqual(v["variant"], "q8_0")
+        self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
+                         [("q4_0", True, 4590807392 + 991552256), ("q8_0", False, 8031242688 + 991552256)])
 
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):
@@ -89,7 +151,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         class FakeModels:
             recording = asyncio.Lock()
 
-            def reconfigure(self, entries):
+            def reconfigure(self, entries, models_folder=None):
                 calls.append(("reconfigure", entries))
 
         saved = metrics.path()

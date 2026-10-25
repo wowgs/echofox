@@ -26,7 +26,7 @@ never sees its answers to earlier pieces (with them in the conversation it repea
 template (its catalog entry's, or its own in the config) with the notes of the dictation's language (languages.json),
 with the text before the audio, as Gemma's model card advises.
 
-The models run in llama.cpp's llama-server (server/llama_launchd.sh), through its OpenAI-compatible
+The models run in llama.cpp's llama-server (its launchd agent: llama.write_agent), through its OpenAI-compatible
 /v1/chat/completions with the audio as "input_audio". Each knob has one owner (tuning.py, settings.py): the
 server's (the recording's time limit, the storage; its constants: the cutting, the speech), a model's (its sampler;
 its constant: the length of its text; the defaults in its catalog entry), an adapter's (its context; the defaults
@@ -72,7 +72,8 @@ async def main():
     settings.migrate(path)
     current = settings.resolve(settings.file_settings(path) or {})
     st = settings.apply(current)
-    models = Models(current["models"], manage=not cli.ignore_selection)
+    models = Models(current["models"], manage=not cli.ignore_selection,
+                    models_folder=constants.path(current["modelsFolder"]))
     if cli.ignore_selection:
         await models.get(next(iter(current["models"])))  # the default model answers before the first recording
     log.info("settings: %s", json.dumps(current, ensure_ascii=False))
