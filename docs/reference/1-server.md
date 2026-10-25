@@ -2,7 +2,10 @@
 
 The dictation server turns microphone audio into text. The Mac app handles recording and text insertion; the server handles speech detection, conversation context, and requests to the model.
 
-![Long recordings are processed in pieces while you speak, leaving less work after you stop.](../../img/dictation-timeline.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../img/dictation-timeline-dark.svg">
+  <img alt="Long recordings are processed in pieces while you speak, leaving less work after you stop." src="../../img/dictation-timeline.svg">
+</picture>
 
 The server runs as the launchd agent `echofox.gemma-voice`, listening on `ws://127.0.0.1:8090`. It sends audio to a separate `llama-server` process, which runs Gemma 4 E4B on the Mac's GPU.
 

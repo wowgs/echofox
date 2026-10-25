@@ -4,7 +4,10 @@
 
 Local dictation for Mac, built for conversations where your language and English technical terms naturally mix.
 
-![Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available.](img/how-it-works.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/how-it-works-dark.svg">
+  <img alt="Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available." src="img/how-it-works.svg">
+</picture>
 
 [Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Documentation](docs/README.md)
 

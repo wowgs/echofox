@@ -6,7 +6,10 @@ Runnable message examples live in `shared/protocol-examples.json`. Both `server/
 
 ## A recording
 
-![A recording on one connection: start, audio, stop, then the texts and done](../../img/protocol.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../img/protocol-dark.svg">
+  <img alt="A recording on one connection: start, audio, stop, then the texts and done" src="../../img/protocol.svg">
+</picture>
 
 The client streams audio while recording. The server returns recognized pieces in recording order.
 

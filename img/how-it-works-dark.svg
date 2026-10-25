@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 32 944 336" width="944" height="336">
+  <title>How EchoFox works</title>
+  <rect x="8" y="32" width="944" height="336" fill="#0d1117"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c9d1d9"/>
+    </marker>
+  </defs>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="#e6edf3">
+    <!-- Any app, its chat, an empty text box with the cursor -->
+    <rect x="16" y="70" width="180" height="180" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1.5"/>
+    <rect x="16" y="70" width="180" height="24" rx="8" fill="#21262d"/>
+    <circle cx="30" cy="82" r="4" fill="#f87171"/>
+    <circle cx="42" cy="82" r="4" fill="#fbbf24"/>
+    <circle cx="54" cy="82" r="4" fill="#34d399"/>
+    <text x="66" y="86" font-size="13" fill="#9da7b3">any app</text>
+    <rect x="28" y="106" width="110" height="16" rx="8" fill="#30363d"/>
+    <rect x="72" y="128" width="112" height="16" rx="8" fill="#1c3557"/>
+    <rect x="28" y="150" width="96" height="16" rx="8" fill="#30363d"/>
+    <rect x="28" y="196" width="156" height="40" rx="6" fill="#161b22" stroke="#6e7681"/>
+    <line x1="38" y1="205" x2="38" y2="227" stroke="#58a6ff" stroke-width="2"/>
+
+    <!-- The key, in any app -->
+    <rect x="16" y="278" width="180" height="72" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1.5"/>
+    <rect x="28" y="290" width="48" height="48" rx="7" fill="#161b22" stroke="#c9d1d9" stroke-width="1.5"/>
+    <text x="52" y="321" font-size="22" text-anchor="middle">⌥</text>
+    <text x="86" y="310" font-size="14">Tap in any app,</text>
+    <text x="86" y="328" font-size="14">then speak</text>
+
+    <!-- EchoFox: everything it needs is inside -->
+    <rect x="236" y="40" width="488" height="320" rx="10" fill="#0f2238" stroke="#58a6ff" stroke-width="1.5"/>
+    <text x="480" y="59" font-size="17" font-weight="600" text-anchor="middle">EchoFox</text>
+    <text x="480" y="76" font-size="14" fill="#9da7b3" text-anchor="middle">on your Mac</text>
+
+    <rect x="266" y="88" width="200" height="72" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="366" y="120" font-size="15" text-anchor="middle" font-weight="600">Reads the chat</text>
+    <text x="366" y="140" font-size="13" fill="#9da7b3" text-anchor="middle">adapters: Claude, Telegram, …</text>
+
+    <rect x="266" y="270" width="200" height="72" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="366" y="311" font-size="15" text-anchor="middle" font-weight="600">Records your voice</text>
+
+    <rect x="516" y="176" width="180" height="80" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+    <text x="606" y="210" font-size="15" text-anchor="middle" font-weight="600">Writes the text</text>
+    <text x="606" y="230" font-size="13" fill="#9da7b3" text-anchor="middle">Gemma 4 in llama.cpp</text>
+
+    <!-- The same app, the text in the text box -->
+    <rect x="764" y="70" width="180" height="180" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1.5"/>
+    <rect x="764" y="70" width="180" height="24" rx="8" fill="#21262d"/>
+    <circle cx="778" cy="82" r="4" fill="#f87171"/>
+    <circle cx="790" cy="82" r="4" fill="#fbbf24"/>
+    <circle cx="802" cy="82" r="4" fill="#34d399"/>
+    <text x="814" y="86" font-size="13" fill="#9da7b3">the same app</text>
+    <rect x="776" y="106" width="110" height="16" rx="8" fill="#30363d"/>
+    <rect x="820" y="128" width="112" height="16" rx="8" fill="#1c3557"/>
+    <rect x="776" y="150" width="96" height="16" rx="8" fill="#30363d"/>
+    <rect x="776" y="196" width="156" height="40" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+    <!-- The text ends at the cursor, whatever the reader's font -->
+    <text x="912" y="220" font-size="14" text-anchor="end">Your text is here.</text>
+    <line x1="918" y1="205" x2="918" y2="227" stroke="#58a6ff" stroke-width="2"/>
+
+    <!-- The arrows, from left to right -->
+    <line x1="196" y1="124" x2="264" y2="124" stroke="#c9d1d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="196" y1="306" x2="264" y2="306" stroke="#c9d1d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M466,124 L491,124 L491,200 L514,200" fill="none" stroke="#c9d1d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M466,306 L491,306 L491,232 L514,232" fill="none" stroke="#c9d1d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="696" y1="216" x2="774" y2="216" stroke="#c9d1d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+  </g>
+</svg>

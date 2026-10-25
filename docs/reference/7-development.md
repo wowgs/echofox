@@ -100,6 +100,16 @@ An ordinary branch push starts neither workflow. A tagged release publishes the 
 
 With the required Developer ID secrets, the release workflow signs and notarizes the package. Without them, it uses ad hoc signing for testing. The required secret names are listed in `.github/workflows/release.yml`.
 
+## Diagrams
+
+Each diagram in `img/` is a light SVG, the source, and a dark variant `<name>-dark.svg`. The docs show them with `<picture>`, so GitHub picks the one for the reader's theme. After you change a diagram, write the dark variants again:
+
+```sh
+python3 img/dark.py
+```
+
+The script swaps the colors from its table and stops on a color that the table does not have.
+
 ## Restart the working server
 
 Between dictations, run:
