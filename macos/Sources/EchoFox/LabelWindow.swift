@@ -1,10 +1,10 @@
-// The labeling window: one card for each piece not labeled yet (LocalVoiceCore/Labeling.swift). The piece plays at
+// The labeling window: one card for each piece not labeled yet (EchoFoxCore/Labeling.swift). The piece plays at
 // once; you correct the model's text into what you meant to write (Labeling.convention), and go on, until you stop
 // or the pieces end. It opens in the lower right corner of the screen, a third of its width and a
 // bit under half its height; its frame, once moved or resized, is kept.
 import AppKit
 import AVFoundation
-import LocalVoiceCore
+import EchoFoxCore
 import SwiftUI
 
 final class LabelWindow: NSObject, NSWindowDelegate {

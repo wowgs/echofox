@@ -84,7 +84,7 @@ clean(text)           -> str   ("" drops the message)
 
 `focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `terms` are the names and words of the conversation. `source` and `details` are saved as recording metadata, not sent to the model.
 
-Put plugins in `~/Library/Application Support/Local Voice/adapters/`, or set `LOCAL_VOICE_PLUGINS` to use another folder. A plugin with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed plugin files automatically.
+Put plugins in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOFOX_PLUGINS` to use another folder. A plugin with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed plugin files automatically.
 
 The loader checks the manifest, interface version, and adapter class. It does not isolate the code: plugins run with your user permissions, so only install code you trust.
 
@@ -96,7 +96,7 @@ Build the snapshot tool, then run it and focus a text field within 5 seconds. Th
 
 ```
 swift build -c release --package-path macos
-macos/.build/release/lv-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
+macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
 
-For an adapter that reads the screen, `--lists` adds the rows of the lists. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `lv-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.
+For an adapter that reads the screen, `--lists` adds the rows of the lists. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

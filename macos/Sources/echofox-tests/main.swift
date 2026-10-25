@@ -1,7 +1,7 @@
-// The checks of LocalVoiceCore: `swift run --package-path macos lv-tests`. An executable, not a test target: XCTest and
+// The checks of EchoFoxCore: `swift run --package-path macos echofox-tests`. An executable, not a test target: XCTest and
 // Swift Testing come only with Xcode. It exits 1 if a check fails.
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 var failures = 0
 func check(_ ok: @autoclosure () -> Bool, _ what: String, file: String = #fileID, line: Int = #line) {
@@ -34,7 +34,7 @@ do {
 
 // The app's start and stop, as in the example: the same keys.
 let start = try JSONSerialization.jsonObject(with: Data(ClientMessage.start(
-    model: "gemma-e4b", language: "ru", sampleRate: 16000, client: "local-voice-mac",
+    model: "gemma-e4b", language: "ru", sampleRate: 16000, client: "echofox-mac",
     snapshot: ["app": ["bundleId": "com.example.app"]]).utf8)) as! [String: Any]
 check(Set(start.keys) == Set((examples["start"] as! [String: Any]).keys), "start: the example's keys")
 let stop = try JSONSerialization.jsonObject(with: Data(ClientMessage.stop(.user).utf8)) as! [String: String]
@@ -71,7 +71,7 @@ _ = command.feed(.flags(keyCode: cmd, raw: cmdDown | 0x08, timestamp: 3))
 check(!command.feed(.flags(keyCode: cmd, raw: 0, timestamp: 3.1)), "tap: with the left Command held")
 
 // The config: read, and the chosen model written in place.
-let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-tests-\(getpid())")
+let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-tests-\(getpid())")
 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 let file = dir.appendingPathComponent("config.json")
 let text = """
@@ -138,7 +138,7 @@ try? FileManager.default.removeItem(at: dir)
 
 // Labeling: the pieces not labeled yet, newest first; a saved one is done, its audio and context copied.
 do {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("lv-label-\(getpid())")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-label-\(getpid())")
     let recs = root.appendingPathComponent("recordings"), labeled = root.appendingPathComponent("labeled")
     func recording(_ day: String, _ id: String, _ pieces: [(Int, String, String?)]) throws {
         let dir = recs.appendingPathComponent(day).appendingPathComponent(id)
@@ -200,7 +200,7 @@ do {
     check(cut.value == nil && cut.default == .number(30) && cut.minExclusive == true
           && temperature.value == .number(0.7), "settings: values")
     check(!cut.allows(0) && cut.allows(0.5) && cut.allows(1000) && !temperature.allows(-1), "settings: range")
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-settings-\(getpid())")
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-settings-\(getpid())")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let file = dir.appendingPathComponent("config.json")
     let text = """
@@ -292,14 +292,14 @@ do {
 
 // The launchd agent of a bundled server.
 do {
-    let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/LocalVoice.app/Contents/Resources")
+    let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/EchoFox.app/Contents/Resources")
     let p = ServerAgent.plist(python: r.appendingPathComponent("python/bin/python3"), server: r.appendingPathComponent("server"), home: home)
-    check(p["Label"] as? String == "local-voice.gemma-voice"
-          && p["ProgramArguments"] as? [String] == ["/Applications/LocalVoice.app/Contents/Resources/python/bin/python3",
-                                                    "/Applications/LocalVoice.app/Contents/Resources/server/gemma_voice.py"]
+    check(p["Label"] as? String == "echofox.gemma-voice"
+          && p["ProgramArguments"] as? [String] == ["/Applications/EchoFox.app/Contents/Resources/python/bin/python3",
+                                                    "/Applications/EchoFox.app/Contents/Resources/server/gemma_voice.py"]
           && p["ExitTimeOut"] as? Int == 210 && p["KeepAlive"] as? Bool == true, "server agent: its plist")
     check(ServerAgent.bundled(resources: URL(fileURLWithPath: "/nowhere")) == nil, "server agent: none without a bundled server")
-    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lv-agent-\(getpid()).plist")
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-agent-\(getpid()).plist")
     check(ServerAgent.differs(p, at: tmp), "server agent: a missing file differs")
     try PropertyListSerialization.data(fromPropertyList: p, format: .xml, options: 0).write(to: tmp)
     check(!ServerAgent.differs(p, at: tmp), "server agent: the same file does not")
@@ -310,7 +310,7 @@ do {
 
 // A config that is not there yet gets created at the first value.
 do {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-first-\(getpid())")
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-first-\(getpid())")
     let file = dir.appendingPathComponent("config.json")
     try Config.set(["models", "gemma-e4b", "variant"], to: "q4_0", in: file)
     let c = Config.load(from: file)
@@ -320,5 +320,5 @@ do {
     check(false, "first start: \(error)")
 }
 
-print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")
+print(failures == 0 ? "echofox-tests: all checks pass" : "echofox-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

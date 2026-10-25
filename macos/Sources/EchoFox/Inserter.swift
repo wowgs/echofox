@@ -44,7 +44,7 @@ final class Inserter {
     static let inputRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"]
     static let typedChunk = 16  // characters per keyboard event when typing (a keyboard event carries only a few)
 
-    private let queue = DispatchQueue(label: "local-voice.insert")
+    private let queue = DispatchQueue(label: "echofox.insert")
     private lazy var clipboard = Clipboard(restoreAfter: Wait.restore) { [weak self] body in self?.queue.async(execute: body) }
 
     private init() {

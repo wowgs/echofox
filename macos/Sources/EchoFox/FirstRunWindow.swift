@@ -2,7 +2,7 @@
 // downloaded, it asks which one to download, shows the download, and then names the variant in the config. The
 // dictation server does the download (ModelJob), so it goes on if the window closes.
 import AppKit
-import LocalVoiceCore
+import EchoFoxCore
 import SwiftUI
 
 final class FirstRunWindow: NSObject, NSWindowDelegate {
@@ -26,7 +26,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         self.model = model
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360), styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
-        w.title = "Local Voice"
+        w.title = "EchoFox"
         w.isReleasedWhenClosed = false
         w.contentView = NSHostingView(rootView: FirstRunView(model: model))
         w.center()
@@ -79,7 +79,7 @@ struct FirstRunView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Download the speech model").font(.title2.bold())
-            Text("Local Voice turns your speech into text with a model on this Mac. The audio never leaves it. "
+            Text("EchoFox turns your speech into text with a model on this Mac. The audio never leaves it. "
                  + "Choose the model to download.")
                 .fixedSize(horizontal: false, vertical: true)
             Picker("", selection: $model.choice) {

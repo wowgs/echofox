@@ -1,6 +1,6 @@
 # Configuration
 
-Most settings are available in the app. For manual changes, edit `~/.local-voice/config.json`. The app writes this file and the server reloads it automatically. Set `LOCAL_VOICE_CONFIG` to use another path.
+Most settings are available in the app. For manual changes, edit `~/.echofox/config.json`. The app writes this file and the server reloads it automatically. Set `ECHOFOX_CONFIG` to use another path.
 
 Related docs: [the dictation server](1-server.md), [the chat context](3-context.md), [the menu bar app](4-app.md).
 
@@ -18,7 +18,7 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
   "adapters": {"claude": {"enabled": true}, "telegram": {"enabled": true, "chatHistoryTokenBudget": 600}},
   "models": {
     "Gemma E4B llama.cpp": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
-                            "launchd": "local-voice.llama-server", "options": {"topK": 40}}
+                            "launchd": "echofox.llama-server", "options": {"topK": 40}}
   },
   "languages": {"ru": {"fillers": ["э", "мм"]}},
   "server": {"host": "127.0.0.1", "port": 8090, "maxRecordingMinutes": 30, "saveRecordings": true}
@@ -40,7 +40,7 @@ This example enables both adapters and overrides several defaults. Use only the 
 | `silenceStopSeconds` | The app stops a recording after this many seconds without speech. It must be more than 0. |
 | `adapters` | Adapter enablement (`enabled`) and context settings. See [the chat context](3-context.md). |
 | `languages` | Your changes to a language: `notes`, the lines added to the prompt, and `fillers`, hesitation sounds to remove. An empty list turns one off. The defaults are in `server/languages.json`. |
-| `server` | The settings of the server: `maxRecordingMinutes` (30 by default), `saveRecordings`, `recordings`, `labeled`, `modelsFolder` (the model files, by default `~/Library/Application Support/Local Voice/models`), `metrics`, `host`, `port`. |
+| `server` | The settings of the server: `maxRecordingMinutes` (30 by default), `saveRecordings`, `recordings`, `labeled`, `modelsFolder` (the model files, by default `~/Library/Application Support/EchoFox/models`), `metrics`, `host`, `port`. |
 
 ## Model entries
 

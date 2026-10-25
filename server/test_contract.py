@@ -1,5 +1,5 @@
 """The protocol's contract with the menu bar app: the examples in shared/protocol-examples.json, which the app's
-checks (macos lv-tests) read too. Run: server/.venv/bin/python -m unittest discover -s server"""
+checks (macos echofox-tests) read too. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import json
 import os
@@ -33,7 +33,7 @@ class ContractTest(unittest.TestCase):
 
     def test_the_apps_start_message_is_one_the_server_takes(self):
         start = protocol.parse_start(EXAMPLES["start"], stub_models({"gemma-e4b": {"llamaServer": "http://h:1"}}))
-        self.assertEqual((start.model, start.language, start.client), ("gemma-e4b", "ru", "local-voice-mac"))
+        self.assertEqual((start.model, start.language, start.client), ("gemma-e4b", "ru", "echofox-mac"))
         self.assertEqual(EXAMPLES["stop"]["reason"], "user")
         self.assertIn(EXAMPLES["stop"]["reason"], protocol.STOP_REASONS)
 

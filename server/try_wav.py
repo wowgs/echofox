@@ -29,7 +29,7 @@ async def main():
     p.add_argument("--language", default="ru")
     p.add_argument("--model", help="a model of the registry (default: the server's first)")
     p.add_argument("--session", action="append", default=[], help="a session id, sent as hints[\"sessions\"] (the Claude plugin reads it)")
-    p.add_argument("--snapshot", help="a focus snapshot (macos lv-snapshot), for the chat context")
+    p.add_argument("--snapshot", help="a focus snapshot (macos echofox-snapshot), for the chat context")
     p.add_argument("--options", type=json.loads, help='the start message\'s options, e.g. \'{"cutWhileSpeaking": false}\'')
     p.add_argument("--prompt", help="the start message's own prompt, instead of the model's")
     p.add_argument("--fast", action="store_true", help="send without waiting between chunks")

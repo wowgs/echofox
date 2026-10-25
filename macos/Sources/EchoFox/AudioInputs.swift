@@ -3,7 +3,7 @@
 // go), or a device's UID (one microphone, kept when others connect).
 import CoreAudio
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 struct AudioInput: Equatable {
     let id: AudioDeviceID

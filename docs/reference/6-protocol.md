@@ -2,7 +2,7 @@
 
 Connect to `ws://127.0.0.1:8090`. Each connection handles one operation: a recording, a server-info request, a model download, or a model removal.
 
-Runnable message examples live in `shared/protocol-examples.json`. Both `server/test_contract.py` and the app’s `lv-tests` check this shared contract.
+Runnable message examples live in `shared/protocol-examples.json`. Both `server/test_contract.py` and the app’s `echofox-tests` check this shared contract.
 
 ## A recording
 

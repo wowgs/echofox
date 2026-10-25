@@ -2,7 +2,7 @@
 
 **Regular dictations are saved by default.** They include audio, transcripts, and any conversation context sent to the model. Private dictation saves none of these files.
 
-To stop saving future recordings, turn off **Save recordings** in Settings, or set `server.saveRecordings` to `false` in the [config file](2-config.md). Existing recordings are not deleted. Local Voice does not automatically remove old recordings.
+To stop saving future recordings, turn off **Save recordings** in Settings, or set `server.saveRecordings` to `false` in the [config file](2-config.md). Existing recordings are not deleted. EchoFox does not automatically remove old recordings.
 
 See also: [review recordings in the app](4-app.md#label-recordings) and [the proposed training feature](../lora-training/1-idea.md).
 

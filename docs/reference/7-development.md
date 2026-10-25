@@ -1,4 +1,4 @@
-# Build and develop Local Voice
+# Build and develop EchoFox
 
 Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
 
@@ -22,12 +22,12 @@ Run these commands from the repository root on an Apple Silicon Mac. You need Ho
    server/launchd.sh install
    ```
 
-3. Create a self-signed code-signing certificate named "Local Voice Dev" in your login keychain (Keychain Access, Certificate Assistant, Create a Certificate). Without it, macOS asks for the permissions again after each build.
+3. Create a self-signed code-signing certificate named "EchoFox Dev" in your login keychain (Keychain Access, Certificate Assistant, Create a Certificate). Without it, macOS asks for the permissions again after each build.
 4. Build the app and open it:
 
    ```
    macos/build-app.sh
-   open macos/build/LocalVoice.app
+   open macos/build/EchoFox.app
    ```
 
 5. Allow Microphone and Accessibility when macOS asks. If no model is downloaded, the app asks which one to download.
@@ -36,11 +36,11 @@ Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninst
 
 ## Build a distributable app
 
-Run `macos/build-app.sh --bundle` to create `macos/build/bundle/LocalVoice.app`, or use `--dmg` to also create `macos/build/LocalVoice.dmg`.
+Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`.
 
 The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. The build rejects libraries linked from Homebrew. Models are downloaded separately.
 
-`LOCAL_VOICE_SIGN` selects the signing identity. Development builds use the self-signed “Local Voice Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../design/7-distribution.md).
+`ECHOFOX_SIGN` selects the signing identity. Development builds use the self-signed “EchoFox Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../design/7-distribution.md).
 
 ## Run the tests
 
@@ -55,10 +55,10 @@ Tests run in a sandbox (`server/sandbox.py`, which every test module imports fir
 Run app checks with:
 
 ```
-swift run --package-path macos lv-tests
+swift run --package-path macos echofox-tests
 ```
 
-`lv-tests` is an executable, because XCTest and Swift Testing come only with Xcode.
+`echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode.
 
 ## Test recognition on a separate server
 
@@ -75,7 +75,7 @@ server/test_server.sh stop
 | Option | Purpose |
 |---|---|
 | `VARIANT=q4_0 server/test_server.sh start` | Test a different model variant. |
-| `BUNDLE=macos/build/bundle/LocalVoice.app server/test_server.sh start` | Test the bundled Python, server, and model runtime. |
+| `BUNDLE=macos/build/bundle/EchoFox.app server/test_server.sh start` | Test the bundled Python, server, and model runtime. |
 | `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
 | `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
 
@@ -101,7 +101,7 @@ With the required Developer ID secrets, the release workflow signs and notarizes
 Between dictations, run:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/local-voice.gemma-voice
+launchctl kickstart -k gui/$(id -u)/echofox.gemma-voice
 ```
 
 During shutdown, the server rejects new recordings and allows up to 200 seconds for the current one to finish. launchd waits 210 seconds (`STOP_WAIT_S` and `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). Dictation resumes when the server is back.

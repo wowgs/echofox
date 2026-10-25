@@ -1,4 +1,4 @@
-# Local Voice documentation
+# EchoFox documentation
 
 Choose a guide for the task you want to complete. For a visual introduction and installation options, start with the [project README](../README.md).
 
@@ -23,7 +23,7 @@ The reference pages describe the current implementation. Design and research pag
 
 ## Product decisions
 
-- [Purpose and audience](design/1-what-and-why.md): the problem Local Voice solves and how to explain it.
+- [Purpose and audience](design/1-what-and-why.md): the problem EchoFox solves and how to explain it.
 - [Requirements](design/2-requirements.md): target behavior, including features not yet implemented.
 - [Constraints](design/3-constraints.md): dated observations that influenced the design.
 - [Architecture](design/4-hld.md): component responsibilities and data flow.

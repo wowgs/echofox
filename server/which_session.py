@@ -1,7 +1,7 @@
 """Which adapter claims a focus snapshot, and which conversation it finds: for a check by hand, without audio.
 
 Usage: server/.venv/bin/python server/which_session.py [SNAPSHOT.json]   (default: read the snapshot from stdin)
-       macos/.build/release/lv-snapshot | server/.venv/bin/python server/which_session.py
+       macos/.build/release/echofox-snapshot | server/.venv/bin/python server/which_session.py
 Prints the claim of every adapter plugin (enabled or not), the surest first, then what the surest one found: what it
 is, where it was read, the adapter's details, the number of messages and the first terms. It never prints the replies themselves.
 """

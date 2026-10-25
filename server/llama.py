@@ -211,7 +211,7 @@ class LlamaModel(Model):
         return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
 
 
-LAUNCHCTL = os.environ.get("LOCAL_VOICE_LAUNCHCTL", "launchctl")  # tests put a fake here
+LAUNCHCTL = os.environ.get("ECHOFOX_LAUNCHCTL", "launchctl")  # tests put a fake here
 
 
 def launchd(*args):

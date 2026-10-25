@@ -1,14 +1,14 @@
 // One dictation: the focus snapshot, the microphone, and one WebSocket to the dictation server (the protocol is in
-// server/gemma_voice.py; the messages in LocalVoiceCore/Messages.swift). Sending goes through one serial queue, so the
+// server/gemma_voice.py; the messages in EchoFoxCore/Messages.swift). Sending goes through one serial queue, so the
 // start message (which waits for the snapshot) goes first and the audio and the stop follow in order. Everything else
 // runs on the main thread.
 import FocusSnapshot
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 final class Dictation {
     enum Phase { case recording, waiting, finished }
-    static let client = "local-voice-mac"
+    static let client = "echofox-mac"
 
     private(set) var phase = Phase.recording
     private(set) var texts: [String] = []
@@ -25,7 +25,7 @@ final class Dictation {
     /// A private dictation (the private dictation's hotkey): the screen is not read. The capture keeps only the
     /// focused element, for the insertion; the server gets no snapshot, no adapter runs, nothing is saved.
     let isPrivate: Bool
-    private let queue = DispatchQueue(label: "local-voice.dictation.send")
+    private let queue = DispatchQueue(label: "echofox.dictation.send")
     private let recorder: Recorder
     private let microphone: String
     private var task: URLSessionWebSocketTask?

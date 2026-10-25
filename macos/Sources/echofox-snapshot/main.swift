@@ -1,5 +1,5 @@
-// lv-snapshot: waits a few seconds (time to put the cursor in an input box), then prints the focus snapshot as JSON.
-// Usage: lv-snapshot [--delay SECONDS] [--out FILE] [--lists] [--app BUNDLE_ID]
+// echofox-snapshot: waits a few seconds (time to put the cursor in an input box), then prints the focus snapshot as JSON.
+// Usage: echofox-snapshot [--delay SECONDS] [--out FILE] [--lists] [--app BUNDLE_ID]
 // --lists: the rows of the window's lists too (what an adapter with "screen": ["lists"] gets); --app: that running
 // app instead of the frontmost one, with no delay. A snapshot with --lists holds the window's text: keep it private.
 import AppKit
@@ -15,7 +15,7 @@ while let a = args.next() {
     case "--lists": lists = true
     case "--app": bundle = args.next()
     default:
-        FileHandle.standardError.write("usage: lv-snapshot [--delay SECONDS] [--out FILE] [--lists] [--app BUNDLE_ID]\n"
+        FileHandle.standardError.write("usage: echofox-snapshot [--delay SECONDS] [--out FILE] [--lists] [--app BUNDLE_ID]\n"
             .data(using: .utf8)!)
         exit(2)
     }

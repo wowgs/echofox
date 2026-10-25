@@ -1,14 +1,14 @@
 #!/bin/zsh
 # A second dictation server for tests, with its own llama-server, so tests never share a model with the dictation
 # you use. The test llama-server is in memory only while the tests run: `start` stops the working dictation server
-# (launchd agent local-voice.gemma-voice; it lets a running recording end first) and the working llama-server
-# (local-voice.llama-server), so that nothing starts the working model again meanwhile, and starts a test
+# (launchd agent echofox.gemma-voice; it lets a running recording end first) and the working llama-server
+# (echofox.llama-server), so that nothing starts the working model again meanwhile, and starts a test
 # llama-server with the working one's arguments; `stop` ends both test processes and starts the working dictation
 # server again, which starts the llama-server of the model chosen in the menu. Meanwhile, your dictation is off.
-# The ports, labels and folders are in constants.py. It reads the same config (~/.local-voice/config.json) through a
+# The ports, labels and folders are in constants.py. It reads the same config (~/.echofox/config.json) through a
 # copy in which every model's llamaServer is the test llama-server and no model has a launchd agent, and whose port,
 # metrics and recordings folder are the test server's own; its log is its own too.
-# Usage: [VARIANT=<id>] [BUNDLE=<LocalVoice.app>] server/test_server.sh [start|stop|status]; VARIANT picks another
+# Usage: [VARIANT=<id>] [BUNDLE=<EchoFox.app>] server/test_server.sh [start|stop|status]; VARIANT picks another
 # variant of the models (q4_0); BUNDLE runs the Python, the server and the llama-server of a bundled app (build-app.sh
 # --bundle) instead of this repository's.
 set -euo pipefail
@@ -23,8 +23,8 @@ SERVER_LABEL=$(c SERVER_LABEL)
 SERVER_PLIST=$(c LAUNCH_AGENTS)/$SERVER_LABEL.plist
 DOMAIN=gui/$(id -u)
 LOGS=$(c LOGS)
-STATE=${TMPDIR:-/tmp}/local-voice-test-server
-CONFIG=${LOCAL_VOICE_CONFIG:-$(c CONFIG)}
+STATE=${TMPDIR:-/tmp}/echofox-test-server
+CONFIG=${ECHOFOX_CONFIG:-$(c CONFIG)}
 EXIT_WAIT=$(c LAUNCHD_EXIT_TIMEOUT_S)
 # The Python and the server that run: this repository's, or a bundled app's
 if [[ -n ${BUNDLE:-} ]]; then PY=${BUNDLE:A}/Contents/Resources/python/bin/python3 SRV=${BUNDLE:A}/Contents/Resources/server

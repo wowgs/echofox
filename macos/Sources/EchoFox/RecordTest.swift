@@ -1,6 +1,6 @@
 // The recorder's check (main.swift, --record-test): what the chosen microphone gives in a few seconds.
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 enum RecordTest {
     /// `choice`: a microphone choice instead of the config's ("builtin", "system", a device's UID).

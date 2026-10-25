@@ -1,8 +1,8 @@
-// The hotkeys' event monitors; the logic of a tap is TapLogic (LocalVoiceCore). One set of monitors feeds every
+// The hotkeys' event monitors; the logic of a tap is TapLogic (EchoFoxCore). One set of monitors feeds every
 // hotkey (dictation, private dictation). Watching keys in other apps needs the Accessibility permission; when it is
 // taken away the monitors stop (stop()) and start again when it is back.
 import AppKit
-import LocalVoiceCore
+import EchoFoxCore
 
 final class TapKey {
     enum Action { case dictation, privateDictation }

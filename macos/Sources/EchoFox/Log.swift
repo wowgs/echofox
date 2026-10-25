@@ -1,10 +1,10 @@
-// The app's log, ~/Library/Logs/local-voice/app.log. It never holds the dictated text, only its length.
+// The app's log, ~/Library/Logs/EchoFox/app.log. It never holds the dictated text, only its length.
 import Foundation
 
 enum Log {
-    static let folder = "Library/Logs/local-voice"  // the server's logs are there too (server/constants.py LOGS)
+    static let folder = "Library/Logs/EchoFox"  // the server's logs are there too (server/constants.py LOGS)
     static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(folder)/app.log")
-    private static let queue = DispatchQueue(label: "local-voice.log")
+    private static let queue = DispatchQueue(label: "echofox.log")
     private static let stamp: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"

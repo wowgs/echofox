@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>uk.wowgs.localvoice</string>
+	<string>uk.wowgs.echofox</string>
 	<key>CFBundleName</key>
-	<string>Local Voice</string>
+	<string>EchoFox</string>
 	<key>CFBundleDisplayName</key>
-	<string>Local Voice</string>
+	<string>EchoFox</string>
 	<key>CFBundleExecutable</key>
-	<string>LocalVoice</string>
+	<string>EchoFox</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,7 +21,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Local Voice records your voice while you dictate. The recording goes to the dictation model on this Mac.</string>
+	<string>EchoFox records your voice while you dictate. The recording goes to the dictation model on this Mac.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

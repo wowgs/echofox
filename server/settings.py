@@ -1,6 +1,6 @@
 """The server's settings and the config file it shares with its clients.
 
-The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 7. Each setting has one owner
+The config, ~/.echofox/config.json ($ECHOFOX_CONFIG), version 7. Each setting has one owner
 (docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only; the knobs
 that are constants (tuning.py) are not in it:
   {"version": 7,
@@ -144,7 +144,7 @@ def schema(st, model_entry=None):
 
 
 def config_file():
-    return os.environ.get("LOCAL_VOICE_CONFIG") or constants.path(constants.CONFIG)
+    return os.environ.get("ECHOFOX_CONFIG") or constants.path(constants.CONFIG)
 
 
 def with_defaults(models):

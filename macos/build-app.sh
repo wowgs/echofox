@@ -1,13 +1,13 @@
 #!/bin/sh
-# Builds macos/build/LocalVoice.app and signs it. Run it with: open macos/build/LocalVoice.app
+# Builds macos/build/EchoFox.app and signs it. Run it with: open macos/build/EchoFox.app
 # Usage: macos/build-app.sh [--bundle] [--dmg]
 #   no flag   the app alone, for work on this Mac: the dictation server runs from the repository (server/launchd.sh).
-#   --bundle  build/bundle/LocalVoice.app, the app with everything it runs (docs/design/7-distribution.md): the server's code in
+#   --bundle  build/bundle/EchoFox.app, the app with everything it runs (docs/design/7-distribution.md): the server's code in
 #             Contents/Resources/server, Python with the server's packages in Contents/Resources/python, and
 #             llama-server in Contents/Resources/llama, at the versions of pins.sh. Such an app installs the
 #             server's launchd agent itself.
-#   --dmg     also build/LocalVoice.dmg with the app (implies --bundle).
-# It signs with the certificate $LOCAL_VOICE_SIGN (default "Local Voice Dev", a self-signed code-signing certificate
+#   --dmg     also build/EchoFox.dmg with the app (implies --bundle).
+# It signs with the certificate $ECHOFOX_SIGN (default "EchoFox Dev", a self-signed code-signing certificate
 # in the login keychain), so that the app's code requirement is its identifier and that certificate, the same for
 # every build, and macOS keeps its permissions. Without the certificate it signs ad hoc: then the requirement is the
 # hash of the build, and after a rebuild macOS refuses the Accessibility it granted (tccd, 2026-10-15). A Developer
@@ -23,12 +23,12 @@ for a in "$@"; do
   esac
 done
 
-swift build -c release --product LocalVoice
-app=build/LocalVoice.app
-$bundle && app=build/bundle/LocalVoice.app  # apart from the app of this Mac's work, which must not install the agent
+swift build -c release --product EchoFox
+app=build/EchoFox.app
+$bundle && app=build/bundle/EchoFox.app  # apart from the app of this Mac's work, which must not install the agent
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp .build/release/LocalVoice "$app/Contents/MacOS/"
+cp .build/release/EchoFox "$app/Contents/MacOS/"
 cp app/Info.plist "$app/Contents/"
 
 if $bundle; then
@@ -74,7 +74,7 @@ if $bundle; then
   if [ -n "$foreign" ]; then echo "libraries from outside macOS and the bundle:" >&2; echo "$foreign" >&2; exit 1; fi
 fi
 
-identity=${LOCAL_VOICE_SIGN:-Local Voice Dev}
+identity=${ECHOFOX_SIGN:-EchoFox Dev}
 if security find-identity -p codesigning | grep -q "\"$identity\""; then
   options=""
   case $identity in "Developer ID"*) options="--options runtime --timestamp" ;; esac
@@ -93,8 +93,8 @@ fi
 codesign -dr - "$app" 2>&1 | tail -1
 
 if $dmg; then
-  rm -f build/LocalVoice.dmg
-  hdiutil create -quiet -volname "Local Voice" -srcfolder "$app" -ov -format UDZO build/LocalVoice.dmg
-  echo build/LocalVoice.dmg
+  rm -f build/EchoFox.dmg
+  hdiutil create -quiet -volname "EchoFox" -srcfolder "$app" -ov -format UDZO build/EchoFox.dmg
+  echo build/EchoFox.dmg
 fi
 echo "$app"

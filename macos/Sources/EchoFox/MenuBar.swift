@@ -4,7 +4,7 @@
 // back to the App.
 import AppKit
 import AVFoundation
-import LocalVoiceCore
+import EchoFoxCore
 
 struct MenuState {
     var recording = false, privateRecording = false, waiting = false
@@ -50,7 +50,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
         } else {
             (symbol, tint) = ("mic", nil)
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Local Voice")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "EchoFox")
         image?.isTemplate = true
         item.button?.image = image
         item.button?.contentTintColor = tint
@@ -75,7 +75,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let settings = action("Settings…") { $0.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
-        menu.addItem(NSMenuItem(title: "Quit Local Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit EchoFox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     /// One line for the permissions, shown only while one is missing: its title names what is missing; in it, a

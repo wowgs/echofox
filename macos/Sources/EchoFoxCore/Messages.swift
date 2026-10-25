@@ -1,5 +1,5 @@
 // The messages between the app and the dictation server (server/gemma_voice.py has the protocol). The same examples
-// are checked here (lv-tests) and in the server's tests.
+// are checked here (echofox-tests) and in the server's tests.
 import Foundation
 
 /// The server's interface this app speaks (protocol.INTERFACE on the server).

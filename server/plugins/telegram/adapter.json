@@ -1,8 +1,8 @@
 {
   "name": "telegram",
   "version": "1.0",
-  "author": "local-voice",
-  "source": "https://github.com/wowgs/local-voice",
+  "author": "echofox",
+  "source": "https://github.com/wowgs/echofox",
   "description": "Reads the open chat in Telegram Desktop.",
   "interface": 2,
   "apps": [

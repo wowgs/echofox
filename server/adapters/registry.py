@@ -1,5 +1,5 @@
-"""The adapter plugins: the built-in ones in server/plugins/, the user's in ~/Library/Application Support/Local Voice/
-adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
+"""The adapter plugins: the built-in ones in server/plugins/, the user's in ~/Library/Application Support/EchoFox/
+adapters/ ($ECHOFOX_PLUGINS). Each plugin is a folder with:
   adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 2,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads],
@@ -34,7 +34,7 @@ log = logging.getLogger("gemma_voice")
 
 
 def user_dir():
-    return os.environ.get("LOCAL_VOICE_PLUGINS") or constants.path(constants.PLUGINS)
+    return os.environ.get("ECHOFOX_PLUGINS") or constants.path(constants.PLUGINS)
 
 
 @dataclass
@@ -74,7 +74,7 @@ def load(folder, builtin):
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
         tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
-        package = f"lv_plugin_{re.sub(r'\W', '_', p.name)}"
+        package = f"echofox_plugin_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
                                                       submodule_search_locations=[folder])
         module = importlib.util.module_from_spec(spec)

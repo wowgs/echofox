@@ -21,7 +21,7 @@ class SandboxTest(unittest.TestCase):
 
     def test_the_paths_are_the_sandboxs(self):
         for path in (os.path.expanduser("~"), settings.config_file(), metrics.path(),
-                     os.environ["LOCAL_VOICE_PLUGINS"], os.environ["LOCAL_VOICE_PROJECTS"]):
+                     os.environ["ECHOFOX_PLUGINS"], os.environ["ECHOFOX_PROJECTS"]):
             self.assertTrue(os.path.realpath(path).startswith(sandbox.ROOT), path)
         self.assertNotEqual(sandbox.ROOT, sandbox.REAL_HOME)
 
@@ -32,8 +32,8 @@ class SandboxTest(unittest.TestCase):
 
     def test_launchctl_is_a_fake(self):
         import llama
-        self.assertEqual(llama.LAUNCHCTL, os.environ["LOCAL_VOICE_LAUNCHCTL"])
-        self.assertFalse(llama.agent_running("local-voice.anything"))
+        self.assertEqual(llama.LAUNCHCTL, os.environ["ECHOFOX_LAUNCHCTL"])
+        self.assertFalse(llama.agent_running("echofox.anything"))
 
 
 if __name__ == "__main__":

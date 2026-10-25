@@ -1,8 +1,8 @@
 {
   "name": "claude",
   "version": "1.0",
-  "author": "local-voice",
-  "source": "https://github.com/wowgs/local-voice",
+  "author": "echofox",
+  "source": "https://github.com/wowgs/echofox",
   "description": "Reads the Claude Code session open in the Code tab of Claude Desktop.",
   "interface": 2,
   "apps": [

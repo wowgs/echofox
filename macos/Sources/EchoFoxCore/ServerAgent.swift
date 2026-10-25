@@ -6,7 +6,7 @@
 import Foundation
 
 public enum ServerAgent {
-    public static let label = "local-voice.gemma-voice"
+    public static let label = "echofox.gemma-voice"
     /// launchd waits this long for the server to stop: it lets a running recording end (constants.py).
     public static let exitTimeoutSeconds = 210
 
@@ -22,7 +22,7 @@ public enum ServerAgent {
 
     /// The agent's property list for the bundled server.
     public static func plist(python: URL, server: URL, home: URL) -> [String: Any] {
-        let log = home.appendingPathComponent("Library/Logs/local-voice/gemma-voice.log").path
+        let log = home.appendingPathComponent("Library/Logs/EchoFox/gemma-voice.log").path
         return ["Label": label,
                 "ProgramArguments": [python.path, server.appendingPathComponent("gemma_voice.py").path],
                 "WorkingDirectory": server.path,

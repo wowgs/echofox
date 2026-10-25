@@ -10,7 +10,7 @@
 import AudioToolbox
 import AVFoundation
 import CoreAudio
-import LocalVoiceCore
+import EchoFoxCore
 
 final class Recorder {
     private let format: AVAudioFormat

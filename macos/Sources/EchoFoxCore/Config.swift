@@ -1,4 +1,4 @@
-// The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
+// The config file the app shares with the dictation server, ~/.echofox/config.json ($ECHOFOX_CONFIG),
 // version 7 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
 // recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
@@ -16,8 +16,8 @@ public struct Config: Equatable {
     public static let systemMicrophone = "system"
 
     public static var url: URL {
-        if let p = ProcessInfo.processInfo.environment["LOCAL_VOICE_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local-voice/config.json")
+        if let p = ProcessInfo.processInfo.environment["ECHOFOX_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".echofox/config.json")
     }
 
     public var models: [String] = []

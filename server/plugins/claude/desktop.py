@@ -19,8 +19,8 @@ TITLE_SUFFIX = " - Claude Code"
 
 
 def store():
-    """Desktop's session records, or $LOCAL_VOICE_DESKTOP_SESSIONS (read at each call, so that tests can set it)."""
-    return os.environ.get("LOCAL_VOICE_DESKTOP_SESSIONS") or os.path.expanduser(
+    """Desktop's session records, or $ECHOFOX_DESKTOP_SESSIONS (read at each call, so that tests can set it)."""
+    return os.environ.get("ECHOFOX_DESKTOP_SESSIONS") or os.path.expanduser(
         "~/Library/Application Support/Claude/claude-code-sessions")
 
 

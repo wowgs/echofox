@@ -1,9 +1,9 @@
-// Local Voice: the menu bar app (App.swift). With --record-test SECONDS OUT [CHOICE], it records the chosen microphone
+// EchoFox: the menu bar app (App.swift). With --record-test SECONDS OUT [CHOICE], it records the chosen microphone
 // (or CHOICE: builtin, system, a device's UID) for that
 // long and writes to OUT only what came (samples, seconds, peak level, which microphone), never the audio, then quits:
-// a check of the recorder that runs with the app's own Microphone permission (`open -n LocalVoice.app --args …`).
+// a check of the recorder that runs with the app's own Microphone permission (`open -n EchoFox.app --args …`).
 import AppKit
-import LocalVoiceCore
+import EchoFoxCore
 
 if let i = CommandLine.arguments.firstIndex(of: "--record-test"), CommandLine.arguments.count > i + 2 {
     let a = CommandLine.arguments

@@ -128,9 +128,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = {k: os.environ[k] for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS")}
-            os.environ.update(LOCAL_VOICE_PROJECTS=os.path.join(d, "projects"),
-                              LOCAL_VOICE_DESKTOP_SESSIONS=os.path.join(d, "store"))
+            saved = {k: os.environ[k] for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS")}
+            os.environ.update(ECHOFOX_PROJECTS=os.path.join(d, "projects"),
+                              ECHOFOX_DESKTOP_SESSIONS=os.path.join(d, "store"))
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
@@ -215,9 +215,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = {k: os.environ[k] for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS")}
-            os.environ.update(LOCAL_VOICE_PROJECTS=os.path.join(d, "projects"),
-                              LOCAL_VOICE_DESKTOP_SESSIONS=os.path.join(d, "store"))
+            saved = {k: os.environ[k] for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS")}
+            os.environ.update(ECHOFOX_PROJECTS=os.path.join(d, "projects"),
+                              ECHOFOX_DESKTOP_SESSIONS=os.path.join(d, "store"))
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             try:

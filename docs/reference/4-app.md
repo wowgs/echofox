@@ -1,6 +1,6 @@
 # Use the Mac app
 
-Local Voice lives in the menu bar. Start and stop dictation from the keyboard, without switching away from the app you're writing in.
+EchoFox lives in the menu bar. Start and stop dictation from the keyboard, without switching away from the app you're writing in.
 
 See also: [configuration](2-config.md), [saved recordings](5-recordings.md), and [build from source](7-development.md#build-from-source).
 
@@ -24,7 +24,7 @@ The app chooses the destination when the result arrives:
 2. Otherwise, use the field focused when recording began, bringing its app to the front.
 3. If neither works, copy the text to the clipboard and show a message in the menu.
 
-Local Voice first tries Accessibility insertion, replacing selected text. If the target app refuses it or the text does not appear, Local Voice tries Cmd+V and restores the previous clipboard afterward.
+EchoFox first tries Accessibility insertion, replacing selected text. If the target app refuses it or the text does not appear, EchoFox tries Cmd+V and restores the previous clipboard afterward.
 
 After recording stops, the app waits up to 180 seconds for each next piece of text.
 
@@ -90,14 +90,14 @@ See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
 Follow the [development guide](7-development.md) for prerequisites and commands. A development app uses the server in the checkout. A bundled app includes Python, server dependencies, and `llama-server`; it installs its own launchd agent.
 
-The app log is `~/Library/Logs/local-voice/app.log`. It records text lengths, not transcript contents.
+The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not transcript contents.
 
 ## Code map
 
 | Folder in `macos/Sources` | Purpose |
 |---|---|
-| `LocalVoice/` | App lifecycle, permissions, menu, settings window, microphone, dictation, and insertion. |
-| `LocalVoiceCore/` | Config, protocol, key handling, and settings logic that needs no screen access. |
+| `EchoFox/` | App lifecycle, permissions, menu, settings window, microphone, dictation, and insertion. |
+| `EchoFoxCore/` | Config, protocol, key handling, and settings logic that needs no screen access. |
 | `FocusSnapshot/` | Capture the focused app and input field. |
-| `lv-snapshot/` | Command-line snapshot inspection tool. |
-| `lv-tests/` | Checks for `LocalVoiceCore`. |
+| `echofox-snapshot/` | Command-line snapshot inspection tool. |
+| `echofox-tests/` | Checks for `EchoFoxCore`. |

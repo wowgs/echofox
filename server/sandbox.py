@@ -1,9 +1,9 @@
 """The tests' sandbox. Every test module imports it before anything else (test_sandbox.py checks that), so that no
 test can touch the working setup:
-- HOME and every path the server reads from the environment ($LOCAL_VOICE_CONFIG, _PLUGINS, _PROJECTS,
+- HOME and every path the server reads from the environment ($ECHOFOX_CONFIG, _PLUGINS, _PROJECTS,
   _DESKTOP_SESSIONS) point into a new temporary folder: the config, the recordings, the metrics, the adapter plugins,
   ~/.claude and Claude Desktop's session records there are empty and the tests' own;
-- launchctl is a fake that only notes its arguments ($LOCAL_VOICE_LAUNCHCTL), so no launchd agent starts or stops;
+- launchctl is a fake that only notes its arguments ($ECHOFOX_LAUNCHCTL), so no launchd agent starts or stops;
 - connections to the ports of the working and the test servers (constants.py) are refused, so a test never reaches a
   real dictation server or llama-server."""
 import os
@@ -13,22 +13,22 @@ import tempfile
 
 import constants as places
 
-ROOT = os.path.realpath(tempfile.mkdtemp(prefix="local-voice-tests-"))
+ROOT = os.path.realpath(tempfile.mkdtemp(prefix="echofox-tests-"))
 REAL_HOME = os.path.expanduser("~")
 os.environ["HOME"] = ROOT
-for var, path in {"LOCAL_VOICE_CONFIG": ".local-voice/config.json",
-                  "LOCAL_VOICE_PLUGINS": "Library/Application Support/Local Voice/adapters",
-                  "LOCAL_VOICE_PROJECTS": ".claude/projects",
-                  "LOCAL_VOICE_DESKTOP_SESSIONS": "Library/Application Support/Claude/claude-code-sessions"}.items():
+for var, path in {"ECHOFOX_CONFIG": ".echofox/config.json",
+                  "ECHOFOX_PLUGINS": "Library/Application Support/EchoFox/adapters",
+                  "ECHOFOX_PROJECTS": ".claude/projects",
+                  "ECHOFOX_DESKTOP_SESSIONS": "Library/Application Support/Claude/claude-code-sessions"}.items():
     os.environ[var] = os.path.join(ROOT, path)
-    os.makedirs(os.path.dirname(os.environ[var]) if var == "LOCAL_VOICE_CONFIG" else os.environ[var], exist_ok=True)
+    os.makedirs(os.path.dirname(os.environ[var]) if var == "ECHOFOX_CONFIG" else os.environ[var], exist_ok=True)
 
 LAUNCHCTL_LOG = os.path.join(ROOT, "launchctl.log")
 _fake = os.path.join(ROOT, "launchctl")
 with open(_fake, "w") as f:  # `print` (is the agent loaded?) says no; everything else succeeds
     f.write(f'#!/bin/sh\necho "$@" >> "{LAUNCHCTL_LOG}"\n[ "$1" = print ] && exit 113\nexit 0\n')
 os.chmod(_fake, os.stat(_fake).st_mode | stat.S_IEXEC)
-os.environ["LOCAL_VOICE_LAUNCHCTL"] = _fake
+os.environ["ECHOFOX_LAUNCHCTL"] = _fake
 
 BLOCKED = {places.WORKING_PORT, places.WORKING_LLAMA_PORT, places.TEST_PORT, places.TEST_LLAMA_PORT}
 _connect = socket.socket.connect

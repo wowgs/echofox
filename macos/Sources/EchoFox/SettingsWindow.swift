@@ -6,7 +6,7 @@
 // App; it decides nothing.
 import AppKit
 import Combine
-import LocalVoiceCore
+import EchoFoxCore
 import SwiftUI
 
 protocol SettingsActions: AnyObject {
@@ -44,7 +44,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             w.contentView = NSHostingView(rootView: SettingsView(model: model))
             w.standardWindowButton(.zoomButton)?.isEnabled = false
             w.center()
-            w.setFrameAutosaveName("LocalVoiceSettings")
+            w.setFrameAutosaveName("EchoFoxSettings")
             w.delegate = self
             titles = model.$selection.sink { [weak w] item in w?.title = item?.title ?? "Settings" }
             window = w

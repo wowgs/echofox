@@ -6,7 +6,7 @@
 import AppKit
 import AVFoundation
 import FocusSnapshot
-import LocalVoiceCore
+import EchoFoxCore
 
 final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let permissions = Permissions()
@@ -16,7 +16,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let labeling = LabelWindow()
     private let settings = SettingsWindow()
     private let firstRun = FirstRunWindow()
-    private let prepareQueue = DispatchQueue(label: "local-voice.prepare")
+    private let prepareQueue = DispatchQueue(label: "echofox.prepare")
     private var current: Dictation?
     private var waiting: [Dictation] = []
     private var lastError: String?
@@ -186,7 +186,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         guard ServerAgent.differs(wanted, at: url) else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/local-voice"),
+            try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/EchoFox"),
                                                     withIntermediateDirectories: true)
             let data = try PropertyListSerialization.data(fromPropertyList: wanted, format: .xml, options: 0)
             try data.write(to: url, options: .atomic)

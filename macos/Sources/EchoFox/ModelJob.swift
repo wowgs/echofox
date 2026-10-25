@@ -2,7 +2,7 @@
 // connection with one message, then the server's progress until it ends. The server does the work; closing this
 // connection does not stop a download, and a cancel message does.
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 final class ModelJob {
     private(set) var bytes = 0.0, total = 0.0

@@ -19,8 +19,8 @@ LONE_TAG = re.compile(rf"</?({_TAG_NAMES})\b[^>]*>")
 
 
 def projects():
-    """~/.claude/projects, or $LOCAL_VOICE_PROJECTS (read at each call, so that tests can set it)."""
-    return os.environ.get("LOCAL_VOICE_PROJECTS") or os.path.expanduser("~/.claude/projects")
+    """~/.claude/projects, or $ECHOFOX_PROJECTS (read at each call, so that tests can set it)."""
+    return os.environ.get("ECHOFOX_PROJECTS") or os.path.expanduser("~/.claude/projects")
 
 
 def session_file(session_ids, root=None):

@@ -6,7 +6,7 @@
 // permission taken away in System Settings is noticed, and one given again too.
 import AppKit
 import AVFoundation
-import LocalVoiceCore
+import EchoFoxCore
 
 final class Permissions {
     var onChange: () -> Void = {}

@@ -1,4 +1,4 @@
-# The bundled app (macos/build-app.sh --dmg) as LocalVoice.dmg (docs/design/7-distribution.md), after the tests
+# The bundled app (macos/build-app.sh --dmg) as EchoFox.dmg (docs/design/7-distribution.md), after the tests
 # (tests.yml). On a tag v*, the dmg goes into a GitHub Release of that tag; by the button (Actions, Run workflow), it
 # is kept as an artifact of the run. With the Developer ID secrets, the app is signed with Developer ID and the
 # hardened runtime, and the dmg is notarized and stapled; without them, the app is signed ad hoc, for tests only.
@@ -49,7 +49,7 @@ jobs:
           rm "$RUNNER_TEMP/developer-id.p12"
       - name: The bundled app and its dmg
         env:
-          LOCAL_VOICE_SIGN: ${{ secrets.DEVELOPER_ID_NAME }}
+          ECHOFOX_SIGN: ${{ secrets.DEVELOPER_ID_NAME }}
         run: macos/build-app.sh --dmg
       - name: Sign, notarize and staple the dmg
         if: env.HAS_DEVELOPER_ID == 'true'
@@ -59,21 +59,21 @@ jobs:
           KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
-          codesign --force --sign "$IDENTITY" --timestamp macos/build/LocalVoice.dmg
+          codesign --force --sign "$IDENTITY" --timestamp macos/build/EchoFox.dmg
           echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
-          xcrun notarytool submit macos/build/LocalVoice.dmg --key "$RUNNER_TEMP/notary.p8" \
+          xcrun notarytool submit macos/build/EchoFox.dmg --key "$RUNNER_TEMP/notary.p8" \
             --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait
-          xcrun stapler staple macos/build/LocalVoice.dmg
+          xcrun stapler staple macos/build/EchoFox.dmg
           rm "$RUNNER_TEMP/notary.p8"
       - name: The GitHub Release of the tag
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" macos/build/LocalVoice.dmg --title "Local Voice $GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" macos/build/EchoFox.dmg --title "EchoFox $GITHUB_REF_NAME" --generate-notes
       - name: The dmg as an artifact of a run by the button
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: LocalVoice-dmg
-          path: macos/build/LocalVoice.dmg
+          name: EchoFox-dmg
+          path: macos/build/EchoFox.dmg
           retention-days: 14

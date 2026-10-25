@@ -1,25 +1,25 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// FocusSnapshot: the focus snapshot (Accessibility). LocalVoiceCore: the app's logic that needs no screen and no
-// permission (the config, the protocol's messages, the hotkey's logic, the app's numbers), checked by lv-tests.
-// LocalVoice: the menu bar app. lv-snapshot: the snapshot tool. lv-tests: the checks of LocalVoiceCore, an executable
-// because XCTest and Swift Testing come only with Xcode (`swift run lv-tests`).
+// FocusSnapshot: the focus snapshot (Accessibility). EchoFoxCore: the app's logic that needs no screen and no
+// permission (the config, the protocol's messages, the hotkey's logic, the app's numbers), checked by echofox-tests.
+// EchoFox: the menu bar app. echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore, an executable
+// because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
 let package = Package(
-    name: "LocalVoice",
+    name: "EchoFox",
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "FocusSnapshot", targets: ["FocusSnapshot"]),
-        .library(name: "LocalVoiceCore", targets: ["LocalVoiceCore"]),
-        .executable(name: "lv-snapshot", targets: ["lv-snapshot"]),
-        .executable(name: "LocalVoice", targets: ["LocalVoice"]),
-        .executable(name: "lv-tests", targets: ["lv-tests"]),
+        .library(name: "EchoFoxCore", targets: ["EchoFoxCore"]),
+        .executable(name: "echofox-snapshot", targets: ["echofox-snapshot"]),
+        .executable(name: "EchoFox", targets: ["EchoFox"]),
+        .executable(name: "echofox-tests", targets: ["echofox-tests"]),
     ],
     targets: [
         .target(name: "FocusSnapshot"),
-        .target(name: "LocalVoiceCore"),
-        .executableTarget(name: "lv-snapshot", dependencies: ["FocusSnapshot"]),
-        .executableTarget(name: "LocalVoice", dependencies: ["FocusSnapshot", "LocalVoiceCore"]),
-        .executableTarget(name: "lv-tests", dependencies: ["LocalVoiceCore"]),
+        .target(name: "EchoFoxCore"),
+        .executableTarget(name: "echofox-snapshot", dependencies: ["FocusSnapshot"]),
+        .executableTarget(name: "EchoFox", dependencies: ["FocusSnapshot", "EchoFoxCore"]),
+        .executableTarget(name: "echofox-tests", dependencies: ["EchoFoxCore"]),
     ]
 )

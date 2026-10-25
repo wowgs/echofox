@@ -4,7 +4,7 @@
 // Tuning.serverStatusPollSeconds while the settings window shows the server's state. onChange is called only when
 // the info or the problem changed.
 import Foundation
-import LocalVoiceCore
+import EchoFoxCore
 
 final class Server {
     private(set) var info: ServerInfo?

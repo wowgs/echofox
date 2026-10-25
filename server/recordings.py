@@ -1,4 +1,4 @@
-"""Every recording is kept, never deleted by local-voice:
+"""Every recording is kept, never deleted by echofox:
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/mic.wav       the whole recording as the client sent it (16 kHz, 16-bit, mono),
                                                   before any cutting
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the model, the language, the client, the stop reason, the errors,

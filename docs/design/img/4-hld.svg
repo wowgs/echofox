@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 564" width="900" height="564">
 <rect width="100%" height="100%" fill="#ffffff"/>
-<title>Local Voice: приложение, сервер диктовки и модель</title>
+<title>EchoFox: приложение, сервер диктовки и модель</title>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555555"/></marker></defs>
 <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" fill="#1a1a1a">
 <rect x="16" y="16" width="868" height="56" rx="6" fill="#f2f2f2" stroke="#777777" stroke-width="1.5"/>
 <text x="28" y="38" font-size="14" font-weight="600">Целевое приложение</text>
 <text x="28" y="58">Claude Desktop, Codex, Telegram, терминал: поле ввода с курсором</text>
 <rect x="16" y="100" width="868" height="150" rx="6" fill="#eef4ff" stroke="#3b6fd8" stroke-width="1.5"/>
-<text x="28" y="122" font-size="14" font-weight="600">Приложение Local Voice (macOS)</text>
+<text x="28" y="122" font-size="14" font-weight="600">Приложение EchoFox (macOS)</text>
 <rect x="30" y="134" width="198" height="100" rx="6" fill="#ffffff" stroke="#3b6fd8" stroke-width="1.5"/>
 <text x="42" y="156" font-size="14" font-weight="600">Клавиши и снимок</text>
 <text x="42" y="176">диктовка, приватная</text>

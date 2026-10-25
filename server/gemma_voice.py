@@ -1,4 +1,4 @@
-"""A dictation server for local-voice: speech to text with Gemma 4 E4B in llama.cpp, for its clients (the menu bar
+"""A dictation server for echofox: speech to text with Gemma 4 E4B in llama.cpp, for its clients (the menu bar
 app; server/try_wav.py).
 
 Clients are thin: they send the audio and show the text. The server has the rest: the model registry with each

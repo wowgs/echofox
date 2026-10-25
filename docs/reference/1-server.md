@@ -4,7 +4,7 @@ The dictation server turns microphone audio into text. The Mac app handles recor
 
 ![Long recordings are processed in pieces while you speak, leaving less work after you stop.](../../img/dictation-timeline.svg)
 
-The server runs as the launchd agent `local-voice.gemma-voice`, listening on `ws://127.0.0.1:8090`. It sends audio to a separate `llama-server` process, which runs Gemma 4 E4B on the Mac's GPU.
+The server runs as the launchd agent `echofox.gemma-voice`, listening on `ws://127.0.0.1:8090`. It sends audio to a separate `llama-server` process, which runs Gemma 4 E4B on the Mac's GPU.
 
 See also: [configuration](2-config.md), [conversation context](3-context.md), [protocol](6-protocol.md), and [development](7-development.md).
 
@@ -88,6 +88,6 @@ Safety limits and values chosen through measurements are constants rather than u
 
 ## Logs and metrics
 
-- The log of the server is `~/Library/Logs/local-voice/gemma-voice.log`. The log of `llama-server` is `~/Library/Logs/local-voice/llama-server.log`.
-- The server writes its metrics to `~/Library/Logs/local-voice/gemma-voice-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
+- The log of the server is `~/Library/Logs/EchoFox/gemma-voice.log`. The log of `llama-server` is `~/Library/Logs/EchoFox/llama-server.log`.
+- The server writes its metrics to `~/Library/Logs/EchoFox/gemma-voice-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
 - `server/.venv/bin/python server/metrics.py` prints a summary for each model and the last requests.

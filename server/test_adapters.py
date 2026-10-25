@@ -27,10 +27,10 @@ class Fixture(unittest.TestCase):
         for p in ("a", "b"):
             os.makedirs(os.path.join(self.projects, p))
         os.makedirs(os.path.join(self.store, "org", "account"))
-        self.saved = {k: os.environ.get(k) for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS",
-                                                      "LOCAL_VOICE_PLUGINS")}
-        os.environ.update(LOCAL_VOICE_PROJECTS=self.projects, LOCAL_VOICE_DESKTOP_SESSIONS=self.store,
-                          LOCAL_VOICE_PLUGINS=os.path.join(self.dir.name, "plugins"))
+        self.saved = {k: os.environ.get(k) for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS",
+                                                      "ECHOFOX_PLUGINS")}
+        os.environ.update(ECHOFOX_PROJECTS=self.projects, ECHOFOX_DESKTOP_SESSIONS=self.store,
+                          ECHOFOX_PLUGINS=os.path.join(self.dir.name, "plugins"))
 
     def tearDown(self):
         for k, v in self.saved.items():
@@ -174,7 +174,7 @@ class CleanTest(Fixture):
 
 class PluginTest(Fixture):
     def plugin(self, name, manifest=None, code=None):
-        d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], name)
+        d = os.path.join(os.environ["ECHOFOX_PLUGINS"], name)
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "adapter.json"), "w") as f:
             json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]}, f)
@@ -271,7 +271,7 @@ class ClaudeDesktopTest(Fixture):
         self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one plugin: the Code tab wins over named sessions
 
     def test_a_bad_desktop_id_reads_no_file(self):
-        self.assertIsNone(sys.modules["lv_plugin_claude.desktop"].record("local_../../etc"))
+        self.assertIsNone(sys.modules["echofox_plugin_claude.desktop"].record("local_../../etc"))
 
 
 if __name__ == "__main__":
@@ -314,7 +314,7 @@ class TelegramTest(Fixture):
 
     def test_the_rows_become_messages_with_the_speakers_own_and_without_the_status(self):
         self.plugin()  # loads the plugin's package
-        from lv_plugin_telegram import desktop
+        from echofox_plugin_telegram import desktop
         self.assertEqual(desktop.messages(TG_ROWS), [
             {"from": "Anna", "text": "Привет! Как дела с Kubernetes?"},
             {"from": "the speaker", "text": "Всё ок, деплою"},
@@ -325,7 +325,7 @@ class TelegramTest(Fixture):
 
     def test_the_chat_name_comes_from_the_window_title(self):
         self.plugin()  # loads the plugin's package
-        from lv_plugin_telegram import desktop
+        from echofox_plugin_telegram import desktop
         for title, name in [("Anna – (3)", "Anna"), ("(2) Anna", "Anna"), ("Anna @ Work (3)", "Anna"),
                             ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team"),
                             ("\u2068Anna\u2069 \u2013 (3)", "Anna"), ("(2) \u2068Dev team\u2069", "Dev team")]:
@@ -333,7 +333,7 @@ class TelegramTest(Fixture):
 
     def test_the_message_list_is_the_one_above_the_input_box(self):
         self.plugin()  # loads the plugin's package
-        from lv_plugin_telegram import desktop
+        from echofox_plugin_telegram import desktop
         self.assertIs(desktop.message_list(tg_focus(TG_ROWS))["rows"], TG_ROWS)
         no_box = tg_focus(TG_ROWS)
         no_box.pop("focusedFrame")
@@ -352,7 +352,7 @@ class TelegramTest(Fixture):
     def test_a_manifest_may_ask_only_for_screen_parts_the_client_sends(self):
         info = registry.plugins()["telegram"].info({"telegram"})
         self.assertEqual((info["screen"], info["enabled"]), (["lists"], True))
-        d = os.path.join(os.environ["LOCAL_VOICE_PLUGINS"], "peek")
+        d = os.path.join(os.environ["ECHOFOX_PLUGINS"], "peek")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "adapter.json"), "w") as f:
             json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["everything"]}, f)

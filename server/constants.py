@@ -12,19 +12,19 @@ WORKING_URL = f"ws://{HOST}:{WORKING_PORT}"
 TEST_URL = f"ws://{HOST}:{TEST_PORT}"
 
 # launchd agents of this user.
-SERVER_LABEL = "local-voice.gemma-voice"
-LLAMA_LABEL = "local-voice.llama-server"
+SERVER_LABEL = "echofox.gemma-voice"
+LLAMA_LABEL = "echofox.llama-server"
 LAUNCH_AGENTS = "~/Library/LaunchAgents"
 
 # Files.
-CONFIG = "~/.local-voice/config.json"                         # $LOCAL_VOICE_CONFIG sets another
-LOGS = "~/Library/Logs/local-voice"
+CONFIG = "~/.echofox/config.json"                         # $ECHOFOX_CONFIG sets another
+LOGS = "~/Library/Logs/EchoFox"
 METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
-MODELS_FOLDER = "~/Library/Application Support/Local Voice/models"  # the model files, a folder for each model
+MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model files, a folder for each model
 LLAMA_SERVER = "/opt/homebrew/bin/llama-server"  # llama.cpp's server (Homebrew); launchd's PATH does not have it
-PLUGINS = "~/Library/Application Support/Local Voice/adapters"  # $LOCAL_VOICE_PLUGINS sets another
+PLUGINS = "~/Library/Application Support/EchoFox/adapters"  # $ECHOFOX_PLUGINS sets another
 CONFIG_VERSION = 7
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
