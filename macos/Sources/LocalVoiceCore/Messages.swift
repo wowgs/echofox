@@ -14,6 +14,8 @@ public struct ServerInfo: Decodable, Equatable {
         public let electronTree: Bool
         /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
         public let screen: [String]?
+        /// The files it reads.
+        public let reads: [String]?
         public let description: String?
         public let error: String?
         /// The defaults of its context settings, from its manifest.

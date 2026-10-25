@@ -64,6 +64,7 @@ public enum SettingsLayout {
         "model": [.page(.model, section: "Model", order: 0)],
         "prompt": [.page(.model, section: "Prompt", order: 0)],
         "adapterList": [.page(.adapters, section: "Adapters", order: 0)],
+        "adapterDefaults": [.page(.adapters, section: "Defaults for all adapters", order: 1)],
         "serverStatus": [.page(.diagnostics, section: "Server", order: 0)],
         "openLog": [.page(.diagnostics, section: "Logs", order: 0)],
         // The server's settings placed by hand

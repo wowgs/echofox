@@ -63,7 +63,8 @@ final class SettingsModel: ObservableObject {
     @Published var problem: String?
     @Published var inputs: [AudioInput] = []
     @Published var volume: Float?
-    @Published var page: SettingsPage? = .general
+    @Published var selection: SidebarItem? = .page(.general)
+    @Published var adaptersOpen = true
     @Published var labels = (count: 0, seconds: 0.0)
     /// What is typed in a field and not written yet, and the fields whose text was refused; by the field's id.
     @Published var drafts: [String: String] = [:]
@@ -123,18 +124,64 @@ final class SettingsModel: ObservableObject {
     }
 }
 
+/// A row of the sidebar: a page, or one adapter under the page Adapters.
+enum SidebarItem: Hashable {
+    case page(SettingsPage)
+    case adapter(String)
+}
+
+/// An adapter's name for people: "claude" → "Claude".
+func adapterTitle(_ name: String) -> String { name.prefix(1).uppercased() + name.dropFirst() }
+
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsPage.allCases, selection: $model.page) { page in
-                Label(page.title, systemImage: page.symbol).tag(page)
+            List(selection: $model.selection) {
+                ForEach(SettingsPage.allCases) { page in
+                    if page == .adapters {
+                        DisclosureGroup(isExpanded: $model.adaptersOpen) {
+                            ForEach(model.info?.adapters ?? [], id: \.name) { a in
+                                AdapterSidebarRow(model: model, adapter: a).tag(SidebarItem.adapter(a.name))
+                            }
+                        } label: {
+                            Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                        }
+                    } else {
+                        Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                    }
+                }
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         } detail: {
-            if let page = model.page {
-                PageView(model: model, page: page)
+            switch model.selection {
+            case let .page(page)?: PageView(model: model, page: page)
+            case let .adapter(name)?:
+                if let a = model.info?.adapters.first(where: { $0.name == name }) {
+                    AdapterPage(model: model, adapter: a)
+                } else {
+                    Text("The server does not have this adapter any more.").foregroundStyle(.secondary)
+                }
+            case nil: EmptyView()
+            }
+        }
+    }
+}
+
+/// An adapter in the sidebar: its name, and whether it is on.
+struct AdapterSidebarRow: View {
+    @ObservedObject var model: SettingsModel
+    let adapter: ServerInfo.Adapter
+
+    var body: some View {
+        HStack {
+            Text(adapterTitle(adapter.name))
+            Spacer()
+            if adapter.error != nil {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange).help("It does not work")
+            } else if model.config.adapters[adapter.name] == true {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("On")
             }
         }
     }
@@ -185,6 +232,7 @@ struct ItemView: View {
         case "model": ModelPicker(model: model)
         case "prompt": PromptEditor(model: model)
         case "adapterList": AdapterList(model: model)
+        case "adapterDefaults": AdapterDefaults(model: model)
         case "labelStats":
             LabeledContent("Labeled") {
                 Text("\(model.labels.count) pieces, \(String(format: "%.1f", model.labels.seconds / 60)) min")
@@ -493,25 +541,16 @@ struct LanguageList: View {
     }
 }
 
+/// The adapters, each with its switch; a click on its name in the sidebar opens its page.
 struct AdapterList: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
         if let adapters = model.info?.adapters, !adapters.isEmpty {
             ForEach(adapters, id: \.name) { a in
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle(a.name, isOn: Binding(get: { model.config.adapters[a.name] == true }, set: { on in
-                        model.write(["adapters", a.name, "enabled"], on)
-                        model.actions?.refreshServer()
-                    }))
-                    .toggleStyle(.switch)
-                    if let d = a.description { Text(d).font(.caption).foregroundStyle(.secondary) }
-                    if let e = a.error { Text(e).font(.caption).foregroundStyle(.red) }
-                    if model.config.adapters[a.name] == true {
-                        ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
-                            AdapterSettingRow(model: model, adapter: a, setting: s)
-                        }
-                    }
+                SettingLine(title: adapterTitle(a.name), note: a.error ?? a.description, refused: a.error != nil) {
+                    Button("Open") { model.selection = .adapter(a.name) }.buttonStyle(.borderless)
+                    AdapterSwitch(model: model, adapter: a)
                 }
             }
         } else {
@@ -520,43 +559,123 @@ struct AdapterList: View {
     }
 }
 
-/// A setting of one adapter: its entry in the config, else the adapter's own default (its manifest's context).
-struct AdapterSettingRow: View {
+struct AdapterSwitch: View {
     @ObservedObject var model: SettingsModel
-    let adapter: ServerInfo.Adapter, setting: SettingInfo
-    private var id: String { "adapter.\(adapter.name).\(setting.key)" }
-
-    private var path: [String] { ["adapters", adapter.name, setting.key] }
-    private var own: SettingValue? { SettingValue(json: model.config.value(path)).flatMap { $0 == .null ? nil : $0 } }
-    private var fallback: SettingValue? { SettingStore.defaultValue(of: setting, adapter: adapter) }
-    private var shown: String { own.map { show($0) } ?? "" }
+    let adapter: ServerInfo.Adapter
 
     var body: some View {
-        SettingLine(title: title(of: setting.key), note: setting.help + " (\(adapter.name)'s default: \(show(fallback)))",
+        Toggle("", isOn: Binding(get: { model.config.adapters[adapter.name] == true }, set: { on in
+            model.write(["adapters", adapter.name, "enabled"], on)
+            model.actions?.refreshServer()
+        }))
+        .labelsHidden().toggleStyle(.switch)
+    }
+}
+
+/// The adapters' settings for every adapter (adapterDefaults): over each adapter's own defaults, under a value set on
+/// an adapter's page.
+struct AdapterDefaults: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Text("For every adapter: they replace an adapter's own defaults; a value set on an adapter's page wins over them.")
+            .font(.caption).foregroundStyle(.secondary)
+        ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
+            AdapterValueRow(model: model, setting: s, adapter: nil)
+        }
+    }
+}
+
+/// One adapter's page: whether it works, what it reads, its settings.
+struct AdapterPage: View {
+    @ObservedObject var model: SettingsModel
+    let adapter: ServerInfo.Adapter
+
+    var body: some View {
+        Form {
+            Section("Adapter") {
+                SettingLine(title: "On", note: adapter.description) { AdapterSwitch(model: model, adapter: adapter) }
+                if let e = adapter.error {
+                    LabeledContent("Problem") { Text(e).foregroundStyle(.red).textSelection(.enabled) }
+                }
+            }
+            Section("What it reads") {
+                LabeledContent("Apps") { Text(adapter.apps.joined(separator: "\n")).textSelection(.enabled) }
+                if let reads = adapter.reads, !reads.isEmpty {
+                    LabeledContent("Files") { Text(reads.joined(separator: "\n")).textSelection(.enabled) }
+                }
+                if let screen = adapter.screen, !screen.isEmpty {
+                    LabeledContent("Screen") {
+                        Text(screen.contains("lists") ? "the rows of the lists in the focused window" : screen.joined(separator: ", "))
+                    }
+                }
+                if adapter.electronTree {
+                    LabeledContent("Accessibility") { Text("asks the app to build its accessibility tree") }
+                }
+            }
+            Section("Context") {
+                ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
+                    AdapterValueRow(model: model, setting: s, adapter: adapter)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(adapterTitle(adapter.name))
+    }
+}
+
+/// An adapter's setting, for one adapter (its entry) or for every adapter (adapterDefaults, `adapter` nil). Its note
+/// says where the value in force comes from.
+struct AdapterValueRow: View {
+    @ObservedObject var model: SettingsModel
+    let setting: SettingInfo
+    let adapter: ServerInfo.Adapter?
+
+    private var id: String { "adapter.\(adapter?.name ?? "*").\(setting.key)" }
+    private var path: [String] { adapter.map { ["adapters", $0.name, setting.key] } ?? ["adapterDefaults", setting.key] }
+    private func at(_ p: [String]) -> SettingValue? { SettingValue(json: model.config.value(p)).flatMap { $0 == .null ? nil : $0 } }
+    private var own: SettingValue? { at(path) }
+    private var shared: SettingValue? { adapter == nil ? nil : at(["adapterDefaults", setting.key]) }
+    private var adapterDefault: SettingValue? { adapter?.context?[setting.key] }
+
+    /// What is in force without a value here, and where it comes from.
+    private var inherited: (value: SettingValue?, from: String) {
+        if let v = shared { return (v, "from Defaults for all adapters") }
+        if let v = adapterDefault { return (v, "\(adapterTitle(adapter!.name))'s default") }
+        return (setting.default, "the built-in default")
+    }
+    private var shown: String { own.map { show($0) } ?? "" }
+    private var source: String { own != nil ? (adapter == nil ? "set for every adapter" : "set here") : inherited.from }
+
+    var body: some View {
+        SettingLine(title: title(of: setting.key),
+                    note: setting.help + " — \(source)" + (own == nil ? ": \(show(inherited.value))" : ""),
                     refused: model.refused.contains(id), pending: model.drafts[id].map { $0 != shown } ?? false) {
             if setting.kind == "boolean" {
-                Toggle("", isOn: Binding(get: { if case .bool(true)? = own ?? fallback { return true } else { return false } },
+                Toggle("", isOn: Binding(get: { if case .bool(true)? = own ?? inherited.value { return true } else { return false } },
                                          set: { model.write(path, $0) }))
                     .labelsHidden().toggleStyle(.switch)
             } else {
-                InputField(placeholder: show(fallback), text: model.draft(id, shown: shown), width: 80, number: true,
-                           refused: model.refused.contains(id)) {
-                    guard let text = model.drafts[id] else { return }
-                    if text.isEmpty {
-                        model.done(id)
-                        if own != nil { model.remove(path) }
-                    } else if let n = Double(text), setting.allows(n) {
-                        model.done(id)
-                        model.write(path, setting.kind == "integer" ? Int(n) as Any : n as Any)
-                    } else {
-                        model.refused.insert(id)
-                    }
-                }
+                InputField(placeholder: show(inherited.value), text: model.draft(id, shown: shown), width: 80,
+                           number: true, refused: model.refused.contains(id)) { commit() }
                 UnitLabel(unit: unit(of: setting.key))
             }
-            ResetButton(visible: own != nil, help: "Back to \(adapter.name)'s default") { model.done(id); model.remove(path) }
+            ResetButton(visible: own != nil, help: "Back to \(inherited.from)") { model.done(id); model.remove(path) }
         }
-        .padding(.leading, 16)
+        .disabled(adapter.map { model.config.adapters[$0.name] != true } ?? false)
+    }
+
+    private func commit() {
+        guard let text = model.drafts[id] else { return }
+        if text.isEmpty {
+            model.done(id)
+            if own != nil { model.remove(path) }
+        } else if let n = Double(text.replacingOccurrences(of: ",", with: ".")), setting.allows(n) {
+            model.done(id)
+            model.write(path, setting.kind == "integer" ? Int(n) as Any : n as Any)
+        } else {
+            model.refused.insert(id)
+        }
     }
 }
 
