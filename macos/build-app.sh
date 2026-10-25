@@ -95,6 +95,8 @@ codesign -dr - "$app" 2>&1 | tail -1
 if $dmg; then
   rm -f build/EchoFox.dmg
   hdiutil create -quiet -volname "EchoFox" -srcfolder "$app" -ov -format UDZO build/EchoFox.dmg
+  # A Developer ID signs the dmg too, so that Gatekeeper checks the file that was downloaded
+  case $identity in "Developer ID"*) codesign --force --sign "$identity" --timestamp build/EchoFox.dmg ;; esac
   echo build/EchoFox.dmg
 fi
 echo "$app"
