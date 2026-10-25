@@ -38,6 +38,11 @@ public enum JSONEdit {
             return "{" + members.joined(separator: ", ") + "}"
         }
         if let a = value as? [Any] { return "[" + (try a.map(encode)).joined(separator: ", ") + "]" }
+        // A number that is not a whole one in its shortest form: 0.95, not JSONSerialization's 0.94999999999999996.
+        if let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite,
+           n.doubleValue != n.doubleValue.rounded() {
+            return "\(n.doubleValue)"
+        }
         let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)
     }

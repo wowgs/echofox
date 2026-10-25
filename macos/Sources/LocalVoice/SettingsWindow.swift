@@ -1,8 +1,9 @@
-// The settings window (docs/design/5-ui.md): pages in a sidebar, each built from SettingsLayout. The server's
-// settings are drawn from their description in the server's info (SettingInfo): a switch, a number with its range,
-// or a text, each with its default and a button that takes the value out of the config (back to the default). The
-// app's own items (the hotkeys, the microphone, the model, the prompt, the adapters, the labels, the server's state)
-// have views of their own. The window only reads and writes the config and asks the App; it decides nothing.
+// The settings window (docs/design/5-ui.md): pages in a sidebar, each built from SettingsLayout. A setting described
+// by a SettingInfo (the server's in its info, the app's in SettingsLayout.appSettings) is one SettingRow: a switch, a
+// number or a text, with what is in force and where it comes from (SettingStore.state), and a button that takes the
+// value out of the config. The app's other items (the hotkeys, the microphone, the model, the prompt, the adapters,
+// the labels, the server's state) have views of their own. The window only reads and writes the config and asks the
+// App; it decides nothing.
 import AppKit
 import LocalVoiceCore
 import SwiftUI
@@ -83,13 +84,33 @@ final class SettingsModel: ObservableObject {
                 set: { if $0 { self.advancedOpen.insert(id) } else { self.advancedOpen.remove(id) } })
     }
 
-    /// How many of these settings the config sets, for the title of an Advanced: a setting's value at its owner, or
-    /// each value of adapterDefaults.
-    func changed(_ ids: [String]) -> Int {
-        ids.reduce(0) { n, id in
-            if id == "adapterDefaults" { return n + ((config.value(["adapterDefaults"]) as? [String: Any])?.count ?? 0) }
-            guard let s = setting(id), let p = SettingStore.path(of: s, model: config.model) else { return n }
-            return n + (config.value(p) == nil ? 0 : 1)
+    func state(_ s: SettingInfo, _ scope: SettingScope = .owner) -> SettingState {
+        SettingStore.state(of: s, in: config, scope: scope)
+    }
+
+    /// The settings that a page item shows, with their scope: one setting, or every adapter setting (adapterDefaults).
+    func shown(_ id: String) -> [(SettingInfo, SettingScope)] {
+        if id == "adapterDefaults" { return adapterSettings.map { ($0, .allAdapters) } }
+        return setting(id).map { [($0, .owner)] } ?? []
+    }
+
+    /// How many of these settings differ from what they would be without a value here: for an Advanced's title.
+    func changed(_ settings: [(SettingInfo, SettingScope)]) -> Int {
+        settings.filter { state($0.0, $0.1).changed }.count
+    }
+
+    /// Writes or takes out the value of a setting, as SettingStore's edit says; a refused one is marked.
+    func apply(_ edit: SettingEdit, to s: SettingInfo, _ scope: SettingScope, id: String) {
+        guard let path = state(s, scope).path else { return }
+        switch edit {
+        case let .write(v):
+            done(id)
+            if let json = SettingStore.json(v, of: s) { write(path, json) }
+        case .remove:
+            done(id)
+            if config.value(path) != nil { remove(path) }
+        case .refuse:
+            refused.insert(id)
         }
     }
 
@@ -109,22 +130,25 @@ final class SettingsModel: ObservableObject {
         labels = Self.labelStats(config.labeled)
     }
 
-    var settings: [SettingInfo] { info?.settings ?? [] }
+    /// The server's settings and the app's own.
+    var settings: [SettingInfo] { (info?.settings ?? []) + SettingsLayout.appSettings }
+    var adapterSettings: [SettingInfo] { settings.filter { $0.owner == "adapter" } }
     func setting(_ key: String) -> SettingInfo? { settings.first { $0.key == key } }
 
     func sections(_ page: SettingsPage) -> [(section: String, ids: [String])] {
-        let keys = settings.map { (key: $0.key, owner: $0.owner, group: $0.group, advanced: $0.advanced == true) }
+        let keys = (info?.settings ?? []).map { (key: $0.key, owner: $0.owner, group: $0.group, advanced: $0.advanced == true) }
         return SettingsLayout.sections(of: page, serverKeys: keys)
     }
 
+    /// A value into the config; the window then reads the config again, and only it.
     func write(_ path: [String], _ value: Any) {
         actions?.write(path, value, "settings: \(path.joined(separator: ".")) = \(value)")
-        reload()
+        config = Config.load()
     }
 
     func remove(_ path: [String]) {
         actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
-        reload()
+        config = Config.load()
     }
 
     /// The labeled pieces and their seconds of audio, from the label files.
@@ -216,12 +240,9 @@ struct PageView: View {
             }
             ForEach(model.sections(page), id: \.section) { section in
                 if section.section == SettingsLayout.advanced {
-                    Section {
-                        DisclosureGroup(isExpanded: model.isOpen(page.rawValue)) {
-                            ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
-                        } label: {
-                            AdvancedTitle(changed: model.changed(section.ids))
-                        }
+                    AdvancedSection(model: model, id: page.rawValue,
+                                    changed: model.changed(section.ids.flatMap(model.shown))) {
+                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
                     }
                 } else {
                     Section(section.section) {
@@ -242,18 +263,15 @@ struct ItemView: View {
 
     var body: some View {
         switch id {
-        case "dictationKey": KeyPicker(model: model, path: "dictationKey", title: "Dictation",
+        case "dictationKey": KeyPicker(model: model, isPrivate: false, title: "Dictation",
                                        note: "Tap to start and stop. The text goes where the cursor was.")
-        case "privateDictationKey": KeyPicker(model: model, path: "privateDictationKey", title: "Private dictation",
+        case "privateDictationKey": KeyPicker(model: model, isPrivate: true, title: "Private dictation",
                                               note: "Reads nothing on the screen and saves nothing.")
         case "language": LanguagePicker(model: model)
         case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for the model",
                                            note: "Rules about this language for the model, one on each line.")
         case "languageFillers": LanguageList(model: model, field: "fillers", title: "Hesitation sounds",
                                              note: "Removed from the text. Separate them with commas.")
-        case "silenceStopSeconds": AppNumberRow(model: model, path: ["silenceStopSeconds"], title: "Stop after silence",
-                                                unit: "s", fallback: model.config.silenceStopSeconds,
-                                                note: "Recording stops after this long without speech.")
         case "microphone": MicrophonePicker(model: model)
         case "inputVolume": VolumeRow(model: model)
         case "model": ModelPicker(model: model)
@@ -268,7 +286,7 @@ struct ItemView: View {
         case "serverStatus": ServerStatus(model: model)
         case "openLog": Button("Open the Log") { model.actions?.openLog() }
         default:
-            if let s = model.setting(id) { SettingRow(model: model, setting: s) }
+            if let s = model.setting(id) { SettingRow(model: model, setting: s, scope: .owner) }
         }
     }
 }
@@ -287,123 +305,110 @@ func allowedValues(_ s: SettingInfo) -> String {
     }
 }
 
-/// A setting's description, or none when the title says it all.
-func note(_ help: String) -> String? { help.isEmpty ? nil : help }
-
 func show(_ v: SettingValue?) -> String {
     switch v {
     case let .number(n)?: return n == n.rounded() && abs(n) < 1e9 ? String(Int(n)) : String(n)
     case let .bool(b)?: return b ? "on" : "off"
     case let .string(s)?: return s
-    default: return "none"
+    default: return ""
     }
 }
 
-/// A server setting: a switch, a number or a text, written where SettingStore says.
+/// Where the value in force comes from, for an adapter's setting: the row says it, as the value may come from
+/// another page.
+func sourceNote(_ state: SettingState) -> String {
+    if state.changed { return "Set here." }
+    switch state.source {
+    case .allAdapters: return "From the values for every adapter."
+    case let .adapter(name): return "From the \(adapterTitle(name)) defaults."
+    case .eachAdapter: return "Each adapter keeps its own default."
+    case .ownerDefault: return "The built-in default."
+    }
+}
+
+/// A setting described by a SettingInfo, in one scope: a switch, a number or a text; the inherited value is the empty
+/// field's placeholder; the reset button takes the value out of the config.
 struct SettingRow: View {
     @ObservedObject var model: SettingsModel
     let setting: SettingInfo
-    private var id: String { "setting." + setting.key }
+    let scope: SettingScope
 
-    private var path: [String]? { SettingStore.path(of: setting, model: model.config.model) }
-    private var value: SettingValue? { SettingStore.value(of: setting, in: model.config, model: model.config.model) }
-    private var set: Bool { path.map { model.config.value($0) != nil } ?? false }
-    private var shown: String { show(value) == "none" ? "" : show(value) }
-
-    var body: some View {
-        SettingLine(title: setting.title, note: refused ? allowedValues(setting) : note(setting.help), refused: refused,
-                    pending: model.drafts[id].map { $0 != shown } ?? false) {
-            control
-            ResetButton(visible: set, help: "Restore the default (\(show(setting.default)))") {
-                if let p = path { model.done(id); model.remove(p) }
-            }
+    private var id: String {
+        switch scope {
+        case .owner: return "setting." + setting.key
+        case let .adapter(a): return "adapter.\(a.name).\(setting.key)"
+        case .allAdapters: return "adapter.*.\(setting.key)"
         }
     }
-
+    private var state: SettingState { model.state(setting, scope) }
     private var refused: Bool { model.refused.contains(id) }
+    /// The field's text: the value set here; empty when it is inherited (the placeholder shows it).
+    private var shown: String { setting.kind == "string" ? show(state.value) : state.own.map { show($0) } ?? "" }
+
+    private var note: String? {
+        if refused { return allowedValues(setting) }
+        let parts = [setting.help, scope == .owner ? "" : sourceNote(state)].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    var body: some View {
+        SettingLine(title: setting.title, note: note, refused: refused,
+                    pending: model.drafts[id].map { $0 != shown } ?? false) {
+            control
+            ResetButton(visible: state.changed, help: "Restore the default") {
+                model.apply(.remove, to: setting, scope, id: id)
+            }
+        }
+        .disabled(state.path == nil || disabledAdapter)
+    }
+
+    /// A setting of an adapter that is off: shown, not changed.
+    private var disabledAdapter: Bool {
+        if case let .adapter(a) = scope { return model.config.adapters[a.name] != true }
+        return false
+    }
 
     @ViewBuilder private var control: some View {
         switch setting.kind {
         case "boolean":
-            Toggle("", isOn: Binding(get: { if case .bool(true)? = value { return true } else { return false } },
-                                     set: { on in if let p = path { model.write(p, on) } }))
+            Toggle("", isOn: Binding(get: { state.value == .bool(true) },
+                                     set: { model.apply(SettingStore.toggle($0, state: state), to: setting, scope, id: id) }))
                 .labelsHidden().toggleStyle(.switch)
         case "string":
-            InputField(text: model.draft(id, shown: shown), width: 240, refused: model.refused.contains(id),
-                       onSubmit: commit)
+            InputField(text: model.draft(id, shown: shown), width: 240, refused: refused, onSubmit: commit)
             if setting.key == "recordings" {
                 Button("Choose…") {
-                    if let folder = chooseFolder(starting: shown), let p = path { model.done(id); model.write(p, folder) }
+                    if let folder = chooseFolder(starting: shown) {
+                        model.apply(SettingStore.edit(folder, of: setting, state: state), to: setting, scope, id: id)
+                    }
                 }
             }
         default:
-            InputField(placeholder: show(setting.default), text: model.draft(id, shown: shown), width: 80, number: true,
-                       refused: model.refused.contains(id), onSubmit: commit)
+            InputField(placeholder: show(state.inherited), text: model.draft(id, shown: shown), width: 80, number: true,
+                       refused: refused, onSubmit: commit)
             UnitLabel(unit: unit(of: setting.key))
         }
     }
 
     private func commit() {
-        guard let p = path, let text = model.drafts[id] else { return }
-        if setting.kind == "string" {
-            model.done(id)
-            model.write(p, text)
-            return
-        }
-        if text.isEmpty {  // an empty field: back to the default
-            model.done(id)
-            if set { model.remove(p) }
-            return
-        }
-        guard let n = Double(text.replacingOccurrences(of: ",", with: ".")), setting.allows(n) else {
-            model.refused.insert(id)
-            return
-        }
-        model.done(id)
-        model.write(p, setting.kind == "integer" ? Int(n) as Any : n as Any)
-    }
-}
-
-/// A number the app keeps at the top of the config (its own setting, not the server's).
-struct AppNumberRow: View {
-    @ObservedObject var model: SettingsModel
-    let path: [String], title: String, unit: String, fallback: Double, note: String
-    private var id: String { "app." + path.joined(separator: ".") }
-    private var shown: String { show(.number(fallback)) }
-
-    var body: some View {
-        SettingLine(title: title, note: model.refused.contains(id) ? "Enter a number above 0." : note,
-                    refused: model.refused.contains(id),
-                    pending: model.drafts[id].map { $0 != shown } ?? false) {
-            InputField(text: model.draft(id, shown: shown), width: 80, number: true,
-                       refused: model.refused.contains(id)) {
-                guard let text = model.drafts[id] else { return }
-                if let n = Double(text.replacingOccurrences(of: ",", with: ".")), n > 0 {
-                    model.done(id)
-                    model.write(path, n)
-                } else {
-                    model.refused.insert(id)
-                }
-            }
-            UnitLabel(unit: unit)
-            ResetButton(visible: false, help: "") {}
-        }
+        guard let text = model.drafts[id] else { return }
+        model.apply(SettingStore.edit(text, of: setting, state: state), to: setting, scope, id: id)
     }
 }
 
 struct KeyPicker: View {
     @ObservedObject var model: SettingsModel
-    let path: String, title: String, note: String
+    let isPrivate: Bool, title: String, note: String
 
-    private var current: String {
-        (model.config.value([path]) as? String) ?? (path == "dictationKey" ? TapKeyChoice.rightOption.rawValue
-                                                                            : TapKeyChoice.rightCommand.rawValue)
-    }
+    private var path: String { isPrivate ? "privateDictationKey" : "dictationKey" }
+    private var current: TapKeyChoice? { isPrivate ? model.config.privateDictationKey : model.config.dictationKey }
+    private var other: TapKeyChoice? { isPrivate ? model.config.dictationKey : model.config.privateDictationKey }
+    private var clash: Bool { current != nil && current == other }
 
     var body: some View {
         SettingLine(title: title, note: clash ? "The other dictation uses this key too. Choose another one." : note,
                     refused: clash) {
-            Picker(title, selection: Binding(get: { current }, set: { v in
+            Picker(title, selection: Binding(get: { current?.rawValue ?? "none" }, set: { v in
                 model.write([path], v)
                 model.actions?.keysChanged()
             })) {
@@ -413,13 +418,6 @@ struct KeyPicker: View {
             .labelsHidden()
             .fixedSize()
         }
-    }
-
-    private var clash: Bool {
-        let other = path == "dictationKey" ? "privateDictationKey" : "dictationKey"
-        let otherValue = (model.config.value([other]) as? String)
-            ?? (other == "dictationKey" ? TapKeyChoice.rightOption.rawValue : TapKeyChoice.rightCommand.rawValue)
-        return current != "none" && current == otherValue
     }
 }
 
@@ -569,15 +567,24 @@ struct LanguageList: View {
     }
 }
 
-/// The title of an Advanced section: closed until a click; it says how many of its settings were changed, so that a
-/// change is never out of sight.
-struct AdvancedTitle: View {
+/// An Advanced section: closed until a click; its title says how many of its settings differ from what they would be
+/// without a value there, so that a change is never out of sight.
+struct AdvancedSection<Content: View>: View {
+    @ObservedObject var model: SettingsModel
+    let id: String
     let changed: Int
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack {
-            Text(SettingsLayout.advanced)
-            if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
+        Section {
+            DisclosureGroup(isExpanded: model.isOpen(id)) {
+                content()
+            } label: {
+                HStack {
+                    Text(SettingsLayout.advanced)
+                    if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
         }
     }
 }
@@ -621,9 +628,7 @@ struct AdapterDefaults: View {
     var body: some View {
         Text("Values for every adapter. A value set on an adapter's page wins.")
             .font(.caption).foregroundStyle(.secondary)
-        ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
-            AdapterValueRow(model: model, setting: s, adapter: nil)
-        }
+        ForEach(model.adapterSettings, id: \.key) { s in SettingRow(model: model, setting: s, scope: .allAdapters) }
     }
 }
 
@@ -654,77 +659,15 @@ struct AdapterPage: View {
                     LabeledContent("Accessibility") { Text("Asks the app to expose its window content.") }
                 }
             }
-            Section {
-                DisclosureGroup(isExpanded: model.isOpen("adapter." + adapter.name)) {
-                    ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
-                        AdapterValueRow(model: model, setting: s, adapter: adapter)
-                    }
-                } label: {
-                    AdvancedTitle(changed: model.settings.filter {
-                        $0.owner == "adapter" && model.config.value(["adapters", adapter.name, $0.key]) != nil
-                    }.count)
+            AdvancedSection(model: model, id: "adapter." + adapter.name,
+                            changed: model.changed(model.adapterSettings.map { ($0, .adapter(adapter)) })) {
+                ForEach(model.adapterSettings, id: \.key) { s in
+                    SettingRow(model: model, setting: s, scope: .adapter(adapter))
                 }
             }
         }
         .formStyle(.grouped)
         .navigationTitle(adapterTitle(adapter.name))
-    }
-}
-
-/// An adapter's setting, for one adapter (its entry) or for every adapter (adapterDefaults, `adapter` nil). Its note
-/// says where the value in force comes from.
-struct AdapterValueRow: View {
-    @ObservedObject var model: SettingsModel
-    let setting: SettingInfo
-    let adapter: ServerInfo.Adapter?
-
-    private var id: String { "adapter.\(adapter?.name ?? "*").\(setting.key)" }
-    private var path: [String] { adapter.map { ["adapters", $0.name, setting.key] } ?? ["adapterDefaults", setting.key] }
-    private func at(_ p: [String]) -> SettingValue? { SettingValue(json: model.config.value(p)).flatMap { $0 == .null ? nil : $0 } }
-    private var own: SettingValue? { at(path) }
-    private var shared: SettingValue? { adapter == nil ? nil : at(["adapterDefaults", setting.key]) }
-    private var adapterDefault: SettingValue? { adapter?.context?[setting.key] }
-
-    /// What is in force without a value here, and where it comes from.
-    private var inherited: (value: SettingValue?, from: String) {
-        if let v = shared { return (v, "Defaults for all adapters") }
-        if let v = adapterDefault { return (v, "\(adapterTitle(adapter!.name)) defaults") }
-        return (setting.default, "the built-in default")
-    }
-    private var shown: String { own.map { show($0) } ?? "" }
-    /// Where the value in force comes from; the value itself is in the field (its placeholder) or the switch.
-    private var source: String { own != nil ? "Set here." : "From \(inherited.from)." }
-    private var refused: Bool { model.refused.contains(id) }
-
-    var body: some View {
-        SettingLine(title: setting.title,
-                    note: refused ? allowedValues(setting) : [setting.help, source].filter { !$0.isEmpty }.joined(separator: " "),
-                    refused: refused, pending: model.drafts[id].map { $0 != shown } ?? false) {
-            if setting.kind == "boolean" {
-                Toggle("", isOn: Binding(get: { if case .bool(true)? = own ?? inherited.value { return true } else { return false } },
-                                         set: { model.write(path, $0) }))
-                    .labelsHidden().toggleStyle(.switch)
-            } else {
-                InputField(placeholder: show(inherited.value), text: model.draft(id, shown: shown), width: 80,
-                           number: true, refused: model.refused.contains(id)) { commit() }
-                UnitLabel(unit: unit(of: setting.key))
-            }
-            ResetButton(visible: own != nil, help: "Restore \(inherited.from)") { model.done(id); model.remove(path) }
-        }
-        .disabled(adapter.map { model.config.adapters[$0.name] != true } ?? false)
-    }
-
-    private func commit() {
-        guard let text = model.drafts[id] else { return }
-        if text.isEmpty {
-            model.done(id)
-            if own != nil { model.remove(path) }
-        } else if let n = Double(text.replacingOccurrences(of: ",", with: ".")), setting.allows(n) {
-            model.done(id)
-            model.write(path, setting.kind == "integer" ? Int(n) as Any : n as Any)
-        } else {
-            model.refused.insert(id)
-        }
     }
 }
 

@@ -208,20 +208,47 @@ do {
     """
     try text.write(to: file, atomically: true, encoding: .utf8)
     var config = Config.load(from: file)
-    check(SettingStore.path(of: cut, model: "a") == ["server", "maxRecordingMinutes"], "settings: a server's at the server")
-    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the config's value is shown")
+    var st = SettingStore.state(of: cut, in: config)
+    check(st.path == ["server", "maxRecordingMinutes"] && st.value == .number(2) && st.changed,
+          "settings: a server's at the server, the config's value in force")
     let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","title":"Top K","default":64,"help":"h"}"#.utf8))
-    check(SettingStore.path(of: topK, model: "a") == ["models", "a", "options", "topK"]
-          && SettingStore.value(of: topK, in: config, model: "a") == .number(2), "settings: a model's in its options")
-    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","title":"Names and terms","default":100,"help":"h"}"#.utf8))
-    let claude = info.adapters.first { $0.name == "claude" }!
-    check(SettingStore.value(of: messages, in: config, model: "a", adapter: claude) == .number(3),
-          "settings: an adapter's in its entry")
+    st = SettingStore.state(of: topK, in: config)
+    check(st.path == ["models", "a", "options", "topK"] && st.value == .number(2), "settings: a model's in its options")
+    check(!SettingStore.state(of: temperature, in: config).changed,
+          "settings: a value equal to the default is no change (temperature 1)")
+    let terms = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","title":"Names and terms","default":100,"min":0,"help":"h"}"#.utf8))
+    let claude = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"claude","enabled":true,"apps":[],"electronTree":true,"context":{"chatTermsTokenBudget":200}}"#.utf8))
+    st = SettingStore.state(of: terms, in: config, scope: .adapter(claude))
+    check(st.path == ["adapters", "claude", "chatTermsTokenBudget"] && st.own == .number(3)
+          && st.inherited == .number(200) && st.source == .adapter("claude"), "settings: an adapter's over its manifest")
+    try Config.set(["adapterDefaults", "chatTermsTokenBudget"], to: 150, in: file)
+    try Config.remove(["adapters", "claude", "chatTermsTokenBudget"], in: file)
+    config = Config.load(from: file)
+    st = SettingStore.state(of: terms, in: config, scope: .adapter(claude))
+    check(!st.changed && st.value == .number(150) && st.source == .allAdapters,
+          "settings: adapterDefaults over the manifest")
+    let every = SettingStore.state(of: terms, in: config, scope: .allAdapters)
+    check(every.path == ["adapterDefaults", "chatTermsTokenBudget"] && every.own == .number(150)
+          && every.inherited == nil && every.source == .eachAdapter, "settings: the value for every adapter")
+    check(SettingStore.edit("150", of: terms, state: st) == .remove && SettingStore.edit("90", of: terms, state: st) == .write(.number(90))
+          && SettingStore.edit("", of: terms, state: st) == .remove && SettingStore.edit("-1", of: terms, state: st) == .refuse
+          && SettingStore.edit("2.5", of: terms, state: st) == .refuse && SettingStore.edit("abc", of: terms, state: st) == .refuse,
+          "settings: an edit equal to the inherited value takes the value out; one out of range is refused")
+    check(SettingStore.edit("0,5", of: cut, state: SettingStore.state(of: cut, in: config)) == .write(.number(0.5)),
+          "settings: a decimal comma")
+    let prose = SettingInfo(key: "proseOnly", owner: "adapter", kind: "boolean", title: "Only sentences", default: .bool(true))
+    let proseState = SettingStore.state(of: prose, in: config, scope: .adapter(claude))
+    check(SettingStore.toggle(true, state: proseState) == .remove && SettingStore.toggle(false, state: proseState) == .write(.bool(false)),
+          "settings: a switch back to the inherited value takes the value out")
+    check(SettingStore.json(.number(90), of: terms) as? Int == 90, "settings: an integer is written whole")
+    let decimal = try JSONEdit.set(["x"], to: 0.95, in: #"{"x": 1}"#)
+    check(decimal == #"{"x": 0.95}"#, "settings: 0.95 is written as 0.95: \(decimal)")
     try Config.remove(["server", "maxRecordingMinutes"], in: file)
     config = Config.load(from: file)
     check(config.value(["server", "maxRecordingMinutes"]) == nil && config.value(["server", "port"]) as? Int == 8090,
           "settings: a value taken out")
-    check(SettingStore.value(of: cut, in: config, model: "a") == .number(30), "settings: then the server's value")
+    st = SettingStore.state(of: cut, in: config)
+    check(!st.changed && st.value == .number(30), "settings: then the server's default")
     let edited = try String(contentsOf: file, encoding: .utf8)
     check(edited.contains(#""server": {"port": 8090}"#), "settings: the rest of the file as it was: \(edited)")
     try Config.remove(["models", "a", "options", "topK"], in: file)

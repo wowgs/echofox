@@ -147,7 +147,8 @@ public enum SettingValue: Decodable, Equatable {
 /// it may write it.
 public struct SettingInfo: Decodable, Equatable {
     public let key: String
-    /// Its owner: server (the config's "server"), model (a model's "options"), adapter (an adapter's entry).
+    /// Its owner: server (the config's "server"), model (a model's "options"), adapter (an adapter's entry), app (the
+    /// top of the config: the app's own).
     public let owner: String
     /// What it is about: cutting, speech, recording, storage, sampling, output, context.
     public let group: String
@@ -166,8 +167,17 @@ public struct SettingInfo: Decodable, Equatable {
     public let max: Double?
     public let minExclusive: Bool?
     public let maxExclusive: Bool?
-    /// What it does and what changes when it changes, in plain words for the user.
+    /// What it does, in plain words for the user; "" when the title says it all.
     public let help: String
+
+    /// A setting the app describes itself, as the server describes its own (owner "app": the top of the config).
+    public init(key: String, owner: String, group: String = "", kind: String, title: String, advanced: Bool? = nil,
+                default d: SettingValue?, value: SettingValue? = nil, min: Double? = nil, max: Double? = nil,
+                minExclusive: Bool? = nil, maxExclusive: Bool? = nil, help: String = "") {
+        self.key = key; self.owner = owner; self.group = group; self.kind = kind; self.title = title
+        self.advanced = advanced; self.default = d; self.value = value; self.min = min; self.max = max
+        self.minExclusive = minExclusive; self.maxExclusive = maxExclusive; self.help = help
+    }
 
     /// Whether `v` is in the setting's range.
     public func allows(_ v: Double) -> Bool {

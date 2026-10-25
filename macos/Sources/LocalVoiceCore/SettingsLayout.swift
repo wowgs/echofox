@@ -72,6 +72,13 @@ public enum SettingsLayout {
         "labeled": [.page(.recordings, section: "Labels", order: 2)],
     ]
 
+    /// The app's own settings that a SettingRow shows, described as the server describes its own.
+    public static let appSettings = [
+        SettingInfo(key: "silenceStopSeconds", owner: "app", kind: "number", title: "Stop after silence",
+                    default: .number(Tuning.silenceStopSeconds), min: 0, minExclusive: true,
+                    help: "Recording stops after this long without speech."),
+    ]
+
     /// The section of a page that opens on a click: the settings for those who tune the model and the context.
     public static let advanced = "Advanced"
 
@@ -123,33 +130,5 @@ public enum SettingsLayout {
         for (s, _, _) in all.sorted(by: { ($0.2, $0.1) < ($1.2, $1.1) }) where !order.contains(s) { order.append(s) }
         if let i = order.firstIndex(of: advanced) { order.append(order.remove(at: i)) }
         return order.map { s in (s, all.filter { $0.0 == s }.sorted { ($0.2, $0.1) < ($1.2, $1.1) }.map(\.1)) }
-    }
-}
-
-/// Where a setting's value is read and written in the config: at its owner. A server's setting in the section
-/// "server", a model's in that model's "options", an adapter's in that adapter's entry.
-public enum SettingStore {
-    public static func path(of s: SettingInfo, model: String?, adapter: String? = nil) -> [String]? {
-        switch s.owner {
-        case "server": return ["server", s.key]
-        case "model": return model.map { ["models", $0, "options", s.key] }
-        case "adapter": return adapter.map { ["adapters", $0, s.key] }
-        default: return nil
-        }
-    }
-
-    /// The owner's default: an adapter's own (its info's context), else the setting's.
-    public static func defaultValue(of s: SettingInfo, adapter: ServerInfo.Adapter? = nil) -> SettingValue? {
-        adapter?.context?[s.key] ?? s.default
-    }
-
-    /// The value in force: the config's at the owner, else the owner's default.
-    public static func value(of s: SettingInfo, in config: Config, model: String?,
-                             adapter: ServerInfo.Adapter? = nil) -> SettingValue? {
-        if let p = path(of: s, model: model, adapter: adapter?.name), let v = SettingValue(json: config.value(p)),
-           v != .null {
-            return v
-        }
-        return adapter == nil ? (s.value ?? s.default) : defaultValue(of: s, adapter: adapter)
     }
 }
