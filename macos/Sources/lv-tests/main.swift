@@ -48,7 +48,7 @@ check(ServerMessage.parse("not json") == nil, "server messages: not JSON")
 
 // The hotkey: a lone tap of the right Option counts; with another key, too long, or with another modifier, not.
 var tap = TapLogic()
-let down = TapLogic.rightOptionMask, key = TapLogic.rightOption
+let down = TapKeyChoice.rightOption.downMask, key = TapKeyChoice.rightOption.keyCode
 check(!tap.feed(.flags(keyCode: key, raw: down, timestamp: 1)) && tap.feed(.flags(keyCode: key, raw: 0, timestamp: 1.2)),
       "tap: a lone tap")
 _ = tap.feed(.flags(keyCode: key, raw: down, timestamp: 2))
@@ -56,9 +56,19 @@ _ = tap.feed(.keyOrClick)
 check(!tap.feed(.flags(keyCode: key, raw: 0, timestamp: 2.1)), "tap: a key in between")
 _ = tap.feed(.flags(keyCode: key, raw: down, timestamp: 3))
 check(!tap.feed(.flags(keyCode: key, raw: 0, timestamp: 3 + Tuning.longestTapSeconds + 0.1)), "tap: held too long")
-_ = tap.feed(.flags(keyCode: key, raw: down | TapLogic.otherModifiers, timestamp: 4))
+_ = tap.feed(.flags(keyCode: key, raw: down | 0x0010_0000, timestamp: 4))
 check(!tap.feed(.flags(keyCode: key, raw: 0, timestamp: 4.1)), "tap: with Command held")
 check(!tap.feed(.flags(keyCode: key, raw: 0, timestamp: 5)), "tap: a release without a press")
+// The right Command: its own Command flag is down with it, and that does not spoil the tap; ⌘C does.
+var command = TapLogic(key: .rightCommand)
+let cmdDown = TapKeyChoice.rightCommand.downMask | 0x0010_0000, cmd = TapKeyChoice.rightCommand.keyCode
+check(!command.feed(.flags(keyCode: cmd, raw: cmdDown, timestamp: 1)) && command.feed(.flags(keyCode: cmd, raw: 0, timestamp: 1.1)),
+      "tap: the right Command alone")
+_ = command.feed(.flags(keyCode: cmd, raw: cmdDown, timestamp: 2))
+_ = command.feed(.keyOrClick)
+check(!command.feed(.flags(keyCode: cmd, raw: 0, timestamp: 2.1)), "tap: ⌘C is no tap")
+_ = command.feed(.flags(keyCode: cmd, raw: cmdDown | 0x08, timestamp: 3))
+check(!command.feed(.flags(keyCode: cmd, raw: 0, timestamp: 3.1)), "tap: with the left Command held")
 
 // The config: read, and the chosen model written in place.
 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-tests-\(getpid())")
@@ -170,6 +180,56 @@ do {
     try? FileManager.default.removeItem(at: root)
 } catch {
     check(false, "labeling: \(error)")
+}
+
+// The settings: the server's description, where a value is read and written, and the layout.
+do {
+    let info = try ServerInfo.decode(data(examples["info"]!))
+    let settings = info.settings ?? []
+    check(settings.map(\.key) == ["pieceSeconds", "cutSearchSeconds"], "settings: decoded \(settings.map(\.key))")
+    let cut = settings[1]
+    check(cut.value == .number(2.5) && cut.default == .number(3.0) && cut.minExclusive == true, "settings: values")
+    check(!cut.allows(0) && cut.allows(0.5) && cut.allows(10) && !cut.allows(10.5), "settings: range")
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-settings-\(getpid())")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let file = dir.appendingPathComponent("config.json")
+    let text = """
+    {
+      "model": "a",
+      "models": {"a": {"llamaServer": "http://h:1", "options": {"cutSearchSeconds": 2, "temperature": 1}}},
+      "server": {"port": 8090}
+    }
+
+    """
+    try text.write(to: file, atomically: true, encoding: .utf8)
+    var config = Config.load(from: file)
+    check(SettingStore.path(of: cut, in: config, model: "a") == ["models", "a", "options", "cutSearchSeconds"],
+          "settings: the model's option wins")
+    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the model's value is shown")
+    check(SettingStore.path(of: settings[0], in: config, model: "a") == ["server", "pieceSeconds"],
+          "settings: a new value goes to the server's section")
+    try Config.remove(["models", "a", "options", "cutSearchSeconds"], in: file)
+    config = Config.load(from: file)
+    check(config.value(["models", "a", "options", "cutSearchSeconds"]) == nil
+          && config.value(["models", "a", "options", "temperature"]) as? Int == 1, "settings: a value taken out")
+    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2.5), "settings: then the server's value")
+    let edited = try String(contentsOf: file, encoding: .utf8)
+    check(edited.contains(#""options": {"temperature": 1}"#) && edited.contains(#""server": {"port": 8090}"#),
+          "settings: the rest of the file as it was: \(edited)")
+    try Config.remove(["models", "a", "options", "temperature"], in: file)
+    let emptied = try String(contentsOf: file, encoding: .utf8)
+    check(emptied.contains(#""options": {}"#), "settings: the last member out")
+    let missing = try JSONEdit.remove(["nothing"], in: #"{"a": 1}"#), first = try JSONEdit.remove(["a"], in: #"{"a": 1, "b": 2}"#)
+    check(missing == #"{"a": 1}"#, "settings: a missing member")
+    check(first == #"{"b": 2}"#, "settings: the first member out")
+    check(SettingsLayout.menu == ["permissions", "microphone", "inputVolume", "labelRecordings"],
+          "settings: the menu \(SettingsLayout.menu)")
+    let recognition = SettingsLayout.sections(of: .recognition, serverKeys: [("pieceSeconds", "cutting"),
+                                                                             ("brandNew", "unknownGroup")])
+    check(recognition.first?.section == "Prompt" && recognition.contains { $0.section == "Cutting into pieces" }
+          && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }, "settings: the page \(recognition)")
+} catch {
+    check(false, "settings: \(error)")
 }
 
 print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")

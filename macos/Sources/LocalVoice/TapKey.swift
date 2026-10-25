@@ -1,15 +1,28 @@
-// The hotkey's event monitors; the logic of a tap is TapLogic (LocalVoiceCore). Watching keys in other apps needs the
-// Accessibility permission; when it is taken away the monitors stop (stop()) and start again when it is back.
+// The hotkeys' event monitors; the logic of a tap is TapLogic (LocalVoiceCore). One set of monitors feeds every
+// hotkey (dictation, private dictation). Watching keys in other apps needs the Accessibility permission; when it is
+// taken away the monitors stop (stop()) and start again when it is back.
 import AppKit
 import LocalVoiceCore
 
 final class TapKey {
-    var onTap: () -> Void = {}
-    private var logic = TapLogic()
+    enum Action { case dictation, privateDictation }
+
+    var onTap: (Action) -> Void = { _ in }
+    private var logics: [(Action, TapLogic)] = [(.dictation, TapLogic())]
     private var monitors: [Any] = []
 
-    var keyName: String { logic.keyName }
     var running: Bool { !monitors.isEmpty }
+
+    /// The keys of the actions, from the config; two actions never share a key (the first keeps it).
+    func set(_ keys: [(Action, TapKeyChoice?)]) {
+        var taken = Set<TapKeyChoice>()
+        logics = keys.compactMap { action, key in
+            guard let key, taken.insert(key).inserted else { return nil }
+            return (action, TapLogic(key: key))
+        }
+    }
+
+    func key(of action: Action) -> TapKeyChoice? { logics.first { $0.0 == action }?.1.key }
 
     func start() {
         guard monitors.isEmpty else { return }
@@ -30,6 +43,6 @@ final class TapKey {
     private func handle(_ e: NSEvent) {
         let event: TapLogic.Event = e.type == .flagsChanged
             ? .flags(keyCode: e.keyCode, raw: e.modifierFlags.rawValue, timestamp: e.timestamp) : .keyOrClick
-        if logic.feed(event) { onTap() }
+        for i in logics.indices where logics[i].1.feed(event) { onTap(logics[i].0) }
     }
 }

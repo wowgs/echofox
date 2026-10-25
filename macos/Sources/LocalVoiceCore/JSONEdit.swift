@@ -17,6 +17,20 @@ public enum JSONEdit {
         return String(decoding: out, as: UTF8.self)
     }
 
+    /// The text without the member at `path`, the rest as it was: the member goes with the comma and the space that
+    /// part it from its neighbour. A missing member leaves the text as it is. Throws if the text is not a JSON object
+    /// or a value on the path is not an object.
+    public static func remove(_ path: [String], in text: String) throws -> String {
+        guard !path.isEmpty else { throw MessageError("an empty path") }
+        var s = Scanner(Array(text.utf8))
+        let start = s.skipSpace(0)
+        guard start < s.b.count, s.b[start] == UInt8(ascii: "{") else { throw MessageError("not a JSON object") }
+        guard let range = try s.removal(object: start, path: path[...]) else { return text }
+        var out = s.b
+        out.removeSubrange(range)
+        return String(decoding: out, as: UTF8.self)
+    }
+
     /// `value` as JSON on one line, with Python's separators (", " and ": "), as the server writes the file.
     static func encode(_ value: Any) throws -> String {
         if let d = value as? [String: Any] {
@@ -65,6 +79,21 @@ public enum JSONEdit {
             while indent > start + 1, [0x20, 0x09, 0x0A, 0x0D].contains(b[indent - 1]) { indent -= 1 }
             let space = String(decoding: b[indent..<last.keyStart], as: UTF8.self)
             return (last.valueEnd..<last.valueEnd, "," + (space.isEmpty ? " " : space) + member)
+        }
+
+        /// The bytes to take out for the member at `path`, or nil if it is not there.
+        func removal(object start: Int, path: ArraySlice<String>) throws -> Range<Int>? {
+            let (members, close) = try self.members(start)
+            let key = path.first!
+            guard let n = members.lastIndex(where: { $0.key == key }) else { return nil }
+            let m = members[n]
+            if path.count > 1 {
+                guard b[m.valueStart] == UInt8(ascii: "{") else { throw MessageError("\(key) is not an object") }
+                return try removal(object: m.valueStart, path: path.dropFirst())
+            }
+            if n + 1 < members.count { return m.keyStart..<members[n + 1].keyStart }  // with its comma and the space
+            if n > 0 { return members[n - 1].valueEnd..<m.valueEnd }                   // the comma before it
+            return (start + 1)..<close                                                  // the only member
         }
 
         /// The members of the object at `start`, and the index of its closing brace.

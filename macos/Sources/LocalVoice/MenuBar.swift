@@ -1,14 +1,14 @@
-// The menu bar item: an icon for the state (recording, waiting, a problem), and the menu of the app's configuration,
-// built each time it opens. A dictation is the hotkey's, not the menu's. It shows; it never decides: the actions go
+// The menu bar item: an icon for the state (recording, a private recording, waiting, a problem), and a short menu of
+// what is touched often, built each time it opens from SettingsLayout.menu (docs/design/5-ui.md); everything else is
+// in the settings window. A dictation is the hotkeys', not the menu's. It shows; it never decides: the actions go
 // back to the App.
 import AppKit
 import AVFoundation
 import LocalVoiceCore
 
 struct MenuState {
-    var recording = false, waiting = false
+    var recording = false, privateRecording = false, waiting = false
     var accessibility = false, microphone = AVAuthorizationStatus.notDetermined
-    var keyName = ""
     var lastError: String?
     var config = Config()
     var server: ServerInfo?, serverProblem: String?
@@ -19,13 +19,10 @@ struct MenuState {
 protocol MenuActions: AnyObject {
     func allowAccessibility()
     func allowMicrophone()
-    func choose(model: String)
-    func choose(language: String)
-    func enable(adapter: String, _ on: Bool)
     func choose(microphone: String)
     func setInputVolume(_ value: Float)
-    func openLog()
     func openLabeling()
+    func openSettings()
 }
 
 final class MenuBar: NSObject, NSMenuDelegate {
@@ -45,7 +42,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let s = state()
         let symbol: String, tint: NSColor?
         if s.recording {
-            (symbol, tint) = ("mic.fill", .systemRed)
+            (symbol, tint) = ("mic.fill", s.privateRecording ? .systemPurple : .systemRed)
         } else if s.waiting {
             (symbol, tint) = ("ellipsis.circle", nil)
         } else if !s.accessibility || s.microphone != .authorized || s.lastError != nil || s.serverProblem != nil {
@@ -63,52 +60,33 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let s = state()
         menu.removeAllItems()
         handlers.removeAll()
-        // The menu is configuration; a dictation is the hotkey's, and the icon shows it.
-        let needsAccessibility = !s.accessibility
-        let needsMicrophone = s.microphone == .denied || s.microphone == .restricted
-            || s.microphone == .notDetermined && s.accessibility
-        if needsAccessibility { menu.addItem(action("Allow Accessibility…") { $0.allowAccessibility() }) }
-        if needsMicrophone { menu.addItem(action("Allow the Microphone…") { $0.allowMicrophone() }) }
-        if needsAccessibility || needsMicrophone { menu.addItem(.separator()) }
-        menu.addItem(submenu("Model: " + (s.config.model ?? "none"), modelItems(s)))
-        menu.addItem(submenu("Language: " + languageName(s), languageItems(s)))
         let inputs = AudioInputs.all()
-        menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
-        menu.addItem(volumeItem(s))
-        let on = (s.server?.adapters ?? []).filter { s.config.adapters[$0.name] == true }
-        let failing = on.contains { $0.error != nil } ? " (one does not work)" : ""
-        menu.addItem(submenu("Adapters: " + (on.isEmpty ? "none" : on.map(\.name).joined(separator: ", ")) + failing,
-                             adapterItems(s)))
+        for id in SettingsLayout.menu {
+            switch id {
+            case "permissions": menu.addItem(permissionsItem(s))
+            case "microphone": menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
+            case "inputVolume": menu.addItem(volumeItem(s))
+            case "labelRecordings": menu.addItem(action("Label Recordings…") { $0.openLabeling() })
+            default: break
+            }
+        }
         menu.addItem(.separator())
-        menu.addItem(action("Label Recordings…") { $0.openLabeling() })
-        menu.addItem(action("Open the Log") { $0.openLog() })
+        let settings = action("Settings…") { $0.openSettings() }
+        settings.keyEquivalent = ","
+        menu.addItem(settings)
         menu.addItem(NSMenuItem(title: "Quit Local Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    private func modelItems(_ s: MenuState) -> [NSMenuItem] {
-        var items = s.config.models.map { name in checked(action(name) { $0.choose(model: name) }, name == s.config.model) }
-        if let e = s.config.error { items.append(disabled(e)) }
-        return items
-    }
-
-    /// The config's language without a region ("ru" of "ru-RU"), as the server reads it.
-    private func code(_ s: MenuState) -> String { String(s.config.language.prefix(while: { $0 != "-" })) }
-
-    private func languageName(_ s: MenuState) -> String {
-        if s.config.language.isEmpty { return "the speech's own" }
-        return s.server?.languages.first { $0.code == code(s) }?.name ?? s.config.language
-    }
-
-    private func languageItems(_ s: MenuState) -> [NSMenuItem] {
-        var items = [checked(action("The Speech's Own Language") { $0.choose(language: "") }, s.config.language.isEmpty),
-                     .separator()]
-        let languages = s.server?.languages ?? []
-        items += languages.map { l in checked(action(l.name) { $0.choose(language: l.code) }, l.code == code(s)) }
-        if !s.config.language.isEmpty, !languages.contains(where: { $0.code == code(s) }) {
-            let note = s.server == nil ? "the server has not answered yet" : "the server's prompt does not name it"
-            items.append(checked(disabled("\(s.config.language) (\(note))"), true))
-        }
-        return items
+    /// One line for the permissions: a granted one is a grey item with a check; a missing one opens the place in
+    /// System Settings where it is given.
+    private func permissionsItem(_ s: MenuState) -> NSMenuItem {
+        let micOK = s.microphone == .authorized
+        let missing = [s.accessibility ? nil : "Accessibility", micOK ? nil : "Microphone"].compactMap { $0 }
+        let accessibility = s.accessibility ? checked(disabled("Accessibility"), true)
+            : action("Accessibility: Allow…") { $0.allowAccessibility() }
+        let microphone = micOK ? checked(disabled("Microphone"), true) : action("Microphone: Allow…") { $0.allowMicrophone() }
+        let title = missing.isEmpty ? "Permissions: All Granted" : "Permissions: Allow " + missing.joined(separator: " and ")
+        return submenu(title, [accessibility, microphone])
     }
 
     /// The config's microphone is this input: the built-in one for "builtin", the device for its UID.
@@ -143,22 +121,6 @@ final class MenuBar: NSObject, NSMenuDelegate {
         return items
     }
 
-    private func adapterItems(_ s: MenuState) -> [NSMenuItem] {
-        guard let server = s.server else { return [disabled("The server has not answered yet.")] }
-        guard !server.adapters.isEmpty else { return [disabled("The server has no adapters.")] }
-        var items: [NSMenuItem] = []
-        for a in server.adapters {
-            let on = s.config.adapters[a.name] == true
-            let item = checked(action(a.name) { $0.enable(adapter: a.name, !on) }, on)
-            item.toolTip = a.description
-            items.append(item)
-            if let e = a.error { items.append(disabled("  " + cut(e, Tuning.menuErrorChars))) }
-        }
-        items += [.separator(), disabled("An adapter gives the model the chat of the app you dictate into."),
-                  disabled("With none on, dictation has no context.")]
-        return items
-    }
-
     private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
         let m = NSMenu()
         items.forEach(m.addItem)
@@ -171,8 +133,6 @@ final class MenuBar: NSObject, NSMenuDelegate {
         i.state = on ? .on : .off
         return i
     }
-
-    private func cut(_ s: String, _ n: Int) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
 
     private func disabled(_ title: String) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")

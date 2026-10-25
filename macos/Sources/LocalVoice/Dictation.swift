@@ -22,6 +22,9 @@ final class Dictation {
     private let sampleRate: Int
     private let textWait: TimeInterval
     private let full: Bool, tree: Bool, lists: Bool
+    /// A private dictation (the private dictation's hotkey): the screen is not read. The capture keeps only the
+    /// focused element, for the insertion; the server gets no snapshot, no adapter runs, nothing is saved.
+    let isPrivate: Bool
     private let queue = DispatchQueue(label: "local-voice.dictation.send")
     private let recorder: Recorder
     private let microphone: String
@@ -35,7 +38,8 @@ final class Dictation {
     /// reads the frontmost app, so the snapshot has its window, ancestors and processes. `tree`: the app is an
     /// Electron app whose tree an enabled adapter needs. `lists`: an enabled adapter reads the rows of the app's window
     /// lists (its manifest's "screen").
-    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false) {
+    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false, isPrivate: Bool = false) {
+        self.isPrivate = isPrivate
         self.config = config
         self.sampleRate = server?.sampleRate ?? Tuning.defaultSampleRate
         self.textWait = server?.textWaitSeconds ?? Tuning.defaultTextWaitSeconds
@@ -52,7 +56,8 @@ final class Dictation {
         self.task = task
         task.resume()
         receive()
-        let config = self.config, full = self.full, tree = self.tree, lists = self.lists, rate = self.sampleRate
+        let config = self.config, rate = self.sampleRate, isPrivate = self.isPrivate
+        let full = self.full && !isPrivate, tree = self.tree && !isPrivate, lists = self.lists && !isPrivate
         queue.async { [weak self] in
             let capture = FocusSnapshot.capture(full: full, enableElectron: tree, lists: lists)
             DispatchQueue.main.async { self?.capture = capture }
@@ -61,7 +66,8 @@ final class Dictation {
                       + "lists \((capture.snapshot["lists"] as? [Any])?.count ?? 0), "
                       + "\(capture.snapshot["tookMs"] ?? "?") ms")
             self?.send(.string(ClientMessage.start(model: config.model, language: config.language, sampleRate: rate,
-                                                   client: Dictation.client, snapshot: capture.snapshot)))
+                                                   client: Dictation.client, snapshot: isPrivate ? [:] : capture.snapshot,
+                                                   isPrivate: isPrivate)))
         }
         do {
             try recorder.start(

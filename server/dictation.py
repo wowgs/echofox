@@ -203,11 +203,12 @@ class Dictation:
         took = time.monotonic() - t
         timings["llama_footprint_mb"] = await asyncio.to_thread(self.m.footprint_mb)
         hit = timings.get("decode_tokens") is not None and timings["decode_tokens"] >= limit
-        log.info("%s: piece %d, %.1f s of audio in %.2f s, %s prefill (%s cached) + %s decode tokens: %r", self.m.name,
+        shown = f"{len(text)} characters" if self.meta.get("private") else repr(text)  # a private text is not logged
+        log.info("%s: piece %d, %.1f s of audio in %.2f s, %s prefill (%s cached) + %s decode tokens: %s", self.m.name,
                  piece, audio, took, timings.get("prefill_tokens"), timings.get("cached_tokens"),
-                 timings.get("decode_tokens"), text)
+                 timings.get("decode_tokens"), shown)
         raw, text = text, fillers.remove(text, self.sounds)
-        if text != raw:
+        if text != raw and not self.meta.get("private"):
             log.info("%s: piece %d without hesitation sounds: %r", self.m.name, piece, text)
         if hit:
             log.warning("%s: the text reached the limit of %d tokens for %.1f s of audio and was cut", self.m.name,

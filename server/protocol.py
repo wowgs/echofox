@@ -56,6 +56,7 @@ class Start:
     client: str
     hints: dict = field(default_factory=dict)
     snapshot: dict = field(default_factory=dict)
+    private: bool = False   # a private dictation: nothing saved, no adapter, no text in the log
 
 
 def parse_start(m, models):
@@ -74,7 +75,8 @@ def parse_start(m, models):
     return Start(model=name, entry=entry, options=options, language=language, own_prompt=own.strip()[:MAX_PROMPT],
                  text_prompt=prompt(language, own.strip()[:MAX_PROMPT]), client=str(m.get("client") or "")[:CLIENT_NAME_CHARS],
                  hints=m["hints"] if isinstance(m.get("hints"), dict) else {},
-                 snapshot=m["snapshot"] if isinstance(m.get("snapshot"), dict) else {})
+                 snapshot=m["snapshot"] if isinstance(m.get("snapshot"), dict) else {},
+                 private=m.get("private") is True)
 
 
 async def handle(ws, models, args):
@@ -105,7 +107,7 @@ class Session:
     def __init__(self, ws, send, models, args, start):
         self.ws, self.send, self.models, self.args, self.start = ws, send, models, args, start
         self.rec = None
-        if args.save_recordings:
+        if args.save_recordings and not start.private:
             try:
                 self.rec = recordings.Recording(args.recordings)
             except OSError:
@@ -118,7 +120,7 @@ class Session:
         self.cut_frame, self.live_pieces = 0, 0  # the audio before cut_frame (a 30 ms frame) went into pieces
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
-                     "options": opts}
+                     "options": opts, **({"private": True} if start.private else {})}
         self.levels = Levels(self.cut["threshold_db"], self.cut["speech_above_noise_db"])
         self.audio, self.pending = bytearray(), asyncio.Queue()
         self.texts, self.errors, self.chat = [], [], {}
@@ -191,7 +193,11 @@ class Session:
     # The context and the pieces
 
     async def context(self):
-        """The adapters' context, or None; what it was goes to the record."""
+        """The adapters' context, or None; what it was goes to the record. A private dictation has none: the client
+        sent no snapshot, and no adapter runs."""
+        if self.start.private:
+            log.info("recording %s: private, no context", self.id)
+            return None
         own = [o.get("chat_history_token_budget") for o in (getattr(self.args, "adapter_options", None) or {}).values()]
         if tuning.value("chat_history_token_budget", self.start.options, self.args) <= 0 and not any(own):
             return None  # the context is off, and no adapter turns it on for itself

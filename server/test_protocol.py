@@ -113,6 +113,32 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         stub, got = await self.run_stream(START, LOUD * 7)  # 7 s < 5 + 5: no cut while speaking
         self.assertEqual([c[0] for c in stub.calls], [7.0])  # and at the stop round(7 / 5) = 1 piece
 
+    async def test_a_private_dictation_saves_nothing_has_no_context_and_logs_no_text(self):
+        with tempfile.TemporaryDirectory() as d:  # a session the Claude adapter would find, as in the test below
+            os.makedirs(os.path.join(d, "projects", "p"))
+            os.makedirs(os.path.join(d, "store", "o", "a"))
+            reply = {"type": "assistant",
+                     "message": {"id": "m1", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Готово."}]}}
+            with open(os.path.join(d, "projects", "p", "s1.jsonl"), "w") as f:
+                f.write(json.dumps(reply) + "\n")
+            with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
+                json.dump({"cliSessionId": "s1"}, f)
+            saved = {k: os.environ[k] for k in ("LOCAL_VOICE_PROJECTS", "LOCAL_VOICE_DESKTOP_SESSIONS")}
+            os.environ.update(LOCAL_VOICE_PROJECTS=os.path.join(d, "projects"),
+                              LOCAL_VOICE_DESKTOP_SESSIONS=os.path.join(d, "store"))
+            snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
+                        "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
+            before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
+            try:
+                with self.assertLogs("gemma_voice", level="INFO") as logs:
+                    stub, got = await self.run_stream({**START, "private": True, "snapshot": snapshot}, LOUD)
+            finally:
+                os.environ.update(saved)
+        self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["gemma-e4b piece 1"])
+        self.assertEqual(set(glob.glob(os.path.join(self.args.recordings, "*", "*"))), before)  # no recording folder
+        self.assertNotIn("Готово.", stub.calls[0][1])  # no context before the prompt
+        self.assertFalse(any("gemma-e4b piece 1" in line for line in logs.output))
+
     async def test_a_client_asks_what_the_server_offers(self):
         self.args.adapters = ["claude"]
         got = await self.ask_info()

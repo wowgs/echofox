@@ -1,6 +1,63 @@
-// The hotkey's logic, apart from the event monitors (TapKey in the app): a tap of one modifier key alone, pressed and
-// released within Tuning.longestTapSeconds with no other key, modifier or click in between.
+// The hotkeys' logic, apart from the event monitors (TapKey in the app): a tap of one modifier key alone, pressed and
+// released within Tuning.longestTapSeconds with no other key, modifier or click in between. A shortcut with the key
+// (⌘C with the right Command) is no tap: the other key spoils it.
 import Foundation
+
+/// A modifier key a hotkey may be: the right-hand ones, which shortcuts use less. The codes are from Carbon's
+/// Events.h (kVK_…), the masks from IOKit's IOLLEvent.h (NX_DEVICE…KEYMASK for the key itself, NX_…MASK for its kind).
+public enum TapKeyChoice: String, CaseIterable {
+    case rightOption, rightCommand, rightShift, rightControl
+
+    public var keyCode: UInt16 {
+        switch self {
+        case .rightOption: return 0x3D
+        case .rightCommand: return 0x36
+        case .rightShift: return 0x3C
+        case .rightControl: return 0x3E
+        }
+    }
+
+    /// The device bit that says this key is down.
+    public var downMask: UInt {
+        switch self {
+        case .rightOption: return 0x40
+        case .rightCommand: return 0x10
+        case .rightShift: return 0x04
+        case .rightControl: return 0x2000
+        }
+    }
+
+    /// The device bit of the same key on the left: held with it, the tap is spoiled.
+    var leftMask: UInt {
+        switch self {
+        case .rightOption: return 0x20
+        case .rightCommand: return 0x08
+        case .rightShift: return 0x02
+        case .rightControl: return 0x01
+        }
+    }
+
+    /// Its kind's flag (Option, Command, Shift, Control): the other kinds held with it spoil the tap.
+    var kindMask: UInt {
+        switch self {
+        case .rightOption: return 0x0008_0000
+        case .rightCommand: return 0x0010_0000
+        case .rightShift: return 0x0002_0000
+        case .rightControl: return 0x0004_0000
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .rightOption: return "Right Option (⌥)"
+        case .rightCommand: return "Right Command (⌘)"
+        case .rightShift: return "Right Shift (⇧)"
+        case .rightControl: return "Right Control (⌃)"
+        }
+    }
+
+    static let allKinds: UInt = 0x0002_0000 | 0x0004_0000 | 0x0008_0000 | 0x0010_0000
+}
 
 public struct TapLogic {
     public enum Event {
@@ -8,24 +65,17 @@ public struct TapLogic {
         case keyOrClick
     }
 
-    public static let rightOption: UInt16 = 61     // kVK_RightOption
-    public static let rightOptionMask: UInt = 0x40  // NX_DEVICERALTKEYMASK: the right Option is down
-    public static let leftOptionMask: UInt = 0x20   // NX_DEVICELALTKEYMASK
-    public static let otherModifiers: UInt = 0x0002_0000 | 0x0004_0000 | 0x0010_0000  // Shift, Control, Command
-
-    public let keyCode: UInt16, downMask: UInt, longest: TimeInterval
+    public let key: TapKeyChoice, longest: TimeInterval
     private var downAt: TimeInterval?
     private var spoiled = false
 
-    public init(keyCode: UInt16 = TapLogic.rightOption, downMask: UInt = TapLogic.rightOptionMask,
-                longest: TimeInterval = Tuning.longestTapSeconds) {
-        self.keyCode = keyCode
-        self.downMask = downMask
+    public init(key: TapKeyChoice = .rightOption, longest: TimeInterval = Tuning.longestTapSeconds) {
+        self.key = key
         self.longest = longest
     }
 
-    /// The key's name for the menu.
-    public var keyName: String { keyCode == TapLogic.rightOption ? "the right Option" : "key \(keyCode)" }
+    /// The flags of another kind of modifier than the key's own, for tests.
+    public var otherModifiers: UInt { TapKeyChoice.allKinds & ~key.kindMask }
 
     /// Feeds one event; true when it completes a tap.
     public mutating func feed(_ e: Event) -> Bool {
@@ -34,13 +84,13 @@ public struct TapLogic {
             if downAt != nil { spoiled = true }
             return false
         case let .flags(code, raw, t):
-            guard code == keyCode else {
+            guard code == key.keyCode else {
                 if downAt != nil { spoiled = true }
                 return false
             }
-            if raw & downMask != 0 {
+            if raw & key.downMask != 0 {
                 downAt = t
-                spoiled = raw & TapLogic.otherModifiers != 0 || raw & TapLogic.leftOptionMask != 0
+                spoiled = raw & otherModifiers != 0 || raw & key.leftMask != 0
                 return false
             }
             defer { downAt = nil }

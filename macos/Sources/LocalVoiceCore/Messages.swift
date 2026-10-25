@@ -29,6 +29,8 @@ public struct ServerInfo: Decodable, Equatable {
     public let maxRecordingSeconds: Double
     public let languages: [Language]
     public let adapters: [Adapter]
+    /// The settings the server describes; an older server sends none.
+    public let settings: [SettingInfo]?
 
     /// Apps whose focus an enabled adapter reads.
     public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }
@@ -56,12 +58,13 @@ public struct MessageError: Error, CustomStringConvertible {
 public enum ClientMessage {
     public static let info = #"{"type":"info"}"#
 
-    /// The start of a recording.
+    /// The start of a recording. `isPrivate`: the server saves nothing of it, runs no adapter and logs no text.
     public static func start(model: String?, language: String, sampleRate: Int, client: String,
-                             snapshot: [String: Any], hints: [String: Any] = [:]) -> String {
+                             snapshot: [String: Any], hints: [String: Any] = [:], isPrivate: Bool = false) -> String {
         var m: [String: Any] = ["type": "start", "language": language, "sampleRate": sampleRate,
                                 "encoding": "pcm_s16le", "client": client, "snapshot": snapshot, "hints": hints]
         if let model { m["model"] = model }
+        if isPrivate { m["private"] = true }
         return json(m)
     }
 
@@ -89,5 +92,66 @@ public enum ServerMessage: Equatable {
         case "done": return .done
         default: return .other
         }
+    }
+}
+
+/// A JSON value of a setting: its default or its value.
+public enum SettingValue: Decodable, Equatable {
+    case number(Double), bool(Bool), string(String), null
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let b = try? c.decode(Bool.self) { self = .bool(b) }
+        else if let n = try? c.decode(Double.self) { self = .number(n) }
+        else { self = .string(try c.decode(String.self)) }
+    }
+
+    /// The value as the config file holds it (NSNumber for numbers and booleans), nil for null.
+    public var json: Any? {
+        switch self {
+        case let .number(n): return n
+        case let .bool(b): return b
+        case let .string(s): return s
+        case .null: return nil
+        }
+    }
+
+    public init?(json: Any?) {
+        switch json {
+        case nil: self = .null
+        case let n as NSNumber where CFGetTypeID(n) == CFBooleanGetTypeID(): self = .bool(n.boolValue)
+        case let n as NSNumber: self = .number(n.doubleValue)
+        case let s as String: self = .string(s)
+        default: return nil
+        }
+    }
+}
+
+/// A setting the server describes in its info (server/settings.py, schema): what the settings window shows and where
+/// it may write it.
+public struct SettingInfo: Decodable, Equatable {
+    public let key: String
+    /// What it is about: cutting, speech, output, recording, context, sampling.
+    public let group: String
+    /// number, integer, boolean or string.
+    public let kind: String
+    public let `default`: SettingValue?
+    /// The server's value, when it is not the default.
+    public let value: SettingValue?
+    public let min: Double?
+    public let max: Double?
+    public let minExclusive: Bool?
+    public let maxExclusive: Bool?
+    /// Where it may be set: server (the config's "server"), model (a model's "options"), client, adapter (an
+    /// adapter's entry), config (the top of the file).
+    public let `where`: [String]
+    public let help: String
+
+    /// Whether `v` is in the setting's range.
+    public func allows(_ v: Double) -> Bool {
+        if let lo = min, minExclusive == true ? v <= lo : v < lo { return false }
+        if let hi = max, maxExclusive == true ? v >= hi : v > hi { return false }
+        return kind != "integer" || v == v.rounded()
     }
 }
