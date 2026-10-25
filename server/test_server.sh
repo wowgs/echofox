@@ -8,7 +8,9 @@
 # The ports, labels and folders are in constants.py. It reads the same config (~/.local-voice/config.json) through a
 # copy in which every model's llamaServer is the test llama-server and no model has a launchd agent, and whose port,
 # metrics and recordings folder are the test server's own; its log is its own too.
-# Usage: [VARIANT=<id>] server/test_server.sh [start|stop|status]; VARIANT picks another variant of the models (q4_0)
+# Usage: [VARIANT=<id>] [BUNDLE=<LocalVoice.app>] server/test_server.sh [start|stop|status]; VARIANT picks another
+# variant of the models (q4_0); BUNDLE runs the Python, the server and the llama-server of a bundled app (build-app.sh
+# --bundle) instead of this repository's.
 set -euo pipefail
 HERE=${0:A:h}  # before any cd (a relative $0 resolves from the current folder), and not in c(): inside a function $0 is the function's name
 cd "$HERE"
@@ -24,6 +26,9 @@ LOGS=$(c LOGS)
 STATE=${TMPDIR:-/tmp}/local-voice-test-server
 CONFIG=${LOCAL_VOICE_CONFIG:-$(c CONFIG)}
 EXIT_WAIT=$(c LAUNCHD_EXIT_TIMEOUT_S)
+# The Python and the server that run: this repository's, or a bundled app's
+if [[ -n ${BUNDLE:-} ]]; then PY=${BUNDLE:A}/Contents/Resources/python/bin/python3 SRV=${BUNDLE:A}/Contents/Resources/server
+else PY=$HERE/.venv/bin/python SRV=$HERE; fi
 pids() { pgrep -f "gemma_voice.py --config $STATE/config.json" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
 stop_tests() { for p in $(pids); do kill $p; done; for i in {1..50}; do [[ -z $(pids) ]] && break; sleep 0.1; done; }
 case ${1:-start} in
@@ -56,7 +61,7 @@ if os.environ.get("VARIANT"):  # another variant of every model, for the test
 json.dump(config, open(dst, "w"), indent=1)
 PY
     # The test llama-server: the chosen model's variant (VARIANT=q4_0 picks another) from the catalog, on the test port.
-    llama=(${(f)"$(PYTHONPATH=$HERE $HERE/.venv/bin/python -c '
+    llama=(${(f)"$(cd $SRV && $PY -c '
 import json, sys
 import constants, llama
 c = json.load(open(sys.argv[1]))
@@ -69,7 +74,7 @@ print("\n".join(llama.agent(entry, folder)["ProgramArguments"]))' $STATE/config.
     for i in {1..$EXIT_WAIT}; do launchctl print $DOMAIN/$SERVER_LABEL >/dev/null 2>&1 || break; sleep 1; done
     launchctl bootout $DOMAIN/$LABEL 2>/dev/null || true
     nohup "${llama[@]}" > $LOGS/llama-server-test.log 2>&1 &
-    nohup .venv/bin/python gemma_voice.py --config $STATE/config.json --ignore-selection \
+    nohup $PY $SRV/gemma_voice.py --config $STATE/config.json --ignore-selection \
       > $LOGS/gemma-voice-test.log 2>&1 &
     for i in {1..120}; do curl -sf http://127.0.0.1:$LLAMA_PORT/health >/dev/null && break; sleep 1; done
     curl -sf http://127.0.0.1:$LLAMA_PORT/health >/dev/null || { echo "the test llama-server does not answer; see $LOGS/llama-server-test.log" >&2; exit 1; }

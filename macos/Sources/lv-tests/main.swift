@@ -286,5 +286,23 @@ do {
           "models: the download message is the example's")
 }
 
+// The launchd agent of a bundled server.
+do {
+    let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/LocalVoice.app/Contents/Resources")
+    let p = ServerAgent.plist(python: r.appendingPathComponent("python/bin/python3"), server: r.appendingPathComponent("server"), home: home)
+    check(p["Label"] as? String == "local-voice.gemma-voice"
+          && p["ProgramArguments"] as? [String] == ["/Applications/LocalVoice.app/Contents/Resources/python/bin/python3",
+                                                    "/Applications/LocalVoice.app/Contents/Resources/server/gemma_voice.py"]
+          && p["ExitTimeOut"] as? Int == 210 && p["KeepAlive"] as? Bool == true, "server agent: its plist")
+    check(ServerAgent.bundled(resources: URL(fileURLWithPath: "/nowhere")) == nil, "server agent: none without a bundled server")
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lv-agent-\(getpid()).plist")
+    check(ServerAgent.differs(p, at: tmp), "server agent: a missing file differs")
+    try PropertyListSerialization.data(fromPropertyList: p, format: .xml, options: 0).write(to: tmp)
+    check(!ServerAgent.differs(p, at: tmp), "server agent: the same file does not")
+    try? FileManager.default.removeItem(at: tmp)
+} catch {
+    check(false, "server agent: \(error)")
+}
+
 print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -54,6 +54,10 @@ macos/build-app.sh
 open macos/build/LocalVoice.app
 ```
 
+This app is for work on the Mac where the repository is: the dictation server runs from the repository.
+
+`macos/build-app.sh --bundle` builds `macos/build/bundle/LocalVoice.app`, which carries everything it runs: the server's code, Python 3.14 with the server's packages, and `llama-server` built from source with Metal. The versions are pinned in `macos/pins.sh`. At its start, this app installs the launchd agent of its own server. `--dmg` also builds `macos/build/LocalVoice.dmg` (about 113 MB). The build fails if a library in the bundle comes from Homebrew.
+
 At the first start, macOS asks for two permissions: Microphone, and Accessibility (System Settings, Privacy & Security). The app needs Accessibility for the keys, the snapshot and the insertion of the text.
 
 `build-app.sh` signs the app with the certificate "Local Voice Dev" from the login keychain. `LOCAL_VOICE_SIGN` names another one. Create a self-signed code-signing certificate with that name once. With it, macOS keeps the permissions after each rebuild. Without it, the script signs ad hoc, and macOS refuses the Accessibility permission after a rebuild.

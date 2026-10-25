@@ -30,7 +30,7 @@ server/.venv/bin/python server/try_wav.py recording.wav --language ru
 server/test_server.sh stop
 ```
 
-- `start` stops the working dictation server (after its running recording) and the working `llama-server`, so that only one model is in memory. Then it starts a test dictation server on `ws://127.0.0.1:8091` with its own `llama-server` on port 8093. The test server has its own copy of your config, with its own port, metrics and recordings. `VARIANT=q4_0 server/test_server.sh start` runs another variant of the model.
+- `start` stops the working dictation server (after its running recording) and the working `llama-server`, so that only one model is in memory. Then it starts a test dictation server on `ws://127.0.0.1:8091` with its own `llama-server` on port 8093. The test server has its own copy of your config, with its own port, metrics and recordings. `VARIANT=q4_0 server/test_server.sh start` runs another variant of the model. `BUNDLE=macos/build/bundle/LocalVoice.app server/test_server.sh start` runs the Python, the server and the `llama-server` of a bundled app instead of the repository's.
 - `try_wav.py` sends a WAV file (16 kHz, mono, 16-bit) the way the app does, at the speed of speech, and prints each message and the wait after the stop. `--fast` sends it at once. `--options` and `--prompt` send the options and the prompt of an experiment. It reaches the working server only with `--working`.
 - Your dictation is off until `stop`. `stop` ends the test processes and starts the working dictation server again.
 

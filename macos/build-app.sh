@@ -2,7 +2,7 @@
 # Builds macos/build/LocalVoice.app and signs it. Run it with: open macos/build/LocalVoice.app
 # Usage: macos/build-app.sh [--bundle] [--dmg]
 #   no flag   the app alone, for work on this Mac: the dictation server runs from the repository (server/launchd.sh).
-#   --bundle  the app with everything it runs (docs/design/7-distribution.md): the server's code in
+#   --bundle  build/bundle/LocalVoice.app, the app with everything it runs (docs/design/7-distribution.md): the server's code in
 #             Contents/Resources/server, Python with the server's packages in Contents/Resources/python, and
 #             llama-server in Contents/Resources/llama, at the versions of pins.sh. Such an app installs the
 #             server's launchd agent itself.
@@ -25,6 +25,7 @@ done
 
 swift build -c release --product LocalVoice
 app=build/LocalVoice.app
+$bundle && app=build/bundle/LocalVoice.app  # apart from the app of this Mac's work, which must not install the agent
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/LocalVoice "$app/Contents/MacOS/"

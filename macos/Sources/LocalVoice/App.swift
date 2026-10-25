@@ -22,6 +22,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier)")
+        installServerAgent()
         menu.state = { [unowned self] in self.state() }
         settings.actions = self
         key.onTap = { [weak self] action in self?.toggle(isPrivate: action == .privateDictation) }
@@ -172,6 +173,41 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }
 
     func askServer() { server.refresh(Config.load().serverURL) }
+
+    /// The app that carries the server writes its launchd agent and starts it again, if the agent is not the
+    /// bundled server's (ServerAgent). An app without a server of its own leaves the agent alone.
+    private func installServerAgent() {
+        guard let (python, serverFolder) = ServerAgent.bundled(resources: Bundle.main.resourceURL) else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser, url = ServerAgent.url(home: home)
+        let wanted = ServerAgent.plist(python: python, server: serverFolder, home: home)
+        guard ServerAgent.differs(wanted, at: url) else { return }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/local-voice"),
+                                                    withIntermediateDirectories: true)
+            let data = try PropertyListSerialization.data(fromPropertyList: wanted, format: .xml, options: 0)
+            try data.write(to: url, options: .atomic)
+            let domain = "gui/\(getuid())"
+            launchctl(["bootout", "\(domain)/\(ServerAgent.label)"])
+            for _ in 0..<50 where launchctl(["print", "\(domain)/\(ServerAgent.label)"]) == 0 { usleep(200_000) }
+            let code = launchctl(["bootstrap", domain, url.path])
+            Log.write("server agent: the bundled server, \(url.path); bootstrap exit \(code)")
+        } catch {
+            Log.write("server agent: cannot write \(url.path): \(error)")
+        }
+    }
+
+    @discardableResult
+    private func launchctl(_ args: [String]) -> Int32 {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return -1 }
+        p.waitUntilExit()
+        return p.terminationStatus
+    }
 
     /// The hotkeys from the config: the dictation's key and the private dictation's.
     func keysChanged() {
