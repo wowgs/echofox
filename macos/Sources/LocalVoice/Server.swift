@@ -1,6 +1,8 @@
 // What the dictation server tells about itself (ServerInfo): its audio format, its wait for the text, the longest
 // recording, and its adapters (which apps to take the full focus snapshot of, which to build the tree of). Asked at
-// the start, again after a failure, and when it is older than Tuning.serverInfoMaxAgeSeconds at an app switch.
+// the start, again after a failure, when it is older than Tuning.serverInfoMaxAgeSeconds at an app switch, and every
+// Tuning.serverStatusPollSeconds while the settings window shows the server's state. onChange is called only when
+// the info or the problem changed.
 import Foundation
 import LocalVoiceCore
 
@@ -30,6 +32,8 @@ final class Server {
 
     private func received(_ result: Result<URLSessionWebSocketTask.Message, Error>, _ url: URL) {
         asking = false
+        let before = (info, problem)
+        defer { if before.0 != info || before.1 != problem { onChange() } }
         do {
             guard case .success(let m) = result else {
                 throw MessageError("the server at \(url.absoluteString) does not answer")
@@ -55,6 +59,5 @@ final class Server {
                 self?.refresh(url)
             }
         }
-        onChange()
     }
 }

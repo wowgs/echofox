@@ -11,6 +11,9 @@ public enum Tuning {
     /// The server's info: how long one request may take, and how long to wait before asking again after a failure.
     public static let serverInfoTimeoutSeconds: TimeInterval = 5
     public static let serverInfoRetrySeconds: TimeInterval = 3
+    /// While the settings window shows the server's state, it asks the server this often (one info request on the
+    /// local socket; none while the last one has not answered).
+    public static let serverStatusPollSeconds: TimeInterval = 2
     /// After the menu changes the adapters in the config, the app asks for the server's info again this much later:
     /// the server looks at the file every 2 s (server/settings.py CONFIG_CHECK_S). If a recording runs, the server
     /// applies the change after it, and the next app switch older than serverInfoMaxAgeSeconds picks it up.

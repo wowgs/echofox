@@ -57,6 +57,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     func refresh() { model?.serverChanged() }
 
     func windowWillClose(_ notification: Notification) {
+        model?.watchServer(false)
         window = nil
         titles = nil
     }
@@ -138,6 +139,19 @@ final class SettingsModel: ObservableObject {
     }
 
     func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
+
+    private var watch: Timer?
+
+    /// Asks the server for its state now and every Tuning.serverStatusPollSeconds, while the state is shown.
+    func watchServer(_ on: Bool) {
+        watch?.invalidate()
+        watch = nil
+        guard on else { return }
+        actions?.askServer()
+        watch = Timer.scheduledTimer(withTimeInterval: Tuning.serverStatusPollSeconds, repeats: true) { [weak self] _ in
+            self?.actions?.askServer()
+        }
+    }
 
     func microphoneChanged() {
         config = Config.load()
@@ -724,19 +738,28 @@ struct AdapterPage: View {
     }
 }
 
+/// The dictation server's state, asked in the background while it is shown: a dot as in macOS's own settings (green:
+/// it answers; red: it does not, and why; grey: not asked yet).
 struct ServerStatus: View {
     @ObservedObject var model: SettingsModel
+
+    private var state: (color: Color, text: String) {
+        if let p = model.problem { return (.red, p) }
+        if model.info != nil { return (.green, "Running") }
+        return (.secondary, "Checking…")
+    }
 
     var body: some View {
         LabeledContent("Dictation server") { Text(model.config.serverURL.absoluteString).textSelection(.enabled) }
         LabeledContent("State") {
-            if let p = model.problem { Text(p).foregroundStyle(.red) }
-            else if model.info != nil { Text("Running") } else { Text("Not checked yet").foregroundStyle(.secondary) }
+            HStack(spacing: 6) {
+                Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(state.color)
+                Text(state.text).textSelection(.enabled)
+            }
+            .accessibilityElement(children: .combine)
         }
+        .onAppear { model.watchServer(true) }
+        .onDisappear { model.watchServer(false) }
         LabeledContent("Model") { Text(model.config.model ?? "none") }
-        HStack {
-            Spacer()
-            Button("Ask Again") { model.actions?.askServer() }
-        }
     }
 }
