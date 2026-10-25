@@ -1,79 +1,86 @@
-# The menu bar app
+# Use the Mac app
 
-Local Voice is a menu bar app. It records your speech, sends it to [the dictation server](1-server.md) and puts the text where you write. Its code is in `macos/`.
+Local Voice lives in the menu bar. Start and stop dictation from the keyboard, without switching away from the app you're writing in.
 
-Related docs: [the config file](2-config.md), [the recordings and labels](5-recordings.md), [the design of the interface](../design/5-ui.md).
+See also: [configuration](2-config.md), [saved recordings](5-recordings.md), and [build from source](7-development.md#build-from-source).
 
 ## Dictate
 
-- Tap the right Option key to start a dictation. Tap it again to stop. A tap means that you press and release the key alone.
-- Tap the right Command key for a private dictation. The app then reads only the input box and sends no snapshot. The server saves nothing of the recording and writes no text into its log. The icon is purple while it records.
-- You choose the keys in the settings window.
-- The app stops a recording by itself after 60 s without speech (`silenceStopSeconds`). The server stops it at its time limit, 30 minutes by default.
+1. Click a text field.
+2. Tap and release **right Option** to start recording.
+3. Speak, then tap the same key to stop.
+
+Use **right Command** for private dictation. It skips conversation context and saves no audio or transcript. The app still identifies the input field so it can insert your text. The recording icon is purple.
+
+A tap means pressing and releasing the key on its own. Change either key in **Settings → General**.
+
+Recording stops automatically after 60 seconds without speech by default. The server also enforces a recording limit of 30 minutes by default. Both limits are configurable.
 
 ## Where the text goes
 
-1. If an input box has the focus when the text comes back, the text goes there. You can click into a box while you speak.
-2. Otherwise the text goes into the box that had the focus at the tap. Its app comes to the front again.
-3. Otherwise the text goes to the clipboard, and the menu says so.
+The app chooses the destination when the result arrives:
 
-The app first inserts the text with Accessibility, in place of the selected text. If the app in front refuses that, or the text does not appear, Local Voice pastes the text with Cmd+V and then puts the old clipboard back.
+1. Use the currently focused text field. You can move to another field while speaking.
+2. Otherwise, use the field focused when recording began, bringing its app to the front.
+3. If neither works, copy the text to the clipboard and show a message in the menu.
 
-After the stop, the app waits up to 180 s for each next piece of text.
+Local Voice first tries Accessibility insertion, replacing selected text. If the target app refuses it or the text does not appear, Local Voice tries Cmd+V and restores the previous clipboard afterward.
+
+After recording stops, the app waits up to 180 seconds for each next piece of text.
 
 ## The first start
 
-If no quantization of the model is downloaded, the app opens a window that asks which one to download. It shows the size of the download and the memory of each, and it recommends the biggest one that takes at most half of the Mac's memory: Q4_0 on 16 GB, Q8_0 on 24 GB and more. The dictation server downloads it, with its progress in the window.
+Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
+
+If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**.
+
+The server handles downloads, so they continue if you close the settings window.
 
 ## The menu and the settings window
 
-The menu has the things that you use often:
+The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Settings…** (⌘,), and Quit. Input volume is the same control as in macOS Sound settings.
 
-- Permissions, only while one is missing. A click on a missing one opens its place in System Settings.
-- The microphone and its input volume. The volume is the one in the Sound settings of macOS.
-- Label Recordings…
-- Settings… (⌘,) and Quit.
+The icon shows recording, private recording, processing, or an error.
 
-The icon shows the state: recording, private recording, waiting for the text, or a problem.
+| Settings page | Use it to |
+|---|---|
+| General | Choose dictation keys and recording limits. |
+| Microphone | Select the input device. |
+| Language | Choose the language and edit language-specific prompt notes or hesitation sounds. |
+| Model | Choose a downloaded variant, edit the prompt, change the model folder, or download and remove variants. |
+| Individual adapters | Enable conversation context for a supported app and adjust its limits. |
+| Recordings & Labels | Choose whether and where to save recordings and labels. |
+| Diagnostics | Inspect server status and diagnostic information. |
 
-The settings window has one page for each owner of settings: General, Microphone, Language, Model, the adapters, Recordings & Labels and Diagnostics. On the page Model you choose the model, its quantization (only one whose files are downloaded), the models folder and the prompt. Each other quantization has Download, with its progress and Cancel, or Remove when its files are there. The dictation server does the download, so it goes on when you close the window. Settings for people who tune the model and the context are in the Advanced section of their page. Advanced opens on a click, and its title says how many of its values you changed. The server describes its own settings, so a new one shows in the window by itself.
+Advanced sections hold tuning options. Their headings show how many values differ from the defaults. The server supplies setting descriptions, so new server settings can appear without an app update.
 
 ## Label recordings
 
-Label Recordings… opens a window of cards. Each card is one piece of a saved recording that has no label yet, in random order. The card plays the piece and shows its text. You correct the text into what you meant to write: no hesitation sounds, no repeated words, and after a slip only the corrected words. A model trained on these labels learns to leave such things out.
+**Label Recordings…** opens unlabelled audio pieces in random order. Listen, then correct the transcript to the text you intended to write. Remove hesitation sounds and repeated words; after a self-correction, keep the corrected wording.
+
+This prepares data for future model training. It does not train the model automatically.
 
 | Key | Action |
 |---|---|
-| ⌘↩ | Save and Next: keep the label as `verified`. |
-| ⌘U | Unusable: noise, a TV or another voice. |
-| ⌘L | Later: keep the piece for next time. |
-| Esc | Stop: close the window. |
+| ⌘↩ | Save and Next: save the corrected text as `verified`. |
+| ⌘U | Unusable: mark noise, a TV, or another voice. |
+| ⌘L | Later: leave the piece for another session. |
+| Esc | Close the window. |
 
-[The recordings and labels](5-recordings.md) says where the labels go.
+See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
 ## Build and start
 
-```
-macos/build-app.sh
-open macos/build/LocalVoice.app
-```
+Follow the [development guide](7-development.md) for prerequisites and commands. A development app uses the server in the checkout. A bundled app includes Python, server dependencies, and `llama-server`; it installs its own launchd agent.
 
-This app is for work on the Mac where the repository is: the dictation server runs from the repository.
+The app log is `~/Library/Logs/local-voice/app.log`. It records text lengths, not transcript contents.
 
-`macos/build-app.sh --bundle` builds `macos/build/bundle/LocalVoice.app`, which carries everything it runs: the server's code, Python 3.14 with the server's packages, and `llama-server` built from source with Metal. The versions are pinned in `macos/pins.sh`. At its start, this app installs the launchd agent of its own server. `--dmg` also builds `macos/build/LocalVoice.dmg` (about 113 MB). The build fails if a library in the bundle comes from Homebrew.
+## Code map
 
-At the first start, macOS asks for two permissions: Microphone, and Accessibility (System Settings, Privacy & Security). The app needs Accessibility for the keys, the snapshot and the insertion of the text.
-
-`build-app.sh` signs the app with the certificate "Local Voice Dev" from the login keychain. `LOCAL_VOICE_SIGN` names another one. Create a self-signed code-signing certificate with that name once. With it, macOS keeps the permissions after each rebuild. Without it, the script signs ad hoc, and macOS refuses the Accessibility permission after a rebuild.
-
-The log of the app is `~/Library/Logs/local-voice/app.log`. It has the length of each text, never the text.
-
-## The code
-
-| Folder in `macos/Sources` | What it holds |
+| Folder in `macos/Sources` | Purpose |
 |---|---|
-| `LocalVoice/` | The app. `App.swift` connects the parts: the permissions, the server, the keys, the menu, the dictation, the recorder, the insertion and the clipboard. `SettingsWindow.swift` is the settings window. |
-| `LocalVoiceCore/` | The logic that needs no screen and no permission: the config, the messages of the protocol, the logic of the keys, the settings (`SettingStore.swift`, `SettingsLayout.swift`), the numbers of the app (`Tuning.swift`). |
-| `FocusSnapshot/` | The focus snapshot. |
-| `lv-snapshot/` | A tool that prints a focus snapshot. |
-| `lv-tests/` | The checks of `LocalVoiceCore`: `swift run --package-path macos lv-tests`. |
+| `LocalVoice/` | App lifecycle, permissions, menu, settings window, microphone, dictation, and insertion. |
+| `LocalVoiceCore/` | Config, protocol, key handling, and settings logic that needs no screen access. |
+| `FocusSnapshot/` | Capture the focused app and input field. |
+| `lv-snapshot/` | Command-line snapshot inspection tool. |
+| `lv-tests/` | Checks for `LocalVoiceCore`. |

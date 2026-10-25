@@ -1,10 +1,10 @@
-# Build, tests and tools
+# Build and develop Local Voice
 
-This page is for work on the code of Local Voice. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
+Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
 
 ## Build from source
 
-On this setup, the dictation server runs from the repository, and `llama-server` comes from Homebrew.
+Run these commands from the repository root on an Apple Silicon Mac. You need Homebrew and Swift build tools. This development setup runs the dictation server from the checkout and uses Homebrew’s `llama-server`.
 
 1. Install llama.cpp and Python:
 
@@ -30,21 +30,27 @@ On this setup, the dictation server runs from the repository, and `llama-server`
 
 5. Allow Microphone and Accessibility when macOS asks. If no model is downloaded, the app asks which one to download.
 
-`server/launchd.sh status` and `server/launchd.sh uninstall` do what they say. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
+Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninstall` to remove it. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
 
-To build the app that carries everything, as the release does: `macos/build-app.sh --bundle` or `--dmg` ([the menu bar app](4-app.md#build-and-start)).
+## Build a distributable app
+
+Run `macos/build-app.sh --bundle` to create `macos/build/bundle/LocalVoice.app`, or use `--dmg` to also create `macos/build/LocalVoice.dmg`.
+
+The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. The build rejects libraries linked from Homebrew. Models are downloaded separately.
+
+`LOCAL_VOICE_SIGN` selects the signing identity. Development builds use the self-signed “Local Voice Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../design/7-distribution.md).
 
 ## Run the tests
 
-The tests of the server need no model and no `llama-server`:
+Server tests need neither a downloaded model nor a running `llama-server`:
 
 ```
 server/.venv/bin/python -m unittest discover -s server
 ```
 
-They run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, a fake `launchctl`, and it refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, plugins or servers.
+Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, a fake `launchctl`, and it refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, plugins or servers.
 
-The checks of the app:
+Run app checks with:
 
 ```
 swift run --package-path macos lv-tests
@@ -52,9 +58,9 @@ swift run --package-path macos lv-tests
 
 `lv-tests` is an executable, because XCTest and Swift Testing come only with Xcode.
 
-## Try the model without your dictation
+## Test recognition on a separate server
 
-Do not run tests or experiments on the dictation server that you use. Use the test server:
+Use the test server for recognition experiments. Starting it temporarily pauses normal dictation so only one model occupies memory; stopping it restores the working server:
 
 ```
 server/test_server.sh start
@@ -62,19 +68,38 @@ server/.venv/bin/python server/try_wav.py recording.wav --language ru
 server/test_server.sh stop
 ```
 
-- `start` stops the working dictation server (after its running recording) and the working `llama-server`, so that only one model is in memory. Then it starts a test dictation server on `ws://127.0.0.1:8091` with its own `llama-server` on port 8093. The test server has its own copy of your config, with its own port, metrics and recordings. `VARIANT=q4_0 server/test_server.sh start` runs another variant of the model. `BUNDLE=macos/build/bundle/LocalVoice.app server/test_server.sh start` runs the Python, the server and the `llama-server` of a bundled app instead of the repository's.
-- `try_wav.py` sends a WAV file (16 kHz, mono, 16-bit) the way the app does, at the speed of speech, and prints each message and the wait after the stop. `--fast` sends it at once. `--options` and `--prompt` send the options and the prompt of an experiment. It reaches the working server only with `--working`.
-- Your dictation is off until `stop`. `stop` ends the test processes and starts the working dictation server again.
+`start` waits for the current recording, stops the working servers, and starts isolated test servers. The dictation endpoint is `ws://127.0.0.1:8091`; its model server uses port 8093. The test config has separate metrics and recordings.
+
+| Option | Purpose |
+|---|---|
+| `VARIANT=q4_0 server/test_server.sh start` | Test a different model variant. |
+| `BUNDLE=macos/build/bundle/LocalVoice.app server/test_server.sh start` | Test the bundled Python, server, and model runtime. |
+| `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
+| `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
+
+Input WAV files must be 16 kHz, mono, 16-bit. The client prints server messages and the delay after stopping. It reaches the working server only with `--working`.
+
+**Normal dictation stays paused until `server/test_server.sh stop`.** Stop the test server when finished to restore the working servers.
 
 The ports are in `server/constants.py`.
 
 ## CI
 
-GitHub Actions runs two workflows:
+| Workflow | Trigger | Result |
+|---|---|---|
+| `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac. |
+| `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG. |
 
-- `.github/workflows/tests.yml` runs the tests of the server and the checks of the app on a clean Mac. It runs when you start it (Actions, Run workflow) and before every release. A push does not start it: the tests run on your Mac before each commit.
-- `.github/workflows/release.yml` runs on a tag `v*`, or when you start it. It runs the tests first, then builds `LocalVoice.dmg` with `macos/build-app.sh --dmg`. On a tag, the dmg goes into a GitHub Release. Started by hand, the dmg stays as an artifact of the run for 14 days. With the Developer ID secrets (listed at the top of the file), it signs the app with Developer ID and notarizes the dmg. Without them, it signs ad hoc, which is only for tests.
+An ordinary branch push starts neither workflow. A tagged release publishes the DMG to GitHub Releases; a manual run keeps it as an artifact for 14 days.
 
-## Update the working server
+With the required Developer ID secrets, the release workflow signs and notarizes the package. Without them, it uses ad hoc signing for testing. The required secret names are listed in `.github/workflows/release.yml`.
 
-Restart the working server between two dictations, with `launchctl kickstart -k gui/$(id -u)/local-voice.gemma-voice`. On a restart, the server takes no new recording. It lets a running recording finish for up to 200 s, and launchd waits 210 s for it (`STOP_WAIT_S`, `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). But you cannot dictate until it is back.
+## Restart the working server
+
+Between dictations, run:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/local-voice.gemma-voice
+```
+
+During shutdown, the server rejects new recordings and allows up to 200 seconds for the current one to finish. launchd waits 210 seconds (`STOP_WAIT_S` and `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). Dictation resumes when the server is back.

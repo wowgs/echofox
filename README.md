@@ -78,19 +78,8 @@ Processing starts while you're still speaking, which reduces the work left after
 
 ## Documentation
 
-The reference guides describe the implementation and how to use or change it:
+Start with the [documentation index](docs/README.md) to find a guide by task.
 
-| If you want to… | Read |
-|---|---|
-| Understand the controls, settings, and text insertion | [The menu bar app](docs/reference/4-app.md) |
-| Change settings in `~/.local-voice/config.json` | [Configuration reference](docs/reference/2-config.md) |
-| Understand conversation context or write an adapter | [Chat context and adapters](docs/reference/3-context.md) |
-| Find saved audio, transcripts, and labels | [Recordings and labels](docs/reference/5-recordings.md) |
-| Understand speech processing and model behavior | [The dictation server](docs/reference/1-server.md) |
-| Work on communication between the app and server | [Protocol reference](docs/reference/6-protocol.md) |
-| Build from source or run tests | [Development guide](docs/reference/7-development.md) |
-
-Design documents are in Russian. They include the reasoning behind decisions, proposals, and work still to be verified:
-
-- **Product and design:** [What and why](docs/design/1-what-and-why.md), [Requirements](docs/design/2-requirements.md), [Constraints](docs/design/3-constraints.md), [Architecture](docs/design/4-hld.md), [Interface](docs/design/5-ui.md), [Distribution](docs/design/7-distribution.md).
-- **Plans and ideas:** [Prioritized work](docs/ideas.md), [Future ideas](docs/design/6-future-ideas.md), [Optional adapters](docs/adapters/1-idea.md), [LoRA training](docs/lora-training/1-idea.md), [Dictation terms](docs/dictation-terms/1-untitled.md).
+- **Using the app:** [controls and settings](docs/reference/4-app.md), [saved recordings](docs/reference/5-recordings.md), [conversation context](docs/reference/3-context.md).
+- **Developing:** [build and test](docs/reference/7-development.md), [speech processing](docs/reference/1-server.md), [configuration](docs/reference/2-config.md), [protocol](docs/reference/6-protocol.md).
+- **Product plans, in Russian:** [purpose and design](docs/design/1-what-and-why.md), [remaining work](docs/ideas.md), [proposed personal training](docs/lora-training/1-idea.md).

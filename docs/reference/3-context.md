@@ -1,60 +1,80 @@
-# The chat context
+# Conversation context and adapters
 
-The model hears your speech better when it knows the names and words of the conversation that you write into. An adapter finds that conversation and reads its latest messages. The server puts them before the prompt.
+An adapter supplies recent conversation text to help the speech model recognize names and terms. Dictation also works without an adapter. If the conversation cannot be identified reliably, the server proceeds without context.
 
-Without an adapter that works, the model gets only the prompt. This is the base mode.
+Private dictation never sends a context snapshot or runs an adapter.
 
-Related docs: [the dictation server](1-server.md), [the config file](2-config.md), [the adapter design](../adapters/1-idea.md).
+See also: [configuration](2-config.md), [saved context](5-recordings.md), and [adapter design decisions](../adapters/1-idea.md).
 
 ## How the server finds the conversation
 
-1. At the tap of the key, the app takes a focus snapshot. The snapshot holds the app in front, its window, the element with the cursor and the elements around it, the address and title of the nearest web page, and the working folders of the app's child processes. It holds no text of input boxes.
-2. The server asks every adapter that works whether the snapshot is its own, and how sure the adapter is.
-3. The surest adapter reads the conversation.
-4. If no adapter claims the snapshot, or no conversation is found exactly, the dictation runs without context. An adapter never guesses the conversation from the app alone, because the newest session of an app is often another one.
+1. At the start of a regular dictation, the app captures the focused app, window, input element, nearby accessibility metadata, web page information, and child-process working folders. Input-field values are excluded.
+2. Enabled adapters inspect the snapshot and report whether they can handle it, with a confidence score.
+3. The server asks the most confident adapter to retrieve the conversation.
+4. If no adapter claims the snapshot or the conversation is ambiguous, recognition uses only the normal prompt.
 
-A private dictation gets no context. The app sends no snapshot, and the server runs no adapter.
+The app collects additional screen content only for enabled adapters that request it. The server does not choose a conversation just because it is the newest session in an app.
 
 ## What the model gets
 
-The server builds a block of context from what the adapter gives:
+Context is placed before the recognition prompt, between `<context>` and `</context>`:
 
-1. A header that says where you write, for example "a Telegram chat with Anna". It also says that the context is not speech and that the model must not repeat it.
-2. The terms: words in Latin letters, and names in other alphabets (words with a capital letter inside a sentence). The most frequent come first.
-3. The newest messages that fit, oldest first.
+- A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
+- Likely terms: Latin-script words and names in other alphabets, ranked by frequency.
+- The newest messages that fit the adapter's budget, arranged from oldest to newest.
 
-The block goes between `<context>` and `</context>`, before the prompt.
+Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.
 
-Before a message goes into the block, the adapter cleans it. For example, the Claude adapter turns Markdown into plain sentences. Then the server leaves out the lines that are mostly digits and symbols, such as table rows and file paths. Their terms still go to the list.
+## Adapter settings
 
-## The settings of an adapter
-
-Each adapter has three advanced settings. Its manifest gives their defaults, and its entry in the config file changes them: `"adapters": {"telegram": {"enabled": true, "chatHistoryTokenBudget": 600}}`.
+Each adapter supplies defaults in its manifest. Override them in its config entry: `"adapters": {"telegram": {"enabled": true, "chatHistoryTokenBudget": 600}}`.
 
 | Setting | What it sets | Claude | Telegram |
 |---|---|---|---|
-| `chatHistoryTokenBudget` | The size of the whole block in tokens, at least 1 | 1000 | 2000 |
-| `chatTermsTokenBudget` | The part of the block for the terms | 200 | 200 |
-| `proseOnly` | Leave out the lines that are mostly digits and symbols | on | on |
+| `chatHistoryTokenBudget` | Total context budget in tokens; at least 1 | 1000 | 2000 |
+| `chatTermsTokenBudget` | Budget reserved for terms | 200 | 200 |
+| `proseOnly` | Exclude lines made mostly of digits and symbols | on | on |
 
-`enabled` turns the adapter on and off. A tokens count is in the tokens of the model.
+Use `enabled` to turn an adapter on or off. Budgets use the selected model’s tokenizer.
 
 ## The built-in adapters
 
-- `claude` (`server/plugins/claude/`) reads the Claude Code session that is open in the Code tab of Claude Desktop.
-  - The web area of the Code tab has the address `https://claude.ai/epitaxy/local_<id>`. Claude Desktop keeps a record of that session in `~/Library/Application Support/Claude/claude-code-sessions/`, and the record names the transcript of the session. This format is Claude Desktop's own and has no documentation.
-  - If there is no record, the adapter looks for a transcript with the title of the web area. It uses the transcript only if exactly one transcript has that title.
-  - From the transcript, only the last text of each finished answer of Claude goes to the model. Your own messages do not go: the model copied an earlier dictation into the next text. Tool calls, their results, thinking and system tags do not go either.
-- `telegram` (`server/plugins/telegram/`) reads the open chat in Telegram Desktop. Its manifest asks the app for the rows of the lists in the window (`"screen": ["lists"]`). The messages of the chat are the list above the input box. The name of the chat comes from the title of the window. The context is what the window has loaded. An update of the config never turns on an adapter that reads the screen. You turn it on in the settings window.
+| Adapter | Supported app | Context source |
+|---|---|---|
+| `claude` | Claude Desktop's Code tab | The local transcript matching the open session. Only completed assistant responses are used. |
+| `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. Enable this adapter yourself in Settings. |
 
-Adapters for the apps of OpenAI (Codex, ChatGPT) and Google (Antigravity, Gemini) are planned. Each gets the same kind of plugin.
+### Claude session matching
+
+The Code tab exposes a URL of the form `https://claude.ai/epitaxy/local_<id>`. The adapter uses it to find a session record in `~/Library/Application Support/Claude/claude-code-sessions/`, which identifies the transcript.
+
+If the record is missing, the adapter uses the web-area title only when exactly one transcript matches. This storage format is undocumented and may change.
+
+User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
+
+### Telegram screen access
+
+The manifest requests `"screen": ["lists"]`. The adapter reads the message list above the input box and takes the chat name from the window title. It can use only messages currently loaded in the window.
+
+Config migrations never enable a screen-reading adapter automatically. Adapters for Codex, ChatGPT, Antigravity, and Gemini remain planned.
 
 ## Write an adapter
 
-An adapter is a plugin: a folder with two files.
+An adapter is a Python plugin with two required files.
 
-- `adapter.json`, its manifest: `name`, `version`, `author`, `source`, `description`, `interface` (2), `apps` (the bundle IDs of the apps whose focus it reads), `electronTree` (the app builds its accessibility tree only on request), `reads` (the files it reads), `screen` (what of the screen it needs: only `lists` is possible), and `context` (the defaults of its settings).
-- `adapter.py`, a module with one subclass of `adapters.Adapter`:
+`adapter.json` describes the plugin:
+
+| Fields | Purpose |
+|---|---|
+| `name`, `version`, `author`, `source`, `description` | Identity and source information. |
+| `interface` | Adapter API version; currently `2`. |
+| `apps` | Bundle IDs of supported apps. |
+| `electronTree` | Whether the app needs to enable the Electron accessibility tree. |
+| `reads` | Declared file access. |
+| `screen` | Additional screen data; currently supports `lists`. |
+| `context` | This adapter's default context settings. |
+
+`adapter.py` contains a subclass of `adapters.Adapter`:
 
 ```
 claim(focus, hints)   -> Claim(adapter, confidence 0..1, reason) | None
@@ -62,19 +82,21 @@ context(focus, hints) -> {about, messages: [{from, text}] newest first, terms?, 
 clean(text)           -> str   ("" drops the message)
 ```
 
-`focus` is the snapshot, and `hints` is what the client sent. `about` tells the model where you write. `from` is who wrote each message. `terms` are the names and words of the conversation. `source` and `details` go only to the record of the recording.
+`focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `terms` are the names and words of the conversation. `source` and `details` are saved as recording metadata, not sent to the model.
 
-Put your own plugins in `~/Library/Application Support/Local Voice/adapters/`. The environment variable `LOCAL_VOICE_PLUGINS` sets another folder. A plugin with the name of a built-in one replaces it. A plugin works only when the config turns it on. The server checks only that the manifest reads, that its interface is 2 and that the module has its class. A plugin that you add runs with your rights, so add only code that you trust. The server loads the plugins again when their files change.
+Put plugins in `~/Library/Application Support/Local Voice/adapters/`, or set `LOCAL_VOICE_PLUGINS` to use another folder. A plugin with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed plugin files automatically.
 
-`adapters/markdown.py` turns Markdown into plain sentences, for any adapter of a chat app. Code blocks, HTML and bare links go. Inline code stays only when it is a term: a name in code, a file, a flag or a short command.
+The loader checks the manifest, interface version, and adapter class. It does not isolate the code: plugins run with your user permissions, so only install code you trust.
 
-## See which conversation a dictation gets
+`adapters/markdown.py` converts Markdown to plain text. It removes code blocks, HTML, and bare links, but keeps inline terms such as identifiers, filenames, flags, and short commands.
 
-Build the snapshot tool once. Then run it and put the cursor in an input box within 5 seconds. The process that runs it needs the Accessibility permission.
+## Inspect the selected conversation
+
+Build the snapshot tool, then run it and focus a text field within 5 seconds. The process running the tool needs Accessibility permission.
 
 ```
 swift build -c release --package-path macos
 macos/.build/release/lv-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
 
-For an adapter that reads the screen, `--lists` adds the rows of the lists. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `lv-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. Such a snapshot holds the text of the window, so keep it private.
+For an adapter that reads the screen, `--lists` adds the rows of the lists. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `lv-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

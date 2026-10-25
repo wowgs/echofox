@@ -1,75 +1,75 @@
-# The dictation server
+# Speech processing
 
-The dictation server turns a recording into text. It runs on your Mac as the launchd agent `local-voice.gemma-voice` and listens on `ws://127.0.0.1:8090`. The menu bar app is its client. The [protocol](6-protocol.md) describes what the two send to each other.
+The dictation server turns microphone audio into text. The Mac app handles recording and text insertion; the server handles speech detection, conversation context, and requests to the model.
 
-The server does not run the model itself. It sends each piece of audio to `llama-server`, the server of [llama.cpp](https://github.com/ggml-org/llama.cpp), which runs Gemma 4 E4B on the GPU of the Mac.
+![Long recordings are processed in pieces while you speak, leaving less work after you stop.](../../img/dictation-timeline.svg)
 
-Related docs: [the config file](2-config.md), [the chat context](3-context.md), [the recordings](5-recordings.md), [tests and tools](7-development.md).
+The server runs as the launchd agent `local-voice.gemma-voice`, listening on `ws://127.0.0.1:8090`. It sends audio to a separate `llama-server` process, which runs Gemma 4 E4B on the Mac's GPU.
+
+See also: [configuration](2-config.md), [conversation context](3-context.md), [protocol](6-protocol.md), and [development](7-development.md).
 
 ## From a recording to text
 
-![A dictation of 35 seconds: one piece goes to the model while you speak, and the rest goes after the stop](../../img/dictation-timeline.svg)
+1. The app streams microphone audio: 16 kHz, 16-bit, mono.
+2. Silero VAD detects speech as the audio arrives. A voice activity detector (VAD) distinguishes speech from silence. The server uses Silero v6.2.3 through onnxruntime.
+3. Once 20 seconds have accumulated since the previous cut, the server finds the quietest point between seconds 12 and 15. It sends the completed piece to the model and keeps at least 5 seconds for the next piece.
+4. When recording stops, the server splits the remaining audio into roughly 15-second pieces. No piece exceeds the model's 30-second input limit.
+5. Pieces with less than 0.3 seconds of detected speech are skipped. This prevents the model from inventing text or copying context when the input is silent.
+6. Each piece becomes a separate model request: conversation context, recognition prompt, and audio. Two requests can run at once.
+7. The server removes configured hesitation sounds, such as “э” and “мм” in Russian, and returns the text in recording order.
 
-The model starts on the first piece while you still speak, so after the stop only the last piece is left.
+While you speak, the server also prepares the shared context and prompt in the model's two processing slots. This reduces repeated work when the audio is ready. The server handles one recording at a time; a second waits for the first to finish.
 
-1. The app sends the audio while you speak: 16 kHz, 16-bit, mono.
-2. Silero VAD marks the speech in the audio as it arrives. A voice activity detector (VAD) is a small model that tells speech from silence. The server uses release v6.2.3 of [Silero VAD](https://github.com/snakers4/silero-vad) (MIT license) in onnxruntime. The VAD is the only judge of speech in the server. When it hears speech, the server sends the app a `speech` message. The app uses these messages to stop a recording after a long silence.
-3. When 20 s are heard after the last cut, the server cuts a piece. The cut is at the quietest moment of the 3 s before the 15th second, so that it does not fall inside a word. The piece is 12 to 15 s long, and the audio after it is never shorter than 5 s.
-4. At the stop, the server cuts the rest into equal pieces as close to 15 s as it can. No piece is longer than the model takes: 30 s for Gemma 4.
-5. A piece with less than 0.3 s of speech does not go to the model. On silence, the model writes text of its own or copies the chat context.
-6. Each piece is one request to `llama-server`. The request holds the chat context, the prompt and the audio of the piece. The pieces do not depend on each other, so two of them run at once, one in each slot of `llama-server`.
-7. The server takes the hesitation sounds of the language out of the text, for example "э" and "мм" in Russian. Then it sends the text of each piece to the app, in the order of the pieces.
+Speech detection also drives the app's silence timeout. Audio levels are used to choose cut points and report recording quality, not to decide whether speech is present.
 
-While you speak, the server sends the chat context and the prompt to `llama-server` alone. `llama-server` keeps them in the cache of its slots. After the stop, each piece then processes only its audio.
+## Guard against runaway output
 
-The server takes one recording at a time. A second recording waits until the first one is done.
+The output limit is 20 tokens per second of detected speech. A token is a word or part of a word. In a local sample of 346 speech pieces collected on 22–25 October 2026, the maximum observed rate was 10.4 tokens per second.
 
-## The limit of the text
+The server discards output that reaches the limit. This is a safeguard against runaway generation, not proof that every discarded result is wrong.
 
-The text of a piece can have at most 20 tokens for each second of speech in the piece. A token is a part of a word. In 346 pieces with speech (2026-10-22 to 2026-10-25), the most was 10.4 tokens per second. A text that reaches the limit is not speech that the model heard. The server drops it. The limit also stops a model that never ends its text.
+## Recognition prompt
 
-## The prompt
+The prompt combines the model's template with notes for the selected language. The Gemma template requests speech recognition, punctuation, and capitalization; it produces numbers as digits. Language notes live in `server/languages.json`.
 
-The prompt is the template of the model with the name of the language, and then the notes of the language.
+A custom model prompt replaces only the template. Language notes are still appended. The default sampling settings are temperature 1.0, top_k 64, and top_p 0.95.
 
-- The template of Gemma 4 is the speech recognition prompt from Google's model card, with one more rule: punctuation and capital letters. With this template, the model writes numbers as digits.
-- The notes of a language are in `server/languages.json`. The note for Russian says that the speaker often uses the imperative mood.
-- You can replace the template of a model in the settings window or in [the config file](2-config.md). The notes of the language always follow it.
+## Models and memory
 
-The sampler is the one that Google gives for Gemma 4: temperature 1.0, top_k 64, top_p 0.95.
+The model registry is stored in the config file. Each model has its own launchd agent, but only the selected model runs. Switching models starts the selected agent and stops the others.
 
-## The models
+`server/catalog.json` defines supported models: audio limits, languages, prompt templates, sampling defaults, runtime arguments, and downloadable variants. Gemma 4 E4B has two variants, Q4_0 and Q8_0; Q8_0 is the catalog default.
 
-The config file has a registry of models. Each model is one `llama-server` with its own launchd agent. Only the model that you choose is in memory. When you choose another model, the server starts the launchd agent of that model and stops the others.
+Both variants come from a pinned revision of `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face. They share the audio encoder file. Downloads support resuming and SHA-256 verification. See [the download protocol](6-protocol.md#download-a-model).
 
-The model catalog, `server/catalog.json`, gives what each model needs: the longest audio of one request, the languages that its prompt names, its prompt templates, its sampler, its limit of the text, the arguments of its `llama-server`, and its variants.
+The server writes the selected model's launchd agent. Changes to the variant or model folder wait until the current recording finishes before restarting `llama-server`.
 
-A variant is one quantization of the model with its files. Gemma 4 E4B has two: Q4_0 and Q8_0 (the default). Both come from the Hugging Face repository `ggml-org/gemma-4-E4B-it-GGUF` at a fixed revision, and the catalog has the size and the SHA-256 of each file. The files are in the models folder (`server.modelsFolder`), in a folder with the name of the repository: `gemma-4-E4B-it-GGUF/`. The two variants share their audio encoder file.
+Gemma runs at `http://127.0.0.1:8092` with:
 
-The server downloads the files of a variant when a client asks it to, and it can remove them again ([the protocol](6-protocol.md#download-a-model)). It continues a download that stopped, and it checks the SHA-256 of each file.
+| Setting | Reason |
+|---|---|
+| 16,384-token context, split into two 8,192-token slots | Process two audio pieces concurrently. |
+| All model layers on the GPU | Use Apple Silicon's GPU for inference. |
+| `--swa-full` | Let later pieces reuse the shared prompt text. |
+| `--cache-ram 0` | Disable the separate RAM prompt cache, which caused memory growth and swapping in a local run. |
 
-The server writes the launchd agent of the chosen model itself: `llama-server` with the files of the variant, the address of the model and the arguments of the catalog. When you choose another variant or another models folder, the server writes the agent again and restarts `llama-server` after the recording that runs.
+## Privacy and telemetry
 
-For Gemma 4 E4B, `llama-server` runs on `127.0.0.1:8092` with these arguments:
+Recognition uses local connections. Model downloads are the only external connections made by the current app and server, and require a user request.
 
-- A context of 16384 tokens in two slots of 8192 tokens, one for each of the two pieces that run at once.
-- Every layer on the GPU.
-- `--swa-full`: the full cache of the sliding-window layers of Gemma. Without it, a later piece cannot take the shared text from the cache.
-- `--cache-ram 0`: no prompt cache in RAM. The default of `llama-server` is 8 GB. It kept old requests and went to swap on a Mac with 24 GB within a day (2026-10-19).
+`server/vad.py` disables onnxruntime telemetry before loading the runtime. `llama-server` runs with `--offline` and `--no-webui`.
 
-## No telemetry
-
-The server, `llama-server` and the packages in the app send no analytics and no metrics. onnxruntime, which runs Silero VAD, has Microsoft's telemetry on by default, also on macOS: `server/vad.py` turns it off before onnxruntime loads (`ORT_DISABLE_TELEMETRY=1`). `llama-server` runs with `--offline` and `--no-webui`. The only connection outside the Mac is a model download that you ask for.
+Regular recordings may include audio, transcripts, and conversation context. See [what is saved](5-recordings.md); private dictation skips this storage.
 
 ## Settings and constants
 
-Each setting has one owner: the server, a model, an adapter, a language or the app. The owner gives the default. You change a setting only at its owner, in [the config file](2-config.md) or in the settings window.
+Each setting belongs to the server, a model, an adapter, a language, or the app. Its component supplies the default; the config file stores user overrides.
 
-A number that guards against mistakes of the model, or a number that was chosen by a measurement, is a constant and not a setting. The cutting of pieces, the speech gate and the limit of the text are constants. Their values and the reasons for them are in `server/tuning.py` and in `server/catalog.json`.
+Safety limits and values chosen through measurements are constants rather than user settings. Audio cutting, the minimum speech duration, and output limits are defined in `server/tuning.py` and `server/catalog.json`.
 
-## The files
+## Code map
 
-| File | What it does |
+| File | Purpose |
 |---|---|
 | `gemma_voice.py` | Starts the server. |
 | `protocol.py` | One connection of a client: the start, the recording, the context. |
@@ -84,7 +84,7 @@ A number that guards against mistakes of the model, or a number that was chosen 
 | `adapters/`, `plugins/` | The adapters that give [the chat context](3-context.md). |
 | `recordings.py` | [The recordings](5-recordings.md). |
 | `metrics.py` | The metrics file and its summary. |
-| `constants.py` | The numbers, paths and names that the server, its scripts and its tests share. |
+| `constants.py` | Shared constants, paths and names that the server, its scripts and its tests share. |
 
 ## Logs and metrics
 
