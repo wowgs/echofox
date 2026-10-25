@@ -155,6 +155,8 @@ public struct SettingInfo: Decodable, Equatable {
     public let kind: String
     /// Its name in the settings window, for the user.
     public let title: String
+    /// For those who tune the model and the context: shown in its page's Advanced.
+    public let advanced: Bool?
     /// The owner's default: the menu's model's for a model's setting; the fallback for an adapter's (each adapter's
     /// own default is in its info's context).
     public let `default`: SettingValue?

@@ -1,15 +1,16 @@
 """The server's settings and the config file it shares with its clients.
 
-The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 5. Each setting has one owner
-(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only:
-  {"version": 5,
+The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 6. Each setting has one owner
+(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only; the knobs
+that are constants (tuning.py) are not in it:
+  {"version": 6,
    "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
    "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
                          "prompt": "…", "options": {the model's knobs}}},
    "adapters": {"<plugin>": {"enabled": true, the adapter's knobs}},
    "adapterDefaults": {the adapters' knobs for every adapter: over each manifest's defaults, under an adapter's entry},
    "languages": {"<code>": {"notes": ["…"], "fillers": ["э", "мм"]}},
-   "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, the server's knobs}}
+   "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, "maxRecordingMinutes": 30}}
 The app's settings the server does not read. adapters: the adapter plugins that work (adapters/registry.py); none:
 the base mode, dictation without context. languages: changes to the language table (languages.json; an empty list
 turns a list off). models: the registry; each a llama.cpp llama-server, started and stopped through its launchd
@@ -112,29 +113,27 @@ SETTINGS = [
             "Labels folder", "Holds the pieces that you labeled."),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server"),
     *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server") for k in tuning.KNOBS
-      if k.owner == "server"),
+      if k.owner == "server" and k.user),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
 
 
 def model_defaults(entry):
-    """The defaults of the model's knobs: its catalog entry's options, by name."""
-    return tuning.parse(catalog.of(entry).get("options"), "model", "catalog options")
+    """The defaults of the model's knobs and its constants: its catalog entry's options, by name."""
+    return tuning.parse(catalog.of(entry).get("options"), "model", "catalog options", constants_too=True)
 
 
 def schema(st, model_entry=None):
     """The settings a client may show and change (info's "settings"), each with its owner, its owner's default and the
-    value in force: the server's knobs and its storage; the knobs of `model_entry` (the menu's model), its catalog's
-    defaults and its options; the adapters' knobs with their fallbacks (each adapter's own defaults are in info's
-    adapters, "context")."""
+    value in force: the server's settings and its storage; the settings of `model_entry` (the menu's model), its
+    catalog's defaults and its options; the adapters' settings with their fallbacks (each adapter's own defaults are
+    in info's adapters, "context"). The constants are not settings and are not here."""
     defaults = model_defaults(model_entry) if model_entry else {}
     own = tuning.parse((model_entry or {}).get("options"), "model") if model_entry else {}
-    longest = catalog.max_audio_seconds(model_entry) if model_entry else None  # what the model takes in one piece
     out = []
-    for k in tuning.KNOBS:
+    for k in (k for k in tuning.KNOBS if k.user):
         if k.owner == "server":
-            out.append(k.schema(k.default, getattr(st, k.name, k.default),
-                                high=longest if k.key == "pieceSeconds" else None))
+            out.append(k.schema(k.default, getattr(st, k.name, k.default)))
         elif k.owner == "model":
             d = defaults.get(k.name, k.default)
             out.append(k.schema(d, own.get(k.name, d)))
@@ -243,10 +242,53 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
-    """The config brought to this version, step by step (migrate_2, migrate_3, migrate_4)."""
+    """The config brought to this version, step by step (migrate_2 to migrate_5)."""
     migrate_2(path)
     migrate_3(path)
     migrate_4(path)
+    migrate_5(path)
+
+
+# Version 5 → 6: the knobs that became constants (tuning.py) leave the file; contextAsSystem is gone; the
+# recording's limit is in minutes.
+GONE_IN_6 = ("pieceSeconds", "cutSearchSeconds", "cutWhileSpeaking", "minLastPieceSeconds", "minSpeechSeconds",
+             "warmText", "maxTokensPerSpeechSecond", "contextAsSystem")
+
+
+def migrate_5(path):
+    """Version 5 → 6 (GONE_IN_6): the constants leave the section "server" and the models' options;
+    maxRecordingSeconds becomes maxRecordingMinutes. The file keeps its order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(c, dict) or c.get("version") != 5:
+        return
+    gone = []
+    server = c.get("server") if isinstance(c.get("server"), dict) else {}
+    for k in GONE_IN_6:
+        if k in server:
+            gone.append(f"server.{k}={server.pop(k)!r}")
+    if "maxRecordingSeconds" in server:
+        s = server.pop("maxRecordingSeconds")
+        if isinstance(s, (int, float)) and not isinstance(s, bool) and s > 0:
+            server["maxRecordingMinutes"] = round(s / 60, 2)
+        gone.append(f"server.maxRecordingSeconds={s!r} (now maxRecordingMinutes)")
+    for name, entry in (c.get("models") or {}).items():
+        options = entry.get("options") if isinstance(entry, dict) else None
+        if isinstance(options, dict):
+            for k in GONE_IN_6:
+                if k in options:
+                    gone.append(f"models.{name}.options.{k}={options.pop(k)!r}")
+            if not options:
+                del entry["options"]
+    c["version"] = 6
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    log.info("config %s: version 5 → 6; gone: %s", path, ", ".join(gone) or "nothing")
 
 
 # Version 4 → 5: the settings that were a second way to set the same thing. The length of the text and the drop of

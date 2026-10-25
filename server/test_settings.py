@@ -8,10 +8,12 @@ import time
 import types
 import unittest
 
+import catalog
 import constants
 import llama
 import metrics
 import settings as s
+import tuning
 from fakes import FakeAgents, StubModel
 
 
@@ -34,8 +36,8 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 
     def test_the_file_wins_then_the_defaults(self):
         models = {"a": {"llamaServer": "http://h:1"}}
-        now = s.resolve({"port": 9000, "pieceSeconds": 25.0, "models": models})
-        self.assertEqual((now["port"], now["pieceSeconds"], now["cutSearchSeconds"], now["models"]), (9000, 25.0, 3.0, models))
+        now = s.resolve({"port": 9000, "maxRecordingMinutes": 25.0, "models": models})
+        self.assertEqual((now["port"], now["maxRecordingMinutes"], now["saveRecordings"], now["models"]), (9000, 25.0, True, models))
         self.assertEqual((s.resolve({})["models"], s.resolve({})["saveRecordings"]), (s.MODEL_DEFAULT, True))
 
     def test_the_file_has_the_registry_at_the_top_and_the_server_in_its_section(self):
@@ -43,8 +45,8 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             f = os.path.join(d, "config.json")
             models = {"a": {"llamaServer": "http://h:1", "launchd": "x.a", "prompt": "P", "options": {"topK": 5}}}
             self.write(f, model="a", models=models, silenceStopSeconds=60, languages={"ru": {"fillers": ["э"]}},
-                       server={"pieceSeconds": 25, "port": 9000, "saveRecordings": False})
-            self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "pieceSeconds": 25.0,
+                       server={"maxRecordingMinutes": 25, "port": 9000, "saveRecordings": False})
+            self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "maxRecordingMinutes": 25.0,
                                                   "port": 9000, "languages": {"ru": {"fillers": ["э"]}}})
 
     def test_an_adapters_entry_may_set_its_context_budgets_and_nothing_else(self):
@@ -65,11 +67,13 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             self.write(f, models={"a": {"llamaServer": "http://h", "options": {"noRepeatNgramSize": 10}}},
-                       server={"pieceSeconds": 25, "maxRecordingSeconds": "many", "colour": "red"},
+                       server={"maxRecordingMinutes": 25, "pieceSeconds": 15, "saveRecordings": "many", "colour": "red"},
                        languages={"ru": {"fillers": "э"}})
             with self.assertLogs("gemma_voice", "ERROR") as logs:
-                self.assertEqual(s.file_settings(f), {"pieceSeconds": 25.0})
-        self.assertEqual(len(logs.output), 4)  # colour, maxRecordingSeconds, models (an unknown option), languages
+                self.assertEqual(s.file_settings(f), {"maxRecordingMinutes": 25.0})
+        # colour, pieceSeconds (a constant), saveRecordings, models (an unknown option), languages
+        self.assertEqual(len(logs.output), 5)
+        self.assertTrue(any("server.pieceSeconds is not a setting" in l for l in logs.output))
 
     def test_a_file_of_another_version_is_not_read(self):
         with tempfile.TemporaryDirectory() as d:
@@ -97,14 +101,14 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                 st = s.recording_settings(current)
                 stop = asyncio.get_running_loop().create_future()
                 w = s.ConfigWatcher(f, FakeModels(), st, current, stop, follow=False)
-                self.write(f, server={"pieceSeconds": 25, "saveRecordings": False})  # recording settings
+                self.write(f, server={"maxRecordingMinutes": 25, "saveRecordings": False})  # recording settings
                 self.assertTrue(await w.check())
-                self.assertEqual((st.piece_seconds, st.save_recordings, calls), (25.0, False, []))
+                self.assertEqual((st.max_recording_minutes, st.save_recordings, calls), (25.0, False, []))
                 models = {"b": {"llamaServer": "http://h:2"}}
-                self.write(f, server={"pieceSeconds": 25, "saveRecordings": False}, models=models)  # a model setting
+                self.write(f, server={"maxRecordingMinutes": 25, "saveRecordings": False}, models=models)  # a model setting
                 self.assertTrue(await w.check())
                 self.assertEqual(calls, [("reconfigure", models)])
-                self.write(f, server={"pieceSeconds": 25, "port": 9999, "saveRecordings": False}, models=models)
+                self.write(f, server={"maxRecordingMinutes": 25, "port": 9999, "saveRecordings": False}, models=models)
                 self.assertFalse(await w.check())  # the process ends
                 self.assertTrue(stop.done())
                 self.write(f, server={"port": 9998})
@@ -129,13 +133,13 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 
                 async def activate(self, name):
                     await asyncio.sleep(0)
-                    self_test.write(f, server={"pieceSeconds": 26})  # while the model loads
+                    self_test.write(f, server={"maxRecordingMinutes": 26})  # while the model loads
 
             self_test = self
             w = s.ConfigWatcher(f, SlowModels(), st, current, asyncio.get_running_loop().create_future())
             await w.follow_selection()
             await w.check()
-            self.assertEqual(st.piece_seconds, 26.0)
+            self.assertEqual(st.max_recording_minutes, 26.0)
 
 
 class SelectionTest(unittest.IsolatedAsyncioTestCase):
@@ -200,7 +204,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate_2(f)  # a version-3 file stays as it is
             self.assertEqual(json.load(open(f, encoding="utf-8")), c)
 
-    def test_version_3_becomes_5_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_6_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -214,17 +218,17 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 5)
+            self.assertEqual(c["version"], 6)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude"]["chatHistoryTokenBudget"], 1000)   # its own value stays
             self.assertEqual(c["adapters"]["telegram"]["chatHistoryTokenBudget"], 2000)  # the model's was its value
-            self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l", "pieceSeconds": 12})
+            self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l"})  # pieceSeconds: a constant
             self.assertEqual(c["languages"], {"ru": {"fillers": ["э"]}})
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
 
-    def test_version_4_becomes_5_without_the_second_ways_and_the_order_kept(self):
+    def test_version_4_becomes_6_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v4 = {"model": "m", "version": 4,
@@ -234,21 +238,60 @@ class MigrateTest(unittest.TestCase):
                                                                          "maxOutputTokens": 99, "topK": 5}},
                              "n": {"llamaServer": "http://h:2", "options": {"outputTokensBase": 40}}},
                   "server": {"thresholdDb": -45, "speechAboveNoiseDb": 12, "maxCharsPerSpeechSecond": 60,
-                             "pieceSeconds": 15}}
+                             "pieceSeconds": 15, "maxRecordingSeconds": 600}}
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v4, fh)
             with self.assertLogs("gemma_voice", "INFO") as logs:
                 s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
             self.assertEqual(list(c), list(v4))
-            self.assertEqual(c["version"], 5)
-            self.assertEqual(c["server"], {"pieceSeconds": 15})
+            self.assertEqual(c["version"], 6)
+            self.assertEqual(c["server"], {"maxRecordingMinutes": 10})
             self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
             self.assertNotIn("options", c["models"]["n"])
             self.assertEqual(c["adapters"]["claude"], {"enabled": False})  # a budget of 0 was the switch
             self.assertEqual(c["adapterDefaults"], {"proseOnly": False})
             self.assertIn("thresholdDb=-45", logs.output[0])
-            self.assertEqual(s.file_settings(f)["pieceSeconds"], 15.0)
+            self.assertEqual(s.file_settings(f)["maxRecordingMinutes"], 10.0)
+
+
+    def test_version_5_becomes_6_without_the_constants_and_with_minutes(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            v5 = {"version": 5, "server": {"port": 8090, "pieceSeconds": 15, "cutSearchSeconds": 3,
+                                           "maxRecordingSeconds": 1800, "warmText": True},
+                  "models": {"m": {"llamaServer": "http://h:1",
+                                   "options": {"temperature": 1, "contextAsSystem": False,
+                                               "maxTokensPerSpeechSecond": 20}},
+                             "n": {"llamaServer": "http://h:2", "options": {"contextAsSystem": True}}}}
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump(v5, fh)
+            s.migrate(f)
+            c = json.load(open(f, encoding="utf-8"))
+            self.assertEqual(c["version"], 6)
+            self.assertEqual(c["server"], {"port": 8090, "maxRecordingMinutes": 30})
+            self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})
+            self.assertNotIn("options", c["models"]["n"])
+            self.assertEqual(s.file_settings(f)["maxRecordingMinutes"], 30.0)
+
+
+class SchemaTest(unittest.TestCase):
+    def test_the_constants_are_not_settings_and_the_tuning_ones_are_advanced(self):
+        st = s.recording_settings(s.resolve({}))
+        info = {e["key"]: e for e in s.schema(st, {"catalog": "gemma-4-e4b"})}
+        for constant in ("pieceSeconds", "minSpeechSeconds", "warmText", "maxTokensPerSpeechSecond"):
+            self.assertNotIn(constant, info)
+        self.assertNotIn("advanced", info["maxRecordingMinutes"])
+        for key in ("temperature", "topK", "topP", "seed", "chatHistoryTokenBudget", "chatTermsTokenBudget",
+                    "proseOnly"):
+            self.assertTrue(info[key]["advanced"], key)
+        with self.assertRaisesRegex(ValueError, "unknown server key pieceSeconds"):
+            tuning.parse({"pieceSeconds": 12}, "server", "server")  # not the user's to set
+        self.assertEqual(tuning.parse_options({"pieceSeconds": 12}), {"piece_seconds": 12.0})  # an experiment's
+
+    def test_every_catalog_entry_gives_the_models_constants(self):
+        for name, entry in catalog.entries().items():
+            self.assertIsNotNone(s.model_defaults({"catalog": name}).get("max_tokens_per_speech_second"), name)
 
 
 if __name__ == "__main__":

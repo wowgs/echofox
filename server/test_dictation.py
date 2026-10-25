@@ -65,7 +65,9 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         return [m for m in (json.loads(l) for l in open(metrics.path(), encoding="utf-8")) if m["event"] == event]
 
     def dictation(self, options=None, model=None, recording=None):
-        return d.Dictation(model or self.fake.model(), "PROMPT", options or {}, args(), {}, recording)
+        # the model's options as a start message gives them: its catalog entry's, then these
+        return d.Dictation(model or self.fake.model(), "PROMPT", {**settings.model_defaults({}), **(options or {})},
+                           args(), {}, recording)
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
         d = self.dictation({"chat_history_token_budget": 20, "seed": 3})
@@ -109,17 +111,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("old long reply", d.text)
         self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
-
-    async def test_the_context_can_go_in_a_system_turn(self):
-        d = self.dictation({"chat_history_token_budget": 100, "context_as_system": True})
-        await d.prepare({"messages": [{"from": "Anna", "text": "hello there"}], "terms": []})
-        self.assertEqual(d.text, "PROMPT")  # the user turn: the prompt, then the audio
-        await d.warm(0)
-        await d.piece(LOUD, 1, 1)
-        for body in self.fake.completions():  # the warm-up and the piece
-            self.assertEqual(body["messages"][0]["role"], "system")
-            self.assertIn("Anna: hello there", body["messages"][0]["content"])
-            self.assertEqual(body["messages"][1]["content"][0]["text"], "PROMPT")
 
     async def test_a_piece_without_speech_never_goes_to_the_model(self):
         dictation = self.dictation({"min_speech_seconds": 0.3})
@@ -218,12 +209,13 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             def complete(self, text, pcm, limit, options, slot=None):
                 return "Э, привет, мм, мир", {}
         rec = recordings.Recording(self.dir.name)
-        dict_ = d.Dictation(Hesitant(), "PROMPT", {}, args(), {"language": "ru"}, rec)
+        dict_ = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(), {"language": "ru"}, rec)
         await dict_.prepare()
         self.assertEqual(await dict_.piece(LOUD, 1, 1), "Привет, мир")
         line = json.loads(open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8").read())
         self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
-        other = d.Dictation(Hesitant(), "PROMPT", {}, args(languages={"ru": {"fillers": []}}), {"language": "ru"})
+        other = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(languages={"ru": {"fillers": []}}),
+                            {"language": "ru"})
         await other.prepare()
         self.assertEqual(await other.piece(LOUD, 1, 1), "Э, привет, мм, мир")  # the config turned it off
 

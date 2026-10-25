@@ -3,11 +3,12 @@
 // for the server's, the models' and the adapters' settings (SettingInfo), and from the app for its own. Where it is
 // shown is the app's alone, here: to move a setting between the menu and the window, change its line in `places`. A
 // server setting without a line goes to its owner's page, in its group's section, so a new one always shows up; an
-// adapter's settings show under each adapter.
+// advanced one goes to that page's Advanced, a section that opens on a click; an adapter's settings show under each
+// adapter, in its Advanced.
 import Foundation
 
 public enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, microphone, language, model, recognition, adapters, recordings, diagnostics
+    case general, microphone, language, model, adapters, recordings, diagnostics
 
     public var id: String { rawValue }
 
@@ -17,7 +18,6 @@ public enum SettingsPage: String, CaseIterable, Identifiable {
         case .microphone: return "Microphone"
         case .language: return "Language"
         case .model: return "Model"
-        case .recognition: return "Recognition"
         case .adapters: return "Adapters"
         case .recordings: return "Recordings & Labels"
         case .diagnostics: return "Diagnostics"
@@ -31,7 +31,6 @@ public enum SettingsPage: String, CaseIterable, Identifiable {
         case .microphone: return "mic"
         case .language: return "character.bubble"
         case .model: return "cpu"
-        case .recognition: return "waveform"
         case .adapters: return "puzzlepiece.extension"
         case .recordings: return "tray.full"
         case .diagnostics: return "stethoscope"
@@ -64,7 +63,7 @@ public enum SettingsLayout {
         "model": [.page(.model, section: "Model", order: 0)],
         "prompt": [.page(.model, section: "Prompt", order: 0)],
         "adapterList": [.page(.adapters, section: "Adapters", order: 0)],
-        "adapterDefaults": [.page(.adapters, section: "Defaults for all adapters", order: 1)],
+        "adapterDefaults": [.page(.adapters, section: SettingsLayout.advanced, order: 1)],
         "serverStatus": [.page(.diagnostics, section: "Server", order: 0)],
         "openLog": [.page(.diagnostics, section: "Logs", order: 0)],
         // The server's settings placed by hand
@@ -73,28 +72,28 @@ public enum SettingsLayout {
         "labeled": [.page(.recordings, section: "Labels", order: 2)],
     ]
 
+    /// The section of a page that opens on a click: the settings for those who tune the model and the context.
+    public static let advanced = "Advanced"
+
     /// Where a server setting goes when `places` has no line for it: "owner.group" → its page and section. An
     /// adapter's settings show under each adapter (the page Adapters), not here.
     public static let groups: [String: (SettingsPage, String)] = [
-        "server.cutting": (.recognition, "Pieces"),
-        "server.speech": (.recognition, "Speech"),
-        "server.recording": (.recognition, "Recording"),
+        "server.recording": (.general, "Recording"),
         "server.storage": (.recordings, "Recordings"),
-        "model.sampling": (.model, "Sampling"),
-        "model.output": (.model, "Text"),
-        "model.context": (.model, "Chat"),
     ]
 
     /// The page of an owner's setting whose group has no line in `groups`.
-    static let ownerPages: [String: SettingsPage] = ["server": .recognition, "model": .model]
+    static let ownerPages: [String: SettingsPage] = ["server": .general, "model": .model]
 
-    /// The places of a setting: its line in `places`, else its owner's page and its group's section, else that page,
-    /// "Other". An adapter's setting has none here: it shows under each adapter.
-    public static func places(of key: String, owner: String? = nil, group: String? = nil) -> [SettingPlace] {
+    /// The places of a setting: its line in `places`, else its owner's page: in Advanced if it is an advanced one,
+    /// else in its group's section, else in "Other". An adapter's setting has none here: it shows under each adapter.
+    public static func places(of key: String, owner: String? = nil, group: String? = nil,
+                              advanced: Bool = false) -> [SettingPlace] {
         if let p = places[key] { return p }
         guard let owner, owner != "adapter" else { return [] }
-        if let (page, section) = groups["\(owner).\(group ?? "")"] { return [.page(page, section: section, order: Int.max)] }
-        return [.page(ownerPages[owner] ?? .recognition, section: "Other", order: Int.max)]
+        let grouped = groups["\(owner).\(group ?? "")"]
+        let page = grouped?.0 ?? ownerPages[owner] ?? .general
+        return [.page(page, section: advanced ? Self.advanced : grouped?.1 ?? "Other", order: Int.max)]
     }
 
     /// The ids in the menu, in order.
@@ -105,22 +104,24 @@ public enum SettingsLayout {
         }.sorted { $0 < $1 }.map(\.1)
     }
 
-    /// A page's sections in the order of their first place, each with its ids in order. `serverKeys`: the server's
-    /// settings with their owners and groups.
-    public static func sections(of page: SettingsPage, serverKeys: [(key: String, owner: String, group: String)])
+    /// A page's sections in the order of their first place, Advanced last, each with its ids in order. `serverKeys`:
+    /// the server's settings with their owners, groups and whether they are advanced.
+    public static func sections(of page: SettingsPage,
+                                serverKeys: [(key: String, owner: String, group: String, advanced: Bool)])
         -> [(section: String, ids: [String])] {
         var all: [(String, String, Int)] = []  // (section, id, order)
         let appKeys = places.keys.filter { key in !serverKeys.contains { $0.key == key } }
         for key in appKeys {
             for p in places(of: key) { if case let .page(pg, s, n) = p, pg == page { all.append((s, key, n)) } }
         }
-        for (key, owner, group) in serverKeys {
-            for p in places(of: key, owner: owner, group: group) {
+        for (key, owner, group, advanced) in serverKeys {
+            for p in places(of: key, owner: owner, group: group, advanced: advanced) {
                 if case let .page(pg, s, n) = p, pg == page { all.append((s, key, n)) }
             }
         }
         var order: [String] = []
         for (s, _, _) in all.sorted(by: { ($0.2, $0.1) < ($1.2, $1.1) }) where !order.contains(s) { order.append(s) }
+        if let i = order.firstIndex(of: advanced) { order.append(order.remove(at: i)) }
         return order.map { s in (s, all.filter { $0.0 == s }.sorted { ($0.2, $0.1) < ($1.2, $1.1) }.map(\.1)) }
     }
 }

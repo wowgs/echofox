@@ -8,7 +8,7 @@ public enum JSONEdit {
     /// JSON object or a value on the path is not an object.
     public static func set(_ path: [String], to value: Any, in text: String) throws -> String {
         guard !path.isEmpty else { throw MessageError("an empty path") }
-        var s = Scanner(Array(text.utf8))
+        let s = Scanner(Array(text.utf8))
         let start = s.skipSpace(0)
         guard start < s.b.count, s.b[start] == UInt8(ascii: "{") else { throw MessageError("not a JSON object") }
         let (range, replacement) = try s.edit(object: start, path: path[...], value: value)
@@ -22,7 +22,7 @@ public enum JSONEdit {
     /// or a value on the path is not an object.
     public static func remove(_ path: [String], in text: String) throws -> String {
         guard !path.isEmpty else { throw MessageError("an empty path") }
-        var s = Scanner(Array(text.utf8))
+        let s = Scanner(Array(text.utf8))
         let start = s.skipSpace(0)
         guard start < s.b.count, s.b[start] == UInt8(ascii: "{") else { throw MessageError("not a JSON object") }
         guard let range = try s.removal(object: start, path: path[...]) else { return text }

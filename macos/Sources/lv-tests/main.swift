@@ -84,7 +84,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 5
+  "version": 6
 }
 
 """
@@ -104,7 +104,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 5,
+  "version": 6,
   "adapters": {"enabled": true}
 }
 
@@ -186,13 +186,14 @@ do {
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     let settings = info.settings ?? []
-    check(settings.map(\.key) == ["pieceSeconds", "cutSearchSeconds"] && settings.allSatisfy { $0.owner == "server" },
-          "settings: decoded \(settings.map(\.key))")
+    check(settings.map(\.key) == ["maxRecordingMinutes", "temperature"] && settings.map(\.owner) == ["server", "model"]
+          && settings[0].advanced == nil && settings[1].advanced == true, "settings: decoded \(settings.map(\.key))")
     check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
           "settings: the model and the languages")
-    let cut = settings[1]
-    check(cut.value == .number(2.5) && cut.default == .number(3.0) && cut.minExclusive == true, "settings: values")
-    check(!cut.allows(0) && cut.allows(0.5) && cut.allows(10) && !cut.allows(10.5), "settings: range")
+    let cut = settings[0], temperature = settings[1]
+    check(cut.value == nil && cut.default == .number(30) && cut.minExclusive == true
+          && temperature.value == .number(0.7), "settings: values")
+    check(!cut.allows(0) && cut.allows(0.5) && cut.allows(1000) && !temperature.allows(-1), "settings: range")
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lv-settings-\(getpid())")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let file = dir.appendingPathComponent("config.json")
@@ -201,13 +202,13 @@ do {
       "model": "a",
       "models": {"a": {"llamaServer": "http://h:1", "options": {"topK": 2, "temperature": 1}}},
       "adapters": {"claude": {"enabled": true, "chatTermsTokenBudget": 3}},
-      "server": {"port": 8090, "cutSearchSeconds": 2}
+      "server": {"port": 8090, "maxRecordingMinutes": 2}
     }
 
     """
     try text.write(to: file, atomically: true, encoding: .utf8)
     var config = Config.load(from: file)
-    check(SettingStore.path(of: cut, model: "a") == ["server", "cutSearchSeconds"], "settings: a server's at the server")
+    check(SettingStore.path(of: cut, model: "a") == ["server", "maxRecordingMinutes"], "settings: a server's at the server")
     check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the config's value is shown")
     let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","title":"Top K","default":64,"help":"h"}"#.utf8))
     check(SettingStore.path(of: topK, model: "a") == ["models", "a", "options", "topK"]
@@ -216,11 +217,11 @@ do {
     let claude = info.adapters.first { $0.name == "claude" }!
     check(SettingStore.value(of: messages, in: config, model: "a", adapter: claude) == .number(3),
           "settings: an adapter's in its entry")
-    try Config.remove(["server", "cutSearchSeconds"], in: file)
+    try Config.remove(["server", "maxRecordingMinutes"], in: file)
     config = Config.load(from: file)
-    check(config.value(["server", "cutSearchSeconds"]) == nil && config.value(["server", "port"]) as? Int == 8090,
+    check(config.value(["server", "maxRecordingMinutes"]) == nil && config.value(["server", "port"]) as? Int == 8090,
           "settings: a value taken out")
-    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2.5), "settings: then the server's value")
+    check(SettingStore.value(of: cut, in: config, model: "a") == .number(30), "settings: then the server's value")
     let edited = try String(contentsOf: file, encoding: .utf8)
     check(edited.contains(#""server": {"port": 8090}"#), "settings: the rest of the file as it was: \(edited)")
     try Config.remove(["models", "a", "options", "topK"], in: file)
@@ -232,16 +233,20 @@ do {
     check(first == #"{"b": 2}"#, "settings: the first member out")
     check(SettingsLayout.menu == ["permissions", "microphone", "inputVolume", "labelRecordings"],
           "settings: the menu \(SettingsLayout.menu)")
-    let keys: [(key: String, owner: String, group: String)] = [("pieceSeconds", "server", "cutting"),
-        ("topK", "model", "sampling"), ("chatTermsTokenBudget", "adapter", "context"), ("brandNew", "server", "new")]
-    let recognition = SettingsLayout.sections(of: .recognition, serverKeys: keys)
+    let keys: [(key: String, owner: String, group: String, advanced: Bool)] = [
+        ("maxRecordingMinutes", "server", "recording", false), ("topK", "model", "sampling", true),
+        ("chatTermsTokenBudget", "adapter", "context", true), ("brandNew", "server", "new", false)]
+    let general = SettingsLayout.sections(of: .general, serverKeys: keys)
     let model = SettingsLayout.sections(of: .model, serverKeys: keys)
-    check(recognition.contains { $0.section == "Pieces" && $0.ids == ["pieceSeconds"] }
-          && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
-          && !recognition.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
-          "settings: the server's page \(recognition)")
-    check(model.first?.section == "Model" && model.contains { $0.section == "Sampling" && $0.ids == ["topK"] },
-          "settings: the model's page \(model)")
+    let adapters = SettingsLayout.sections(of: .adapters, serverKeys: keys)
+    check(general.contains { $0.section == "Recording" && $0.ids == ["silenceStopSeconds", "maxRecordingMinutes"] }
+          && general.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
+          && !general.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
+          "settings: the server's settings on General \(general)")
+    check(model.first?.section == "Model" && model.last?.section == "Advanced" && model.last?.ids == ["topK"],
+          "settings: the model's page, its sampler in Advanced \(model)")
+    check(adapters.last?.section == "Advanced" && adapters.last?.ids == ["adapterDefaults"],
+          "settings: the adapters' defaults in Advanced \(adapters)")
 } catch {
     check(false, "settings: \(error)")
 }

@@ -49,7 +49,7 @@ def info(args, models=None):
     table = languages.table()
     return {"type": "info", "interface": INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
             "sampleRate": constants.RATE, "encoding": constants.ENCODING,
-            "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
+            "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_minutes * 60,
             "languages": sorted(({"code": c, "name": table[c]["name"], "notes": table[c].get("notes", []),
                                   "fillers": table[c].get("fillers", [])} for c in codes if c in table),
                                 key=lambda l: l["name"]),
@@ -171,7 +171,7 @@ class Session:
 
     async def _receive(self):
         last_speech = 0.0
-        limit = self.args.max_recording_seconds
+        limit = self.args.max_recording_minutes * 60
         async for message in self.ws:
             if isinstance(message, (bytes, bytearray)):
                 self.audio += message
@@ -264,7 +264,7 @@ class Session:
                     log.exception("recording %s: preparing failed", self.id)
                     await self.fail(str(e))
                 slots = await asyncio.to_thread(dictation.slots) if dictation else 1
-                if dictation and self.args.warm_text:
+                if dictation and tuning.value("warm_text", self.start.options, self.args):
                     warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
                 # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots.
                 piece = 0

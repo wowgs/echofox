@@ -75,7 +75,7 @@ class Dictation:
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
         self.client = client_options or {}  # the start message's own: they win over the adapter's settings too
         self.recording = recording
-        self.text, self.system, self.chat_tokens = text_prompt, "", 0  # system: the context in a system turn, if so
+        self.text, self.chat_tokens = text_prompt, 0
         self.sounds = fillers.words(meta.get("language", ""), getattr(server, "languages", None))
         model.begin()
 
@@ -126,12 +126,8 @@ class Dictation:
         parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + list(reversed(kept))
                  + ["</context>"])
         block = context_header(context.get("about")) + "\n\n" + "\n\n".join(parts)
-        if tuning.value("context_as_system", options, self.server):
-            self.system = block
-            self.chat_tokens = len(self.m.tokenize(block))
-        else:
-            self.text = block + "\n\n" + self.prompt
-            self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
+        self.text = block + "\n\n" + self.prompt
+        self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
                      "chat_terms": len(terms), "chat_budget": budget}
 
@@ -143,12 +139,7 @@ class Dictation:
         log.info("%s: text before the audio ready in %.2f s, %d tokens of chat history and terms", self.m.name,
                  took, self.chat_tokens)
         metrics.metric("prepare", model=self.m.name, **self.meta, seconds=round(took, 3))
-        self._save("text-before-audio.txt", ((f"[system]\n{self.system}\n\n[user]\n" if self.system else "") +
-                                             self.text).encode("utf-8"))
-
-    def _system(self):
-        """The system turn as the model's last argument, only when there is one (a model without it takes none)."""
-        return [self.system] if self.system else []
+        self._save("text-before-audio.txt", self.text.encode("utf-8"))
 
     def slots(self):
         """How many pieces the model runs at once."""
@@ -157,7 +148,7 @@ class Dictation:
     async def warm(self, slot=None):
         """The text before the audio into the cache of llama-server's slot `slot`, before any audio."""
         t = time.monotonic()
-        timings = await run_blocking(self.m.warm, self.text, self.options, slot, *self._system(), cancel=self.m.cancel)
+        timings = await run_blocking(self.m.warm, self.text, self.options, slot, cancel=self.m.cancel)
         took = time.monotonic() - t
         log.info("%s: text before the audio warmed in slot %s in %.2f s, %s prefill (%s cached)", self.m.name, slot,
                  took, timings.get("prefill_tokens"), timings.get("cached_tokens"))
@@ -179,7 +170,7 @@ class Dictation:
         limit = output_limit(speech, self.options, self.server)
         try:
             text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                               *self._system(), cancel=self.m.cancel)
+                                               cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)

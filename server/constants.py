@@ -23,7 +23,7 @@ METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
 PLUGINS = "~/Library/Application Support/Local Voice/adapters"  # $LOCAL_VOICE_PLUGINS sets another
-CONFIG_VERSION = 5
+CONFIG_VERSION = 6
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
 RATE = 16000
@@ -36,7 +36,7 @@ REQUEST_TIMEOUT_S = TEXT_WAIT_S         # one request to llama-server
 STOP_WAIT_S = TEXT_WAIT_S + 20          # a stopping server waits for its running recordings
 LAUNCHD_EXIT_TIMEOUT_S = STOP_WAIT_S + 10  # launchd waits for the server to stop
 MODEL_START_S = 180                     # a llama-server agent has this long to answer /health
-MAX_RECORDING_S = 30 * 60               # the longest recording the server takes; the config can change it
+MAX_RECORDING_MIN = 30                 # the longest recording the server takes; the config can change it
 
 
 def path(p):

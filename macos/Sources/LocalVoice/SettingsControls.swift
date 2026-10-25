@@ -87,10 +87,10 @@ extension View {
     }
 }
 
-/// The unit of a server setting, from its key: "pieceSeconds" is in seconds, "maxTokensPerSpeechSecond" in tokens
-/// per second of speech, "chatHistoryTokenBudget" in tokens.
+/// The unit of a server setting, from its key: "maxRecordingMinutes" is in minutes, "chatHistoryTokenBudget" in
+/// tokens.
 func unit(of key: String) -> String? {
-    if key.hasSuffix("PerSpeechSecond") { return "tokens/s" }
+    if key.hasSuffix("Minutes") { return "min" }
     if key.hasSuffix("Seconds") { return "s" }
     if key.hasSuffix("TokenBudget") { return "tokens" }
     return nil

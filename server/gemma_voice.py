@@ -12,7 +12,7 @@ model's prompt and options, the adapters that give the chat context, and the rec
                    adapter that claims it gives the context. "hints": what the client knows, passed to the adapters
                    as it is. An experiment may also send "prompt" and "options", which override the model's.
   server → client  {"type":"speech"} while it hears speech; {"type":"stopped","reason":"max_duration"} if the
-                   recording reached maxRecordingSeconds (the server stops taking audio); {"type":"text","text":…} for
+                   recording reached its time limit, maxRecordingMinutes (the server stops taking audio); {"type":"text","text":…} for
                    each finished piece, in order; {"type":"error","message":…}; {"type":"done"} after the last piece,
                    then it closes
 
@@ -27,10 +27,10 @@ template (its catalog entry's, or its own in the config) with the notes of the d
 with the text before the audio, as Gemma's model card advises.
 
 The models run in llama.cpp's llama-server (server/llama_launchd.sh), through its OpenAI-compatible
-/v1/chat/completions with the audio as "input_audio". Each setting has one owner (tuning.py, settings.py): the
-server's (the cutting, the speech, the recording, the storage), a model's (its sampler, the length of its text,
-contextAsSystem; the defaults in its catalog entry), an adapter's (its context; the defaults in its manifest). The
-server logs each recording's levels (speech, noise, peak, clipping, digital silence) and keeps them in audio.json.
+/v1/chat/completions with the audio as "input_audio". Each knob has one owner (tuning.py, settings.py): the
+server's (the recording's time limit, the storage; its constants: the cutting, the speech), a model's (its sampler;
+its constant: the length of its text; the defaults in its catalog entry), an adapter's (its context; the defaults
+in its manifest). The server logs each recording's levels (speech, noise, peak, clipping, digital silence) and keeps them in audio.json.
 
 A piece's request holds the text before the audio (the messages of the place that an enabled adapter found, within
 its chatHistoryTokenBudget, terms within its chatTermsTokenBudget, then the prompt) and the piece's audio. The text is

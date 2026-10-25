@@ -65,6 +65,8 @@ final class SettingsModel: ObservableObject {
     @Published var volume: Float?
     @Published var selection: SidebarItem? = .page(.general)
     @Published var adaptersOpen = true
+    /// The Advanced sections that are open, by page or adapter: closed until a click.
+    @Published var advancedOpen: Set<String> = []
     @Published var labels = (count: 0, seconds: 0.0)
     /// What is typed in a field and not written yet, and the fields whose text was refused; by the field's id.
     @Published var drafts: [String: String] = [:]
@@ -74,6 +76,21 @@ final class SettingsModel: ObservableObject {
     /// A text field's text: its draft while one is typed, else `shown` (the value in force).
     func draft(_ id: String, shown: String) -> Binding<String> {
         Binding(get: { self.drafts[id] ?? shown }, set: { self.drafts[id] = $0 })
+    }
+
+    func isOpen(_ id: String) -> Binding<Bool> {
+        Binding(get: { self.advancedOpen.contains(id) },
+                set: { if $0 { self.advancedOpen.insert(id) } else { self.advancedOpen.remove(id) } })
+    }
+
+    /// How many of these settings the config sets, for the title of an Advanced: a setting's value at its owner, or
+    /// each value of adapterDefaults.
+    func changed(_ ids: [String]) -> Int {
+        ids.reduce(0) { n, id in
+            if id == "adapterDefaults" { return n + ((config.value(["adapterDefaults"]) as? [String: Any])?.count ?? 0) }
+            guard let s = setting(id), let p = SettingStore.path(of: s, model: config.model) else { return n }
+            return n + (config.value(p) == nil ? 0 : 1)
+        }
     }
 
     func done(_ id: String) {
@@ -96,7 +113,7 @@ final class SettingsModel: ObservableObject {
     func setting(_ key: String) -> SettingInfo? { settings.first { $0.key == key } }
 
     func sections(_ page: SettingsPage) -> [(section: String, ids: [String])] {
-        let keys = settings.map { (key: $0.key, owner: $0.owner, group: $0.group) }
+        let keys = settings.map { (key: $0.key, owner: $0.owner, group: $0.group, advanced: $0.advanced == true) }
         return SettingsLayout.sections(of: page, serverKeys: keys)
     }
 
@@ -193,13 +210,23 @@ struct PageView: View {
 
     var body: some View {
         Form {
-            if model.info == nil && [.recognition, .adapters, .recordings].contains(page) {
+            if model.info == nil && [.general, .model, .adapters, .recordings].contains(page) {
                 Text("The dictation server is not answering. Its settings appear here when it answers.")
                     .foregroundStyle(.secondary)
             }
             ForEach(model.sections(page), id: \.section) { section in
-                Section(section.section) {
-                    ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
+                if section.section == SettingsLayout.advanced {
+                    Section {
+                        DisclosureGroup(isExpanded: model.isOpen(page.rawValue)) {
+                            ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
+                        } label: {
+                            AdvancedTitle(changed: model.changed(section.ids))
+                        }
+                    }
+                } else {
+                    Section(section.section) {
+                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
+                    }
                 }
             }
         }
@@ -542,6 +569,19 @@ struct LanguageList: View {
     }
 }
 
+/// The title of an Advanced section: closed until a click; it says how many of its settings were changed, so that a
+/// change is never out of sight.
+struct AdvancedTitle: View {
+    let changed: Int
+
+    var body: some View {
+        HStack {
+            Text(SettingsLayout.advanced)
+            if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+}
+
 /// The adapters, each with its switch; a click on its name in the sidebar opens its page.
 struct AdapterList: View {
     @ObservedObject var model: SettingsModel
@@ -579,7 +619,7 @@ struct AdapterDefaults: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Text("These values apply to every adapter. A value set on an adapter's page wins.")
+        Text("Values for every adapter. A value set on an adapter's page wins.")
             .font(.caption).foregroundStyle(.secondary)
         ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
             AdapterValueRow(model: model, setting: s, adapter: nil)
@@ -614,9 +654,15 @@ struct AdapterPage: View {
                     LabeledContent("Accessibility") { Text("Asks the app to expose its window content.") }
                 }
             }
-            Section("Context") {
-                ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
-                    AdapterValueRow(model: model, setting: s, adapter: adapter)
+            Section {
+                DisclosureGroup(isExpanded: model.isOpen("adapter." + adapter.name)) {
+                    ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
+                        AdapterValueRow(model: model, setting: s, adapter: adapter)
+                    }
+                } label: {
+                    AdvancedTitle(changed: model.settings.filter {
+                        $0.owner == "adapter" && model.config.value(["adapters", adapter.name, $0.key]) != nil
+                    }.count)
                 }
             }
         }

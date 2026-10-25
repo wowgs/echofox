@@ -29,7 +29,8 @@
     "options": {
       "temperature": 1.0,
       "topK": 64,
-      "topP": 0.95
+      "topP": 0.95,
+      "maxTokensPerSpeechSecond": 20
     },
     "llamaServer": {
       "args": [

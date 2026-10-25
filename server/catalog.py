@@ -10,10 +10,11 @@ defaults (docs/design/4-hld.md, "Настройки"):
                      and capital letters: with the chat context, pieces came without them (2026-10-15 to 2026-10-20,
                      10 to 16 % of pieces; with the rule 94.9 % had punctuation on 24 recordings, 2026-10-21)
   promptAnyLanguage  the template when the language is not one it names: the card's code example
-  options            the defaults of the model's settings: Gemma 4's sampler is Google's ("Use the following
-                     standardized sampling configuration across all use cases", model card; generation_config.json of
-                     google/gemma-4-E4B-it); the length of a piece's text: the densest piece in the metrics had 95
-                     tokens for 20.6 s (4.6 a second), 10 a second leaves twice that
+  options            the defaults of the model's settings and its constants (tuning.py): Gemma 4's sampler is
+                     Google's ("Use the following standardized sampling configuration across all use cases", model
+                     card; generation_config.json of google/gemma-4-E4B-it); maxTokensPerSpeechSecond, which every
+                     entry must give: in 346 pieces with speech (2026-10-22 to 2026-10-25), Gemma 4 E4B wrote at most
+                     10.4 tokens per second of speech (8.1 for 99 % of them), and 20 is twice that
   llamaServer.args   the arguments of its llama-server (server/llama_launchd.sh)
 """
 import json
