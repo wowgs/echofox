@@ -30,6 +30,41 @@ struct SettingLine<Control: View>: View {
     }
 }
 
+/// A state as a small dot, as macOS's own settings show it (Network: green connected, red not): the same in every
+/// place of the window that shows a state.
+struct StatusDot: View {
+    let color: Color
+    var body: some View { Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(color) }
+}
+
+/// The icon of the first of these apps that is installed, at the size of a sidebar's symbols; else the symbol.
+struct AppIcon: View {
+    let bundleIds: [String]
+    var fallback = "puzzlepiece.extension"
+
+    private static var cache: [String: NSImage] = [:]
+
+    private var image: NSImage? {
+        for id in bundleIds {
+            if let i = Self.cache[id] { return i }
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                let i = NSWorkspace.shared.icon(forFile: url.path)
+                Self.cache[id] = i
+                return i
+            }
+        }
+        return nil
+    }
+
+    var body: some View {
+        if let image {
+            Image(nsImage: image).resizable().interpolation(.high).frame(width: 18, height: 18)
+        } else {
+            Image(systemName: fallback)
+        }
+    }
+}
+
 /// A text or number field that looks like one. The placeholder shows inside the empty field, grey; the field has no
 /// title of its own: in a grouped Form, SwiftUI shows a TextField's title as a label next to it. What is typed is
 /// applied on Return and when the field loses the focus (Apple HIG, Text fields: validate when people switch to

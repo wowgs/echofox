@@ -263,21 +263,25 @@ struct SettingsView: View {
     }
 }
 
-/// An adapter in the sidebar: its name, and whether it is on.
+/// An adapter in the sidebar: the icon of the app it reads, its name (grey when it is off), and a dot for its state
+/// as on the page Diagnostics: green when it is on, red when it does not work, none when it is off.
 struct AdapterSidebarRow: View {
     @ObservedObject var model: SettingsModel
     let adapter: ServerInfo.Adapter
 
+    private var on: Bool { model.config.adapters[adapter.name] == true }
+
     var body: some View {
-        HStack {
-            Text(adapterTitle(adapter.name))
-            Spacer()
-            if adapter.error != nil {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange).help("It does not work")
-            } else if model.config.adapters[adapter.name] == true {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("On")
+        Label {
+            HStack {
+                Text(adapterTitle(adapter.name)).foregroundStyle(on || adapter.error != nil ? .primary : .secondary)
+                Spacer()
+                if adapter.error != nil { StatusDot(color: .red) } else if on { StatusDot(color: .green) }
             }
+        } icon: {
+            AppIcon(bundleIds: adapter.apps)
         }
+        .help(adapter.error.map { "It does not work: \($0)" } ?? (on ? "On" : "Off"))
     }
 }
 
@@ -753,7 +757,7 @@ struct ServerStatus: View {
         LabeledContent("Dictation server") { Text(model.config.serverURL.absoluteString).textSelection(.enabled) }
         LabeledContent("State") {
             HStack(spacing: 6) {
-                Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(state.color)
+                StatusDot(color: state.color)
                 Text(state.text).textSelection(.enabled)
             }
             .accessibilityElement(children: .combine)
