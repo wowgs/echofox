@@ -28,6 +28,21 @@ Local Voice first tries Accessibility insertion, replacing selected text. If the
 
 After recording stops, the app waits up to 180 seconds for each next piece of text.
 
+## Requirements and model choices
+
+Use an Apple Silicon Mac with at least 16 GB of memory and macOS 13 or later. The app has been tested on an Apple M5 with 24 GB running macOS 27; older macOS versions have not been verified.
+
+The two downloads are differently compressed variants of Gemma 4 E4B:
+
+| Variant | Download size | Approximate memory use | Suggested Mac memory |
+|---|---|---|---|
+| Q4_0 | 5.6 GB | 7 GB | 16 GB |
+| Q8_0 | 9.0 GB | 10 GB | 24 GB or more |
+
+Memory figures are approximate. A systematic comparison of recognition quality and speed is still pending. Change the variant later in **Settings → Model**.
+
+Model files are separate from the app, so updating the app does not require downloading them again. The server handles downloading, verification, and setup.
+
 ## The first start
 
 The packaged app includes llama.cpp, Python, and the dictation server. You only choose a model variant and start its download in the app; no separate runtime or manual model installation is needed.
