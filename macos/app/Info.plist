@@ -12,6 +12,8 @@
 	<string>EchoFox</string>
 	<key>CFBundleIconFile</key>
 	<string>EchoFox</string>
+	<key>CFBundleIconName</key>
+	<string>EchoFox</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

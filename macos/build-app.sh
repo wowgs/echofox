@@ -30,9 +30,21 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/EchoFox "$app/Contents/MacOS/"
 cp app/Info.plist "$app/Contents/"
-# The app icon and the fox of the first start (macos/art/README.md)
+# The fox of the first start, and the app icon (macos/art/README.md): Icon Composer's app/EchoFox.icon, compiled by
+# actool of Xcode into Assets.car, with EchoFox.icns for older macOS. Without Xcode, the prebuilt app/EchoFox.icns,
+# which macOS 26 and later shows small on a gray tile.
 mkdir -p "$app/Contents/Resources"
-cp app/EchoFox.icns app/echofox-welcome.png "$app/Contents/Resources/"
+cp app/echofox-welcome.png "$app/Contents/Resources/"
+xcode=$(xcode-select -p)
+case $xcode in *CommandLineTools*) xcode=/Applications/Xcode.app/Contents/Developer ;; esac
+if DEVELOPER_DIR=$xcode xcrun --find actool >/dev/null 2>&1; then
+  DEVELOPER_DIR=$xcode xcrun actool app/EchoFox.icon --compile "$app/Contents/Resources" --platform macosx \
+    --minimum-deployment-target 13.0 --app-icon EchoFox --output-partial-info-plist build/icon-info.plist >/dev/null
+  [ -f "$app/Contents/Resources/Assets.car" ] || { echo "actool made no Assets.car" >&2; exit 1; }
+else
+  echo "no actool (Xcode): the prebuilt icon, on a gray tile in macOS 26 and later" >&2
+  cp app/EchoFox.icns "$app/Contents/Resources/"
+fi
 
 if $bundle; then
   . ./pins.sh

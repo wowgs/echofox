@@ -1,0 +1,25 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.00784,0.15686,0.36078,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "echofox.png",
+          "name" : "echofox"
+        }
+      ],
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
