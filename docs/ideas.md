@@ -22,7 +22,7 @@
 | Что | Состояние | Откуда |
 |---|---|---|
 | Адаптер Codex / ChatGPT | Схема есть, кода нет | обсуждение 18 октября |
-| Адаптеры Telegram Web, Antigravity, Gemini | В планах | [README](../README.md) |
+| Адаптеры Telegram Web, Antigravity, Gemini | В планах | [Reference: chat context](reference/3-context.md#the-built-in-adapters) |
 | Текст во время записи (превью у индикатора) | Отложено до маскота | обсуждение 20 октября |
 | Маскот: от концепта Echo Fox к 3D-модели | Ждёт картинок; установка Blender MCP и TRELLIS.2 / Pixal3D на ubu ждёт решения | обсуждение 18 октября |
 | Окно настроек, установщик моделей, упаковка, вкладка Chat | Шаг 4 плана | [HLD](design/4-hld.md) |
