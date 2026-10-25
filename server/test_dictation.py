@@ -12,6 +12,7 @@ import dictation as d
 import llama
 import metrics
 import recordings
+import settings
 import tuning
 from fakes import LOUD, FakeLlamaServer, StubModel, args
 
@@ -24,7 +25,7 @@ class OptionsTest(unittest.TestCase):
 
     def test_unknown_or_wrong_options_are_refused(self):
         for bad, why in [({"tempreature": 0}, "unknown option"), ({"topK": 1.5}, "integer"), ({"topP": 2}, "out of range"),
-                         ({"pieceSeconds": 45}, "out of range"), ({"temperature": "0"}, "number"), ({"topK": True}, "integer"),
+                         ({"pieceSeconds": 2}, "out of range"), ({"temperature": "0"}, "number"), ({"topK": True}, "integer"),
                          ({"noRepeatNgramSize": 10}, "unknown option"), ([1], "object")]:
             with self.assertRaisesRegex(ValueError, why):
                 tuning.parse_options(bad)
@@ -36,7 +37,11 @@ class PromptTest(unittest.TestCase):
         self.assertIn("write the digits", d.prompt("ru"))
 
     def test_the_clients_prompt_with_the_language_filled_in(self):
-        self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."), "Say it in Russian.")
+        self.assertEqual(d.prompt("en", "Say it in {LANGUAGE}."), "Say it in English.")
+        self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."),  # the language's notes follow any template
+                         "Say it in Russian.\n* The speaker often uses the imperative mood (сделай, посмотри, проверь): "
+                         "keep it as spoken.")
+        self.assertEqual(d.prompt("ru", "Say it.", configured={"ru": {"notes": []}}), "Say it.")  # the config's
         self.assertEqual(d.prompt("xx", "Say it in {LANGUAGE}."), "Say it in its original language.")
 
     def test_unknown_language_uses_the_original_language_form(self):
@@ -144,6 +149,26 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         finally:
             d.speech_seconds = saved
 
+    def test_an_adapters_settings_come_from_its_manifest_then_the_config_then_the_client(self):
+        server = args()
+        server.adapter_options = {"claude": {"chat_history_messages": 2}}
+        plain = d.Dictation(self.fake.model(), "PROMPT", {}, server, {})
+        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 2)        # the user's entry
+        self.assertEqual(plain.adapter_options("claude")["chat_terms_token_budget"], 200)    # the manifest's
+        client = d.Dictation(self.fake.model(), "PROMPT", {}, server, {}, client_options={"chat_history_messages": 3})
+        self.assertEqual(client.adapter_options("claude")["chat_history_messages"], 3)       # the client's wins
+        server.adapter_options = {}
+        self.assertEqual(plain.adapter_options("claude")["chat_history_messages"], 1)        # the manifest's
+
+    async def test_an_adapter_may_keep_the_lines_that_are_not_prose(self):
+        context = {"messages": [{"from": "A", "text": "Готово.\n20–40 с: 4,38 / 5,70"}], "terms": []}
+        prose = self.dictation({"chat_history_token_budget": 100})
+        await prose.prepare(context)
+        self.assertNotIn("4,38", prose.text)
+        everything = self.dictation({"chat_history_token_budget": 100, "prose_only": False})
+        await everything.prepare(context)
+        self.assertIn("4,38", everything.text)
+
     def test_the_default_prompt_asks_for_punctuation_and_keeps_russian_imperatives(self):
         self.assertIn("punctuation and capital letters", d.prompt("en"))
         self.assertIn("imperative mood", d.prompt("ru"))
@@ -177,9 +202,10 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(m["output_limit"], m["output_limit_hit"]) for m in self.metrics("piece")],
                          [(232, False), (50, False)])
 
-    async def test_googles_sampler_unless_the_options_set_one(self):
-        await self.dictation({}).piece(LOUD, 1)
-        await self.dictation({"top_k": 1, "seed": 3}).piece(LOUD, 1)
+    async def test_the_catalogs_sampler_unless_the_options_set_one(self):
+        defaults = settings.model_defaults({})  # Gemma 4 E4B's catalog entry: Google's sampler
+        await self.dictation(defaults).piece(LOUD, 1)
+        await self.dictation({**defaults, "top_k": 1, "seed": 3}).piece(LOUD, 1)
         self.assertEqual([{k: b.get(k) for k in ("temperature", "top_k", "top_p", "seed")} for b in self.fake.completions()],
                          [{"temperature": 1.0, "top_k": 64, "top_p": 0.95, "seed": None},
                           {"temperature": 1.0, "top_k": 1, "top_p": 0.95, "seed": 3}])
@@ -217,7 +243,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await dict_.piece(LOUD, 1), "Привет, мир")
         line = json.loads(open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8").read())
         self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
-        other = d.Dictation(Hesitant(), "PROMPT", {}, args(fillers={"ru": []}), {"language": "ru"})
+        other = d.Dictation(Hesitant(), "PROMPT", {}, args(languages={"ru": {"fillers": []}}), {"language": "ru"})
         await other.prepare()
         self.assertEqual(await other.piece(LOUD, 1), "Э, привет, мм, мир")  # the config turned it off
 

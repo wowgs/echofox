@@ -15,13 +15,15 @@ from dataclasses import dataclass, field
 from websockets.exceptions import ConnectionClosed
 
 import adapters
+import catalog
 import constants
+import languages
 import metrics
 import recordings
 import settings
 import tuning
 from audio import FRAME_BYTES, Levels, has_speech, live_cut, seconds, split
-from dictation import LANGUAGES, MAX_PROMPT, Dictation, prompt
+from dictation import MAX_PROMPT, Dictation, prompt
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
 WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording got long enough for one more slot
@@ -32,16 +34,28 @@ INTERFACE = 2  # of the protocol; the app checks it
 log = logging.getLogger("gemma_voice")
 
 
-def info(args):
-    """What a client needs to know of this server: the protocol, the audio, the waits, the languages the prompt names,
-    the adapters, and the settings it may show and change (settings.schema)."""
+def info(args, models=None):
+    """What a client needs to know of this server: the protocol, the audio, the waits, the languages the menu's model
+    names (with their notes and hesitation sounds), the adapters (with their context defaults), the menu's model (its
+    catalog entry and prompt template), and the settings it may show and change (settings.schema)."""
     enabled = set(getattr(args, "adapters", None) or [])
+    entries = getattr(models, "entries", None) or {}
+    name = settings.selected_model(settings.config_file(), models) if models else None
+    name = name or next(iter(entries), None)
+    entry = entries.get(name) if name else None
+    model = catalog.of(entry)
+    codes = model.get("languages") or list(languages.table())
+    table = languages.table()
     return {"type": "info", "interface": INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
             "sampleRate": constants.RATE, "encoding": constants.ENCODING,
             "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
-            "languages": [{"code": c, "name": n} for c, n in sorted(LANGUAGES.items(), key=lambda i: i[1])],
+            "languages": sorted(({"code": c, "name": table[c]["name"], "notes": table[c].get("notes", []),
+                                  "fillers": table[c].get("fillers", [])} for c in codes if c in table),
+                                key=lambda l: l["name"]),
             "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()],
-            "settings": settings.schema(args)}
+            "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
+                      "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds")},
+            "settings": settings.schema(args, entry)}
 
 
 @dataclass
@@ -57,10 +71,12 @@ class Start:
     hints: dict = field(default_factory=dict)
     snapshot: dict = field(default_factory=dict)
     private: bool = False   # a private dictation: nothing saved, no adapter, no text in the log
+    client_options: dict = field(default_factory=dict)  # the start message's own options: they win over every owner
 
 
-def parse_start(m, models):
-    """A start message → Start; raises ValueError with what the client is told."""
+def parse_start(m, models, args=None):
+    """A start message → Start; raises ValueError with what the client is told. The options: the model's catalog
+    defaults, then the user's options of the model, then the client's (an experiment)."""
     if not isinstance(m, dict) or m.get("type") != "start":
         raise ValueError(f"expected a start message, got {str(m)[:200]}")
     if m.get("sampleRate", constants.RATE) != constants.RATE or m.get("encoding", constants.ENCODING) != constants.ENCODING:
@@ -69,11 +85,13 @@ def parse_start(m, models):
     if name is None:
         raise ValueError(f"no model {m.get('model')}; this server has: {', '.join(models.entries)}")
     entry = models.entries[name]
-    options = {**tuning.parse_options(entry.get("options")), **tuning.parse_options(m.get("options"))}
+    client = tuning.parse_options(m.get("options"))
+    options = {**settings.model_defaults(entry), **tuning.parse(entry.get("options"), "model"), **client}
     language = str(m.get("language") or "")
-    own = m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or ""
-    return Start(model=name, entry=entry, options=options, language=language, own_prompt=own.strip()[:MAX_PROMPT],
-                 text_prompt=prompt(language, own.strip()[:MAX_PROMPT]), client=str(m.get("client") or "")[:CLIENT_NAME_CHARS],
+    own = (m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or "").strip()[:MAX_PROMPT]
+    return Start(model=name, entry=entry, options=options, language=language, own_prompt=own,
+                 text_prompt=prompt(language, own, entry, getattr(args, "languages", None)),
+                 client=str(m.get("client") or "")[:CLIENT_NAME_CHARS], client_options=client,
                  hints=m["hints"] if isinstance(m.get("hints"), dict) else {},
                  snapshot=m["snapshot"] if isinstance(m.get("snapshot"), dict) else {},
                  private=m.get("private") is True)
@@ -89,11 +107,11 @@ async def handle(ws, models, args):
     except (ValueError, TypeError):
         first = None
     if isinstance(first, dict) and first.get("type") == "info":
-        await send(**await asyncio.to_thread(info, args))
+        await send(**await asyncio.to_thread(info, args, models))
         await ws.close()
         return
     try:
-        start = parse_start(first, models)
+        start = parse_start(first, models, args)
     except ValueError as e:
         await send(type="error", message=str(e))
         await ws.close()
@@ -117,6 +135,8 @@ class Session:
         self.cut = {n: tuning.value(n, opts, args) for n in ("threshold_db", "speech_above_noise_db", "piece_seconds",
                                                              "cut_search_seconds", "cut_while_speaking",
                                                              "min_last_piece_seconds")}
+        self.max_audio = catalog.max_audio_seconds(start.entry)  # what the model takes in one request
+        self.cut["piece_seconds"] = min(self.cut["piece_seconds"], self.max_audio)
         self.cut_frame, self.live_pieces = 0, 0  # the audio before cut_frame (a 30 ms frame) went into pieces
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
@@ -128,7 +148,7 @@ class Session:
         self.mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if self.rec else None
         log.info("recording %s: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s",
                  self.id, start.model, start.client or "unknown", start.language,
-                 LANGUAGES.get(start.language.split("-")[0], "no name"), self.meta["prompt"], start.text_prompt[:120],
+                 languages.name(start.language) or "no name", self.meta["prompt"], start.text_prompt[:120],
                  opts or "none", tuning.sampler(opts))
 
     @property
@@ -198,9 +218,8 @@ class Session:
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
-        own = [o.get("chat_history_token_budget") for o in (getattr(self.args, "adapter_options", None) or {}).values()]
-        if tuning.value("chat_history_token_budget", self.start.options, self.args) <= 0 and not any(own):
-            return None  # the context is off, and no adapter turns it on for itself
+        if self.start.client_options.get("chat_history_token_budget") == 0:
+            return None  # the client turned the context off (an experiment)
         try:
             found = await asyncio.wait_for(asyncio.to_thread(adapters.context, self.start.snapshot, self.start.hints,
                                                              self.args.adapters), adapters.CONTEXT_TIMEOUT_S)
@@ -239,7 +258,8 @@ class Session:
             try:
                 try:
                     dictation = Dictation(await self.models.get(self.start.model), self.start.text_prompt,
-                                          self.start.options, self.args, self.meta, self.rec)
+                                          self.start.options, self.args, self.meta, self.rec,
+                                          client_options=self.start.client_options)
                     await dictation.prepare(await self.context())
                 except Exception as e:
                     log.exception("recording %s: preparing failed", self.id)
@@ -300,7 +320,7 @@ class Session:
             # The recording is whole: cut what is left of it now, into pieces as equal as the pauses allow.
             rest = self.cut_frame * FRAME_BYTES
             for pcm in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:], self.levels.threshold,
-                             self.cut["piece_seconds"], self.cut["cut_search_seconds"]):
+                             self.cut["piece_seconds"], self.cut["cut_search_seconds"], self.max_audio):
                 self.pending.put_nowait(pcm)
             if self.live_pieces:
                 log.info("recording %s: %d pieces cut while the speaker talked, %.1f s left at the stop", self.id,

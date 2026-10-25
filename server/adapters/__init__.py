@@ -8,8 +8,8 @@ The core (protocol.py) never looks at the screen. The client takes one focus sna
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
 and how sure it is (claim), and gives the recording to the surest one; if none claims it, the dictation runs without
 context. Only that adapter finds the session and builds its context. Every adapter has clean(text): the core passes
-each message of the context through it before the message goes to the model, takes the terms from the cleaned
-messages, then keeps only their prose lines (prose()). clean makes the app's text plain prose (adapters/markdown.py has why).
+each message of the context through it before the message goes to the model, and takes the terms from the cleaned
+messages; the lines that are not prose (prose()) go afterwards when the adapter's setting proseOnly says so. clean makes the app's text plain prose (adapters/markdown.py has why).
 
 FOCUS, the snapshot the client sends (service fields, never the text of input fields; screen content only for the
 apps of an enabled adapter whose manifest asks for it in "screen"):
@@ -156,8 +156,7 @@ def claims(focus, hints=None, enabled=None, errors=None):
 
 def context(focus, hints=None, enabled=None):
     """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
-    newest first, cleaned, with only their prose lines, "terms": the adapter's own terms, then the frequent ones of the
-    cleaned messages (taken before their lines that are not prose go),
+    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages,
     "errors": what failed in the plugins}; without "messages" if the surest adapter found nothing or failed; None if no
     enabled adapter claims the focus (with none enabled: the base mode, no context)."""
     errors = []
@@ -184,7 +183,7 @@ def context(focus, hints=None, enabled=None):
                 messages.append({"from": str(m.get("from") or ""), "text": t})
         own = [t for t in found.get("terms") or [] if isinstance(t, str)]
         out["terms"] = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
-        out["messages"] = [{**m, "text": t} for m in messages if (t := prose(m["text"]))]  # after the terms
+        out["messages"] = messages  # whole: the lines that are not prose go later, if the adapter keeps only prose
     if errors:
         out["errors"] = errors
     return out

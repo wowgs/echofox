@@ -4,11 +4,13 @@ adapters/ ($LOCAL_VOICE_PLUGINS). Each plugin is a folder with:
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads],
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
-                focused window (a messenger's messages); see FOCUS in adapters/__init__.py]}
+                focused window (a messenger's messages); see FOCUS in adapters/__init__.py],
+                "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
+                chatHistoryMessages; the user's entry in the config changes them}}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
                 import the plugin's other modules (from . import helpers)
 A plugin the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
-interface is this one, and that the module has its class (Alex's decision, 2026-10-15). A user plugin with the name of
+interface is this one, that its "context" has only the adapter's knobs, and that the module has its class. A user plugin with the name of
 a built-in one replaces it. A plugin works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
 """
 import contextlib
@@ -23,6 +25,7 @@ from dataclasses import dataclass, field
 
 import adapters
 import constants
+import tuning
 
 INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
 SCREEN = {"lists"}  # what of the screen a plugin can ask the client for (its manifest's "screen")
@@ -51,7 +54,7 @@ class Plugin:
                 "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
                 "description": m.get("description"), "apps": m.get("apps") or [],
                 "electronTree": bool(m.get("electronTree")), "reads": m.get("reads") or [],
-                "screen": m.get("screen") or [], "error": self.error}
+                "screen": m.get("screen") or [], "context": m.get("context") or {}, "error": self.error}
 
 
 def load(folder, builtin):
@@ -70,6 +73,7 @@ def load(folder, builtin):
         unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
+        tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
         package = f"lv_plugin_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
                                                       submodule_search_locations=[folder])
@@ -139,3 +143,9 @@ def plugins():
 def enabled(names):
     """The working adapters among `names` (the config's enabled ones), in the order of the plugins."""
     return [p.adapter for n, p in plugins().items() if n in set(names or ()) and p.adapter is not None]
+
+
+def context_defaults(name):
+    """The defaults of adapter `name`'s context settings, from its manifest, by name ({} for none or no adapter)."""
+    p = plugins().get(name) if name else None
+    return tuning.parse((p.manifest if p else {}).get("context"), "adapter", "\"context\"") if p and not p.error else {}

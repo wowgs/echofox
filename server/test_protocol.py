@@ -184,9 +184,10 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_models_prompt_reaches_the_model_and_a_clients_prompt_overrides_it(self):
         entries = {"g": {"llamaServer": "http://127.0.0.1:9", "prompt": "Write {LANGUAGE} words."}}
-        stub, got = await self.run_stream(START, LOUD, entries=entries)
-        stub2, got = await self.run_stream({**START, "prompt": "Mine in {LANGUAGE}."}, LOUD, entries=entries)
-        self.assertEqual([c[1] for c in stub.calls + stub2.calls], ["Write Russian words.", "Mine in Russian."])
+        english = {**START, "language": "en"}  # English has no notes to add
+        stub, got = await self.run_stream(english, LOUD, entries=entries)
+        stub2, got = await self.run_stream({**english, "prompt": "Mine in {LANGUAGE}."}, LOUD, entries=entries)
+        self.assertEqual([c[1] for c in stub.calls + stub2.calls], ["Write English words.", "Mine in English."])
 
     async def test_the_start_message_chooses_the_model(self):
         stub, got = await self.run_stream({**START, "model": "gemma-12b"}, LOUD)
@@ -246,10 +247,17 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r["recording"], self.latest()[1]["id"])
 
     async def test_the_models_options_reach_the_model_and_a_clients_options_override_them(self):
-        entries = {"g": {"llamaServer": "http://127.0.0.1:9", "options": {"temperature": 0.5, "pieceSeconds": 5}}}
-        stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0}}, LOUD * 12, entries=entries)
+        entries = {"g": {"llamaServer": "http://127.0.0.1:9", "options": {"temperature": 0.5, "topP": 0.9}}}
+        stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0, "pieceSeconds": 5}},
+                                          LOUD * 12, entries=entries)
         self.assertEqual(sorted(c[0] for c in stub.calls), [5.0, 7.0])  # pieceSeconds 5: a cut at 10 s heard, 7 s left
-        self.assertEqual(stub.calls[0][2], {"temperature": 0.0, "top_k": 1, "piece_seconds": 5.0})
+        options = stub.calls[0][2]  # the catalog's defaults, the model's options over them, the client's over both
+        self.assertEqual({k: options[k] for k in ("temperature", "top_k", "top_p", "output_tokens_per_second")},
+                         {"temperature": 0.0, "top_k": 1, "top_p": 0.9, "output_tokens_per_second": 10.0})
+        stub, got = await self.run_stream(START, LOUD, entries={"g": {"llamaServer": "http://127.0.0.1:9",
+                                                                      "options": {"pieceSeconds": 5}}})
+        self.assertEqual(got[0]["type"], "error")  # a server's setting is not the model's to set
+        self.assertIn("pieceSeconds", got[0]["message"])
         stub, got = await self.run_stream({"type": "start", "options": {"topK": 0}}, LOUD)
         self.assertEqual(got[0]["type"], "error")
         self.assertIn("topK", got[0]["message"])
@@ -328,7 +336,7 @@ class OneRecordingAtATimeTest(unittest.IsolatedAsyncioTestCase):
 
         async def record(prompt, port):
             async with connect(f"ws://127.0.0.1:{port}") as ws:
-                await ws.send(json.dumps({**START, "prompt": prompt}))
+                await ws.send(json.dumps({**START, "language": "en", "prompt": prompt}))  # English: no notes
                 await ws.send(LOUD)
                 await ws.send(json.dumps({"type": "stop"}))
                 return [json.loads(m) async for m in ws]

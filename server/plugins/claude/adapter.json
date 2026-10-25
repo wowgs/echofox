@@ -12,5 +12,10 @@
   "reads": [
     "~/Library/Application Support/Claude/claude-code-sessions",
     "~/.claude/projects"
-  ]
+  ],
+  "context": {
+    "chatHistoryMessages": 1,
+    "chatHistoryTokenBudget": 1000,
+    "chatTermsTokenBudget": 200
+  }
 }

@@ -12,13 +12,12 @@ With the sound go the marks right after it, and a comma before it stays ("воз
 word ("Э, ну это" → "Ну это"), and a sentence that ended with the sound ends where it stops ("сделай, э." →
 "сделай.").
 
-The config can set the list of a language, "fillers": {"ru": [...]}; an empty list turns the removal off for it.
+The lists are in the language table (languages.json, "fillers"); the config's "languages" changes a language's list,
+{"ru": {"fillers": [...]}}, and an empty list turns the removal off for it.
 """
 import re
 
-DEFAULTS = {
-    "ru": ("э", "э-э", "а-а", "м", "м-м", "эм", "ам", "хм"),
-}
+import languages
 
 WORD = re.compile(r"(?<![\w-])([^\W\d_]+(?:-[^\W\d_]+)*)(?![\w-])")
 AFTER = re.compile(r"[,;:]*([.!?…]*)[,;:]*\s*")  # the marks right after a sound: they belonged to it
@@ -33,10 +32,8 @@ def form(word):
 
 def words(language, configured=None):
     """The sounds for `language` ("ru", "ru-RU"; "" for the speech's own: none): the config's list for it if it
-    has one, else the built-in list."""
-    base = (language or "").split("-")[0].lower()
-    listed = (configured or {}).get(base)
-    return {form(w) for w in (listed if listed is not None else DEFAULTS.get(base, ()))}
+    has one (`configured`: the config's "languages"), else the table's."""
+    return {form(w) for w in languages.fillers(language, configured)} if language else set()
 
 
 def _next(rest, sounds, done):

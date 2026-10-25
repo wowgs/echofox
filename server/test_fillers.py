@@ -37,9 +37,9 @@ class FillersTest(unittest.TestCase):
     def test_the_lists_by_language_and_the_configs_own(self):
         self.assertEqual(fillers.words("ru-RU"), RU)
         self.assertEqual((fillers.words(""), fillers.words("en")), (set(), set()))  # no list: nothing goes
-        self.assertEqual(fillers.words("ru", {"ru": []}), set())  # the config turns it off
-        self.assertEqual(fillers.words("ru", {"ru": ["Ммм", "ну"]}), {"м", "ну"})
-        self.assertEqual(fillers.words("ru", {"en": ["um"]}), RU)
+        self.assertEqual(fillers.words("ru", {"ru": {"fillers": []}}), set())  # the config turns it off
+        self.assertEqual(fillers.words("ru", {"ru": {"fillers": ["Ммм", "ну"]}}), {"м", "ну"})
+        self.assertEqual(fillers.words("ru", {"en": {"fillers": ["um"]}}), RU)
 
 
 if __name__ == "__main__":

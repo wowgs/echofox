@@ -16,30 +16,28 @@ model's prompt and options, the adapters that give the chat context, and the rec
                    each finished piece, in order; {"type":"error","message":…}; {"type":"done"} after the last piece,
                    then it closes
 
-Gemma 4 takes at most 30 s of audio per request (model card and processor_config.json: 25 tokens per second,
-750 tokens). While the speaker talks, a piece is cut each time --piece-seconds plus --min-last-piece-seconds are heard
-since the cut before, at the quietest moment shortly before --piece-seconds, and goes to the model at once; at the
-stop, the rest is cut into pieces as close to --piece-seconds as possible and equal, none longer than 30 s, each cut
-moved to the quietest moment near its equal point. Each piece
-then goes to the model in a request of its own, so the model never sees its answers to earlier pieces (with them in
-the conversation it repeated them). The prompt is Google's ASR template from the model card, unless the model has
-its own, with the text before the audio, as the card advises.
+A model takes at most its catalog entry's maxAudioSeconds of audio per request (catalog.json; Gemma 4: 30 s). While
+the speaker talks, a piece is cut each time --piece-seconds plus --min-last-piece-seconds are heard since the cut
+before, at the quietest moment shortly before --piece-seconds, and goes to the model at once; at the stop, the rest is
+cut into pieces as close to --piece-seconds as possible and equal, none longer than the model takes, each cut moved to
+the quietest moment near its equal point. Each piece then goes to the model in a request of its own, so the model
+never sees its answers to earlier pieces (with them in the conversation it repeated them). The prompt is the model's
+template (its catalog entry's, or its own in the config) with the notes of the dictation's language (languages.json),
+with the text before the audio, as Gemma's model card advises.
 
 The models run in llama.cpp's llama-server (server/llama_launchd.sh), through its OpenAI-compatible
-/v1/chat/completions with the audio as "input_audio". The model's "options": sampling (temperature, topK, topP,
-seed), maxOutputTokens, the chat history (chatHistoryTokenBudget, chatTermsTokenBudget) and the cutting
-(pieceSeconds, cutSearchSeconds,
-cutWhileSpeaking, minLastPieceSeconds, thresholdDb, speechAboveNoiseDb). The server logs each recording's levels (speech,
-noise, peak, clipping, digital silence) and keeps them in audio.json.
+/v1/chat/completions with the audio as "input_audio". Each setting has one owner (tuning.py, settings.py): the
+server's (the cutting, the speech, the recording, the storage), a model's (its sampler, the length of its text,
+contextAsSystem; the defaults in its catalog entry), an adapter's (its context; the defaults in its manifest). The
+server logs each recording's levels (speech, noise, peak, clipping, digital silence) and keeps them in audio.json.
 
 A piece's request holds the text before the audio (the messages of the place that an enabled adapter found, within
-the option chatHistoryTokenBudget, terms within chatTermsTokenBudget, then the prompt) and the piece's audio. The
-text is warmed in llama-server's cache while the speaker talks (cache_prompt). The knobs and their defaults are in
-tuning.py.
+its chatHistoryTokenBudget, terms within its chatTermsTokenBudget, then the prompt) and the piece's audio. The text is
+warmed in llama-server's cache while the speaker talks (cache_prompt).
 
-The text of a piece is limited to --output-tokens-per-second tokens per second of its audio plus
---output-tokens-base (maxOutputTokens overrides it): without a limit, a model that never writes its end token
-decodes until the context is full.
+The text of a piece is limited to the model's outputTokensPerSecond tokens per second of its audio plus its
+outputTokensBase (maxOutputTokens overrides it): without a limit, a model that never writes its end token decodes
+until the context is full.
 
 Each recording gets a folder in --recordings (recordings.py): the whole audio (mic.wav), adapter.json, each piece's
 audio, the text before the audio, each piece's text (pieces.jsonl) and the levels (audio.json); "saveRecordings":

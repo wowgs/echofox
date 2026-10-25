@@ -7,7 +7,10 @@ import logging
 import math
 import time
 
+import adapters
+import catalog
 import fillers
+import languages
 import metrics
 import tuning
 from audio import seconds, wav
@@ -15,36 +18,20 @@ from vad import CHUNK_S
 from vad import speech_in as speech_seconds  # tests put a fake here
 
 MAX_PROMPT = 4000  # characters of a prompt, the model's or a client's
-LANGUAGES = {"cs": "Czech", "da": "Danish", "nl": "Dutch", "en": "English", "fr": "French", "de": "German",
-             "el": "Greek", "hi": "Hindi", "id": "Indonesian", "it": "Italian", "ja": "Japanese", "ko": "Korean",
-             "no": "Norwegian", "pl": "Polish", "pt": "Portuguese", "ru": "Russian", "es": "Spanish",
-             "sv": "Swedish", "tr": "Turkish", "uk": "Ukrainian"}
-# Google's ASR prompt for Gemma 4 (model card, "Audio"); the second form, for an unknown language, is the
-# one in the card's code example.
-# Google's formatting rules for speech recognition (the model card), and one of ours: with the chat context, the model
-# often wrote whole pieces without punctuation and capital letters (2026-10-15 to 2026-10-20, 10 to 16 % of pieces).
-FORMAT = ("Follow these specific instructions for formatting the answer:\n"
-          "* Only output the transcription, with no newlines.\n"
-          "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, "
-          "and write 3 instead of three.\n"
-          "* Write it with punctuation and capital letters.")
-# What a language's speakers say that the model tends to write differently. Russian: requests to an assistant are
-# in the imperative mood (сделай, посмотри, проверь).
-LANGUAGE_NOTES = {"ru": "* The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken."}
 NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
 log = logging.getLogger("gemma_voice")
 
 
-def prompt(language, custom=""):
-    """The client's prompt, if it sent one, with {LANGUAGE} replaced by the language's name; otherwise Google's."""
-    name = LANGUAGES.get(language.split("-")[0])
-    if custom:
-        return custom.replace("{LANGUAGE}", name or "its original language")
-    if name:
-        note = LANGUAGE_NOTES.get(language.split("-")[0])
-        return f"Transcribe the following speech segment in {name} into {name} text.\n\n{FORMAT}" + \
-            (f"\n{note}" if note else "")
-    return f"Transcribe the following speech segment in its original language.\n{FORMAT}"
+def prompt(language, custom="", entry=None, configured=None):
+    """The prompt: the template (`custom`, a client's or the model's own, else the model's catalog template; the
+    catalog's other template when the language is not one it names), {LANGUAGE} replaced by the language's name, then
+    the language's notes (languages.json, or the config's "languages"), each as a rule of its own."""
+    model = catalog.of(entry)
+    named = languages.base(language) in model.get("languages", [])
+    name = languages.name(language) if named else None
+    template = custom or model.get("prompt" if name else "promptAnyLanguage") or ""
+    notes = languages.notes(language, configured) if name or custom else []
+    return template.replace("{LANGUAGE}", name or "its original language") + "".join(f"\n* {n}" for n in notes)
 
 
 def output_limit(audio_seconds, options, server):
@@ -90,11 +77,12 @@ class Dictation:
     puts the text into a slot's cache, so that after the stop a piece processes only its audio.
     `server`: the server's recording settings; `recording`: where its files go (recordings.Recording), or None."""
 
-    def __init__(self, model, text_prompt, options, server, meta, recording=None):
+    def __init__(self, model, text_prompt, options, server, meta, recording=None, client_options=None):
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
+        self.client = client_options or {}  # the start message's own: they win over the adapter's settings too
         self.recording = recording
-        self.text, self.system, self.chat_tokens = text_prompt, "", 0  # system: the context, if it goes in a system turn
-        self.sounds = fillers.words(meta.get("language", ""), getattr(server, "fillers", None))
+        self.text, self.system, self.chat_tokens = text_prompt, "", 0  # system: the context in a system turn, if so
+        self.sounds = fillers.words(meta.get("language", ""), getattr(server, "languages", None))
         model.begin()
 
     def _fit(self, items, budget, render):
@@ -110,12 +98,18 @@ class Dictation:
                 hi = mid - 1
         return lo, used
 
+    def adapter_options(self, name):
+        """The options for the context of adapter `name`: the model's and the client's, then the adapter's settings
+        (its manifest's defaults, then its entry in the config), then the client's again: they win over every owner."""
+        return {**self.options, **adapters.registry.context_defaults(name), **context_options(name, self.server),
+                **self.client}
+
     def _build(self, context):
-        """The text before the audio: the context within the token budget, then the prompt. The adapter's entry in the
-        config sets its own budgets (tuning.ADAPTER_KNOBS); they win over the model's options."""
+        """The text before the audio: the context within the token budget, then the prompt. The context's settings are
+        its adapter's (adapter_options)."""
         if not context:
             return
-        options = {**self.options, **context_options(context.get("adapter"), self.server)}
+        options = self.adapter_options(context.get("adapter"))
         budget = tuning.value("chat_history_token_budget", options, self.server)
         if budget <= 0:
             return
@@ -124,8 +118,10 @@ class Dictation:
         all_terms = [t for t in context.get("terms") or [] if isinstance(t, str)]
         n_terms, used = self._fit(all_terms, terms_budget, lambda ts: "Terms: " + ", ".join(ts))
         terms = all_terms[:n_terms]
-        lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}"
-                 for m in context.get("messages") or []]  # newest first
+        messages = context.get("messages") or []
+        if tuning.value("prose_only", options, self.server):  # the terms were taken before (adapters.context)
+            messages = [{**m, "text": t} for m in messages if (t := adapters.prose(str(m.get("text", ""))))]
+        lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}" for m in messages]  # newest first
         whole = tuning.value("chat_history_messages", options, self.server)
         if whole is not None:
             lines = lines[:whole]  # the older messages gave their terms (adapters.context)
@@ -137,7 +133,8 @@ class Dictation:
             kept = ["…" + self.m.detokenize(ids[-(left - 2):])]
         if not kept and not terms:
             return
-        parts = ["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + list(reversed(kept)) + ["</context>"]
+        parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + list(reversed(kept))
+                 + ["</context>"])
         block = context_header(context.get("about")) + "\n\n" + "\n\n".join(parts)
         if tuning.value("context_as_system", options, self.server):
             self.system = block

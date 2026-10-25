@@ -1,0 +1,50 @@
+{
+  "gemma-4-e4b": {
+    "name": "Gemma 4 E4B",
+    "maxAudioSeconds": 30,
+    "languages": [
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "fr",
+      "hi",
+      "id",
+      "it",
+      "ja",
+      "ko",
+      "nl",
+      "no",
+      "pl",
+      "pt",
+      "ru",
+      "sv",
+      "tr",
+      "uk"
+    ],
+    "prompt": "Transcribe the following speech segment in {LANGUAGE} into {LANGUAGE} text.\n\nFollow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.\n* Write it with punctuation and capital letters.",
+    "promptAnyLanguage": "Transcribe the following speech segment in its original language.\nFollow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.\n* Write it with punctuation and capital letters.",
+    "options": {
+      "temperature": 1.0,
+      "topK": 64,
+      "topP": 0.95,
+      "outputTokensPerSecond": 10.0,
+      "outputTokensBase": 32
+    },
+    "llamaServer": {
+      "args": [
+        "-c",
+        "16384",
+        "-np",
+        "2",
+        "-ngl",
+        "999",
+        "--swa-full",
+        "--cache-ram",
+        "0"
+      ]
+    }
+  }
+}

@@ -21,14 +21,14 @@ CONFIG = "~/.local-voice/config.json"                         # $LOCAL_VOICE_CON
 LOGS = "~/Library/Logs/local-voice"
 METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
+LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
 PLUGINS = "~/Library/Application Support/Local Voice/adapters"  # $LOCAL_VOICE_PLUGINS sets another
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
 RATE = 16000
 SAMPLE_BYTES = 2
 ENCODING = "pcm_s16le"
-MODEL_MAX_SECONDS = 30  # Gemma 4: at most 30 s of audio per request (model card: 25 tokens per second, 750 tokens)
 
 # Waits, in seconds; each later one is longer than the one before, so a stop never cuts what may still finish.
 TEXT_WAIT_S = 180                       # the client waits this long after the stop for each next piece of text

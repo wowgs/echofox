@@ -4,7 +4,7 @@ import bisect
 import math
 import struct
 
-from constants import MODEL_MAX_SECONDS, RATE, SAMPLE_BYTES
+from constants import RATE, SAMPLE_BYTES
 
 FRAME_S = 0.03                      # the loudness is measured per 30 ms
 FRAME = round(RATE * FRAME_S)       # samples in a frame
@@ -109,19 +109,19 @@ def live_cut(rms, start, piece_s, search_s, last_s):
     return min(range(lo, ideal + 1), key=lambda c: (quietness(rms, c), ideal - c))
 
 
-def split(pcm, rms, threshold, piece_s, search_s):
+def split(pcm, rms, threshold, piece_s, search_s, max_s=30):
     """Cuts audio whose length is known (a whole recording, or what is left of it at the stop) into pieces for the
-    model. The number of
-    pieces makes them as close to `piece_s` as possible, and none longer than the model takes (30 s): round(length /
-    piece_s), at least ceil(length / 30). The pieces are equal, except that each cut moves to the quietest 300 ms
-    within `search_s` of its equal point, so no cut falls inside a word. Pieces without speech are dropped.
+    model. The number of pieces makes them as close to `piece_s` as possible, and none longer than the model takes
+    (`max_s`, its catalog entry's maxAudioSeconds): round(length / piece_s), at least ceil(length / max_s). The pieces
+    are equal, except that each cut moves to the quietest 300 ms within `search_s` of its equal point, so no cut falls
+    inside a word. Pieces without speech are dropped.
     `rms`: the RMS of each 30 ms frame (Levels)."""
     frames = len(rms)
     if frames == 0:
         return [pcm] if pcm else []
     total = frames * FRAME_S
-    n = max(1, math.ceil(total / MODEL_MAX_SECONDS), math.floor(total / piece_s + 0.5))
-    most, search = int(MODEL_MAX_SECONDS / FRAME_S), max(1, int(search_s / FRAME_S))
+    n = max(1, math.ceil(total / max_s), math.floor(total / piece_s + 0.5))
+    most, search = int(max_s / FRAME_S), max(1, int(search_s / FRAME_S))
     smooth = [quietness(rms, k) for k in range(frames)]
     cuts = [0]
     for k in range(1, n):

@@ -1,17 +1,20 @@
 """The server's settings and the config file it shares with its clients.
 
-The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 3:
-  {"version": 3, "model": "<name>", "language": "ru", "adapters": {"<plugin>": {"enabled": true}},
-   "models": {"<name>": {"llamaServer": "http://127.0.0.1:8092", "launchd": "<label>", "prompt": "…", "options": {…}}},
-   "silenceStopSeconds": 60, "saveRecordings": true, "fillers": {"ru": ["э", "мм"]},
-   "server": {"host": …, "port": …, "pieceSeconds": …, …}}
-language and silenceStopSeconds: the clients'; the server does not read them. adapters: the adapter plugins that
-work (adapters/registry.py); none: the base mode, dictation without context; an adapter's entry may also set chatHistoryTokenBudget and chatTermsTokenBudget for its
-own context (tuning.ADAPTER_KNOBS). fillers: the hesitation sounds taken out of the text, by language
-(fillers.py has the built-in lists; an empty list turns it off for that language). models: the registry; each a llama.cpp
-llama-server, started and stopped through its launchd agent. Only the model chosen in the menus ("model") is in
-memory; a name not in the registry, or none: no model in memory. A setting's value: the command line, then the
-file, then the default (the test server keeps its own port, log and metrics). The server watches the file:
+The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 4. Each setting has one owner
+(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner:
+  {"version": 4,
+   "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
+   "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
+                         "prompt": "…", "options": {the model's knobs}}},
+   "adapters": {"<plugin>": {"enabled": true, the adapter's knobs}},
+   "languages": {"<code>": {"notes": ["…"], "fillers": ["э", "мм"]}},
+   "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, the server's knobs}}
+The app's settings the server does not read. adapters: the adapter plugins that work (adapters/registry.py); none:
+the base mode, dictation without context. languages: changes to the language table (languages.json; an empty list
+turns a list off). models: the registry; each a llama.cpp llama-server, started and stopped through its launchd
+agent, with its catalog entry (catalog.json). Only the model chosen in the menus ("model") is in memory; a name not in
+the registry, or none: no model in memory. A setting's value: the command line, then the file, then the default (the
+test server keeps its own port, log and metrics). The server watches the file:
   "recording" settings take effect at the next recording;
   "model" settings (models) take effect after the running recording;
   "process" settings (host, port) end the process after the running recording; launchd starts it again.
@@ -24,6 +27,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable
 
+import catalog
 import constants
 import metrics
 import tuning
@@ -31,7 +35,8 @@ from dictation import MAX_PROMPT
 
 log = logging.getLogger("gemma_voice")
 CONFIG_CHECK_S = 2  # how often the file is looked at
-MODEL_DEFAULT = {"gemma-e4b": {"llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}",
+MODEL_DEFAULT = {"gemma-e4b": {"catalog": catalog.DEFAULT,
+                               "llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}",
                                "launchd": constants.LLAMA_LABEL}}
 
 
@@ -49,13 +54,14 @@ class Setting:
 
 
 def good_model(m):
-    """A registry entry: llamaServer, and optionally launchd, prompt and options that tuning accepts."""
+    """A registry entry: llamaServer, and optionally its catalog entry, launchd, prompt and options (the model's
+    knobs only)."""
     if not isinstance(m, dict) or not str(m.get("llamaServer", "")).startswith("http") \
             or not isinstance(m.get("launchd", ""), str) or not isinstance(m.get("prompt", ""), str) \
-            or len(m.get("prompt", "")) > MAX_PROMPT:
+            or len(m.get("prompt", "")) > MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
         return False
     try:
-        tuning.parse_options(m.get("options"))
+        tuning.parse(m.get("options"), "model")
         return True
     except ValueError:
         return False
@@ -72,9 +78,12 @@ def good_adapters(v):
                for k, e in v.items())
 
 
-def good_fillers(v):
-    return all(isinstance(k, str) and isinstance(w, list) and all(isinstance(x, str) and x.strip() for x in w)
-               for k, w in v.items())
+def good_languages(v):
+    """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional."""
+    def strings(w):
+        return isinstance(w, list) and all(isinstance(x, str) and x.strip() for x in w)
+    return all(isinstance(k, str) and isinstance(e, dict) and set(e) <= {"notes", "fillers"}
+               and all(strings(w) for w in e.values()) for k, e in v.items())
 
 
 SETTINGS = [
@@ -83,30 +92,48 @@ SETTINGS = [
             help="the server's port"),
     Setting("models", "models", dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT,
             "model", flag=False),
-    Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", flag=False),
     Setting("adapters", "adapters", dict, good_adapters, {}, "recording", flag=False),
-    Setting("fillers", "fillers", dict, good_fillers, {}, "recording", flag=False),
+    Setting("languages", "languages", dict, good_languages, {}, "recording", flag=False),
+    Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server", flag=False,
+            help="save each recording, its pieces and their texts (never a private dictation)"),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
             help="where the recordings are saved"),
+    Setting("labeled", "labeled", str, bool, constants.LABELED, "recording", "server",
+            help="where the labeled pieces are kept (the app's labeling window, the training)"),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server", help="the metrics file"),
     *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server", flag=k.kind is not bool, help=k.help)
-      for k in tuning.KNOBS if k.server),
+      for k in tuning.KNOBS if k.owner == "server"),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
 
 
-def schema(st):
-    """The settings a client may show and change (info's "settings"), with the values in force: the knobs
-    (tuning.Knob.schema) and the recordings. The models, the adapters and the fillers have pages of their own."""
-    out = [k.schema(getattr(st, k.name, k.default)) for k in tuning.KNOBS]
-    save, folder = BY_KEY["saveRecordings"], BY_KEY["recordings"]
-    out.append({"key": save.key, "group": "recording", "kind": "boolean", "default": save.default,
-                **({"value": st.save_recordings} if getattr(st, "save_recordings", save.default) != save.default else {}),
-                "where": ["config"], "help": "save each recording, its pieces and their texts"})
-    out.append({"key": folder.key, "group": "recording", "kind": "string", "default": folder.default,
-                **({"value": st.recordings} if getattr(st, "recordings", None) not in (None, constants.path(folder.default))
-                   else {}),
-                "where": ["server"], "help": folder.help})
+def model_defaults(entry):
+    """The defaults of the model's knobs: its catalog entry's options, by name."""
+    return tuning.parse(catalog.of(entry).get("options"), "model", "catalog options")
+
+
+def schema(st, model_entry=None):
+    """The settings a client may show and change (info's "settings"), each with its owner, its owner's default and the
+    value in force: the server's knobs and its storage; the knobs of `model_entry` (the menu's model), its catalog's
+    defaults and its options; the adapters' knobs with their fallbacks (each adapter's own defaults are in info's
+    adapters, "context")."""
+    defaults = model_defaults(model_entry) if model_entry else {}
+    own = tuning.parse((model_entry or {}).get("options"), "model") if model_entry else {}
+    out = []
+    for k in tuning.KNOBS:
+        if k.owner == "server":
+            out.append(k.schema(k.default, getattr(st, k.name, k.default)))
+        elif k.owner == "model":
+            d = defaults.get(k.name, k.default)
+            out.append(k.schema(d, own.get(k.name, d)))
+        else:
+            out.append(k.schema(k.default, k.default))
+    for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string")):
+        s = BY_KEY[key]
+        now = getattr(st, s.name, s.default)
+        shown = constants.path(s.default) if kind == "string" else s.default
+        out.append({"key": key, "owner": "server", "group": "storage", "kind": kind, "default": s.default,
+                    **({"value": now} if now not in (s.default, shown) else {}), "help": s.help})
     return out
 
 
@@ -192,6 +219,7 @@ def recording_settings(now, into=None):
         if s.level == "recording":
             setattr(st, s.name, now[s.key])
     st.recordings = constants.path(now["recordings"])
+    st.labeled = constants.path(now["labeled"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
     return st
@@ -214,6 +242,65 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
+    """The config brought to this version, step by step (migrate_2, migrate_3)."""
+    migrate_2(path)
+    migrate_3(path)
+
+
+def migrate_3(path):
+    """Version 3 → 4: each setting has its owner (docs/design/4-hld.md, "Настройки"). "fillers" go to the languages;
+    "saveRecordings" and "labeled" to the section "server"; a model's options keep only the model's knobs: an
+    adapter's knob goes to each adapter's entry that has no value of its own (the model's value was every adapter's),
+    a server's knob to the section "server" if it has none; a model gets its catalog entry. The file keeps its order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(c, dict) or c.get("version") != 3:
+        return
+    server = dict(c.get("server") or {})
+    adapters_ = {k: dict(v) for k, v in (c.get("adapters") or {}).items() if isinstance(v, dict)}
+    langs = {k: dict(v) for k, v in (c.get("languages") or {}).items() if isinstance(v, dict)}
+    for code, words in (c.get("fillers") or {}).items():
+        langs.setdefault(code, {})["fillers"] = words
+    for key in ("saveRecordings", "labeled"):
+        if key in c:
+            server.setdefault(key, c[key])
+    models = {}
+    for name, entry in (c.get("models") or {}).items():
+        entry = dict(entry)
+        entry.setdefault("catalog", catalog.DEFAULT)
+        kept = {}
+        for key, value in (entry.get("options") or {}).items():
+            knob = tuning.BY_KEY.get(key)
+            if knob is None:
+                log.warning("config %s: models.%s.options.%s is not a setting: dropped", path, name, key)
+            elif knob.owner == "model":
+                kept[key] = value
+            elif knob.owner == "adapter":
+                for a in adapters_.values():
+                    a.setdefault(key, value)
+            else:
+                server.setdefault(key, value)
+        if kept:
+            entry["options"] = kept
+        else:
+            entry.pop("options", None)
+        models[name] = entry
+    new = {"version": constants.CONFIG_VERSION, "models": models, "adapters": adapters_, "server": server}
+    out = {k: new.get(k, v) for k, v in c.items() if k not in ("fillers", "saveRecordings", "labeled")}
+    if langs:
+        out["languages"] = langs
+    out.setdefault("server", server)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    log.info("config %s: version 3 → 4: each setting at its owner", path)
+
+
+def migrate_2(path):
     """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
     working, so the upgrade enables the built-in plugins; a new config has none (the base mode). A plugin that asks
     for the screen's content (its manifest's "screen": a messenger's messages) is never enabled for the user: they
@@ -230,7 +317,7 @@ def migrate(path):
                if p.builtin and not p.manifest.get("screen")}
     out = {}
     for k, v in c.items():
-        out[k] = constants.CONFIG_VERSION if k == "version" else v
+        out[k] = 3 if k == "version" else v
         if k == "language" or (k == "model" and "language" not in c):
             out["adapters"] = builtin
     out.setdefault("adapters", builtin)
