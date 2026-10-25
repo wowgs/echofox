@@ -1,6 +1,12 @@
+<img src="img/echofox-icon.png" alt="EchoFox fox wearing a headset" width="88" align="left" hspace="16">
+
 # EchoFox
 
 **Speak your language. Keep your English terms.**
+
+[Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Docs](docs/README.md)
+
+<br clear="left">
 
 Local dictation for Mac, built for conversations where your language and English technical terms naturally mix.
 
@@ -9,17 +15,13 @@ Local dictation for Mac, built for conversations where your language and English
   <img alt="Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available." src="img/how-it-works.svg">
 </picture>
 
-[Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Documentation](docs/README.md)
+## Made for the way you speak
 
-## How it works
+*«Посмотри этот pull request и проверь, почему падает build».* Sound familiar?
 
-You might say: *«Посмотри этот pull request и проверь, почему падает build».* That's how you work. Your dictation should fit that.
-
-**The conversation comes first.** EchoFox puts recent messages before your audio as context for the speech model. It gets a sense of what you're discussing before it transcribes what you say.
-
-**Your language stays in focus.** The recognition prompt explicitly asks for your chosen language. The conversation provides more examples of that language in use, alongside the English words you work with.
-
-**English terms get their own space.** Names, tools, and identifiers from the conversation also appear in a short, separate term list. This gives the model their written forms to help recognize them in your speech.
+| 💬 Conversation first | 🌍 Your language | ✦ Your English terms |
+| :--- | :--- | :--- |
+| Recent messages come **before your audio**, so the model has context before it transcribes. | Your chosen language is part of the prompt. The conversation gives the model more examples of how you speak. | Names, tools, and identifiers get a **separate term list**, helping the model recognize the words you use. |
 
 Context is available in **Claude Desktop's Code tab** and **Telegram Desktop**. In other apps, EchoFox works without conversation context. [More about context and adapters →](docs/reference/3-context.md)
 
