@@ -100,6 +100,22 @@
 - Только Apple Silicon или ещё Intel. Предложение: только Apple Silicon — llama.cpp на Metal нужен GPU Apple.
 - Самая старая версия macOS. Код собирается для macOS 13, проверен только на macOS 27.
 
+## Телеметрия (NFR-14)
+
+Проверено 2026-10-25 на этом Маке (`lsof` соединений процесса, `strings` бинарников, исходники):
+
+| Часть | Что нашлось | Что сделано |
+|---|---|---|
+| onnxruntime 1.31.0 (Silero VAD) | Телеметрия Microsoft (1DS) включена по умолчанию и на macOS: процесс с одной сессией VAD держал TLS-соединение с адресом Microsoft 20.42.65.85, у рабочего сервера было такое же с 20.184.175.15. В библиотеке — адрес `mobile.events.data.microsoft.com/OneCollector`. | `server/vad.py` ставит `ORT_DISABLE_TELEMETRY=1` до загрузки onnxruntime и вызывает `disable_telemetry_events()`. С этим соединений наружу нет. |
+| `llama-server` (llama.cpp `d812350`) | Внешние адреса в бинарнике — для скачивания моделей (`-hf`) и ссылки в тексте. Телеметрии не нашлось. | Собран без OpenSSL и curl; запускается с `--offline` и `--no-webui`. Во время распознавания — только сокеты на 127.0.0.1. |
+| Python и его пакеты (numpy, websockets, markdown-it-py, protobuf, flatbuffers) | Сетевой код только в клиенте websockets и в `numpy.lib._datasource`; сервер их наружу не вызывает. | — |
+| Сервер диктовки | Соединения: `llama-server` по адресу из конфига и скачивание модели по запросу (`server/downloads.py`). | — |
+| Приложение | `URLSession` только к адресу сервера из конфига. | — |
+
+Сообщения о телеметрии onnxruntime — сторонние, не документация Microsoft: например, [immich-memories #2217](https://github.com/sam-dumont/immich-memories/issues/2217) и [noomesh #183](https://github.com/noomesh/noomesh/pull/183). Наш замер выше — свой.
+
+Предложение: проверка в CI — запустить собранный пакет на записи и упасть, если у его процессов есть соединение не с 127.0.0.1.
+
 ## Проверить
 
 - Q4_0 против Q8_0: качество распознавания на размеченных записях, скорость, память.

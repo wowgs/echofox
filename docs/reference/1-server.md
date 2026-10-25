@@ -57,6 +57,10 @@ For Gemma 4 E4B, `llama-server` runs on `127.0.0.1:8092` with these arguments:
 - `--swa-full`: the full cache of the sliding-window layers of Gemma. Without it, a later piece cannot take the shared text from the cache.
 - `--cache-ram 0`: no prompt cache in RAM. The default of `llama-server` is 8 GB. It kept old requests and went to swap on a Mac with 24 GB within a day (2026-10-19).
 
+## No telemetry
+
+The server, `llama-server` and the packages in the app send no analytics and no metrics. onnxruntime, which runs Silero VAD, has Microsoft's telemetry on by default, also on macOS: `server/vad.py` turns it off before onnxruntime loads (`ORT_DISABLE_TELEMETRY=1`). `llama-server` runs with `--offline` and `--no-webui`. The only connection outside the Mac is a model download that you ask for.
+
 ## Settings and constants
 
 Each setting has one owner: the server, a model, an adapter, a language or the app. The owner gives the default. You change a setting only at its owner, in [the config file](2-config.md) or in the settings window.

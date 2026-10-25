@@ -228,9 +228,16 @@ def agent_running(label):
     return launchd("print", f"{domain()}/{label}")[0] == 0
 
 
+BUNDLED_LLAMA_SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "llama", "llama-server")
+
+
 def llama_server():
-    """llama.cpp's server: Homebrew's, else the first on the PATH."""
-    return constants.LLAMA_SERVER if os.path.exists(constants.LLAMA_SERVER) else shutil.which("llama-server")
+    """llama.cpp's server: the app bundle's (Contents/Resources/llama, next to the server's folder), else Homebrew's,
+    else the first on the PATH."""
+    for path in (BUNDLED_LLAMA_SERVER, constants.LLAMA_SERVER):
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return shutil.which("llama-server")
 
 
 def agent(entry, models_folder):

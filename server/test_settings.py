@@ -43,10 +43,20 @@ class VariantTest(unittest.TestCase):
         self.folder = tempfile.mkdtemp(prefix="models-", dir=os.path.dirname(constants.path("~/x")))
         self.binary = os.path.join(self.folder, "llama-server")
         open(self.binary, "w").close()
-        self.saved, constants.LLAMA_SERVER = constants.LLAMA_SERVER, self.binary
+        os.chmod(self.binary, 0o755)
+        self.saved = constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER
+        constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER = self.binary, os.path.join(self.folder, "none")
 
     def tearDown(self):
-        constants.LLAMA_SERVER = self.saved
+        constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER = self.saved
+
+    def test_the_bundles_llama_server_comes_first(self):
+        self.assertEqual(llama.llama_server(), self.binary)  # no bundled one: Homebrew's
+        bundled = os.path.join(self.folder, "bundled-llama-server")
+        open(bundled, "w").close()
+        os.chmod(bundled, 0o755)
+        llama.BUNDLED_LLAMA_SERVER = bundled
+        self.assertEqual(llama.llama_server(), bundled)
 
     def put(self, *names):
         d = os.path.join(self.folder, "gemma-4-E4B-it-GGUF")

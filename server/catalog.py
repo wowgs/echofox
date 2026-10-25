@@ -21,7 +21,8 @@ defaults (docs/design/4-hld.md, "Настройки"):
                      card; generation_config.json of google/gemma-4-E4B-it); maxTokensPerSpeechSecond, which every
                      entry must give: in 346 pieces with speech (2026-10-22 to 2026-10-25), Gemma 4 E4B wrote at most
                      10.4 tokens per second of speech (8.1 for 99 % of them), and 20 is twice that
-  llamaServer.args   the arguments of its llama-server, after its files and address (llama.agent)
+  llamaServer.args   the arguments of its llama-server, after its files and address (llama.agent); --offline and
+                     --no-webui: llama-server never goes to the network and serves no web page
 """
 import json
 import os

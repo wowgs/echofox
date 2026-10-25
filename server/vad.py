@@ -11,8 +11,16 @@ One Stream runs a whole recording as it arrives, with one state: 0.1 ms per 32 m
 import os
 import threading
 
-import numpy as np
-import onnxruntime
+# ONNX Runtime's Microsoft telemetry (1DS, to mobile.events.data.microsoft.com) is on by default on macOS too: with
+# only this session loaded, a process kept a TLS connection to Microsoft's address 20.42.65.85, and with the switch it
+# had none (onnxruntime 1.31.0, lsof, 2026-10-25). The switch must be set before onnxruntime loads; the call below
+# also turns off its events.
+os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+
+import numpy as np  # noqa: E402
+import onnxruntime  # noqa: E402
+
+onnxruntime.disable_telemetry_events()
 
 from constants import RATE
 

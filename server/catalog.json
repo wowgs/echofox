@@ -79,7 +79,9 @@
         "999",
         "--swa-full",
         "--cache-ram",
-        "0"
+        "0",
+        "--offline",
+        "--no-webui"
       ]
     }
   }

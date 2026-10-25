@@ -25,6 +25,9 @@ class VadTest(unittest.TestCase):
         self.assertEqual(speech_in(b"\0\0" * 32000), 0)
         self.assertEqual(speech_in(array.array("h", [8000, -8000] * 16000).tobytes()), 0)
 
+    def test_onnxruntime_telemetry_is_off(self):
+        self.assertEqual(os.environ.get("ORT_DISABLE_TELEMETRY"), "1")
+
     def test_audio_of_any_length_works(self):
         self.assertEqual(len(vad.shared().probabilities(b"\0\0" * 100)), 1)  # padded to one chunk
         self.assertEqual(speech_in(b""), 0)
