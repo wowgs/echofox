@@ -1,6 +1,38 @@
-# Tests and tools
+# Build, tests and tools
 
 This page is for work on the code of Local Voice. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
+
+## Build from source
+
+On this setup, the dictation server runs from the repository, and `llama-server` comes from Homebrew.
+
+1. Install llama.cpp and Python:
+
+   ```
+   brew install llama.cpp python
+   ```
+
+2. Set up the dictation server and start it as a launchd agent. It starts again at each login, and it starts the model itself.
+
+   ```
+   python3 -m venv server/.venv
+   server/.venv/bin/pip install -r server/requirements.txt
+   server/launchd.sh install
+   ```
+
+3. Create a self-signed code-signing certificate named "Local Voice Dev" in your login keychain (Keychain Access, Certificate Assistant, Create a Certificate). Without it, macOS asks for the permissions again after each build.
+4. Build the app and open it:
+
+   ```
+   macos/build-app.sh
+   open macos/build/LocalVoice.app
+   ```
+
+5. Allow Microphone and Accessibility when macOS asks. If no model is downloaded, the app asks which one to download.
+
+`server/launchd.sh status` and `server/launchd.sh uninstall` do what they say. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
+
+To build the app that carries everything, as the release does: `macos/build-app.sh --bundle` or `--dmg` ([the menu bar app](4-app.md#build-and-start)).
 
 ## Run the tests
 
@@ -46,7 +78,3 @@ GitHub Actions runs two workflows:
 ## Update the working server
 
 Restart the working server between two dictations, with `launchctl kickstart -k gui/$(id -u)/local-voice.gemma-voice`. On a restart, the server takes no new recording. It lets a running recording finish for up to 200 s, and launchd waits 210 s for it (`STOP_WAIT_S`, `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). But you cannot dictate until it is back.
-
-## Install the server by hand
-
-`server/launchd.sh install` makes the launchd agent of the dictation server. `status` and `uninstall` do what they say. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`.

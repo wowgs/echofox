@@ -2,84 +2,64 @@
 
 Local Voice is dictation for the Mac. Tap a key, speak, and tap the key again. The text appears where your cursor was, in any app.
 
-A speech model on your Mac turns the speech into text: Gemma 4 E4B in [llama.cpp](https://github.com/ggml-org/llama.cpp). 
-*The audio and the text do not leave your Mac.*
+A speech model runs on your Mac and turns the speech into text. The model is Gemma 4 E4B in [llama.cpp](https://github.com/ggml-org/llama.cpp). *The audio and the text do not leave your Mac.*
 
-The model also reads the conversation that you write into, for example a Claude Code session or a Telegram chat. With it, the model writes the names and terms of the conversation the way the conversation writes them.
+The model also reads the conversation that you write into, for example a Claude Code session or a Telegram chat. So it writes the names and terms of that conversation correctly.
 
 ## How it works
 
-![The app records and inserts the text, the dictation server cuts the audio and adds the chat context, and llama-server runs the model](img/how-it-works.svg)
+![You tap a key in any app and speak. Local Voice records you, the dictation server cuts the speech into pieces, an adapter reads the conversation of that app, Gemma 4 turns each piece into text, and the text goes into the text box where the cursor was](img/how-it-works.svg)
 
-Three programs run on your Mac, and each one does one job.
+The key works in every app. You do not switch to Local Voice to dictate.
 
-- **The Local Voice app** lives in the menu bar. It starts and stops a recording when you tap a key, and it sends the audio to the dictation server. When the text comes back, the app puts it where your cursor was.
-- **The dictation server** cuts the audio into pieces and skips pieces without speech. It asks an adapter for the latest messages of the conversation, and it sends each piece to the model with them. An adapter is a small plugin that knows one app, for example Claude or Telegram.
-- **llama-server** runs the model on the GPU of the Mac.
+1. You tap the right Option key in any app, speak, and tap the key again. Local Voice records your voice and notes where the cursor is.
+2. The dictation server finds the speech in the recording and cuts it into pieces.
+3. The server asks the adapter of that app for the conversation. An adapter is a small plugin for one app. The Claude adapter reads the open Claude Code session, and the Telegram adapter reads the open chat.
+4. The server sends each piece to Gemma 4 with the latest messages of the conversation. So Gemma 4 writes the names and terms of the conversation correctly.
+5. Local Voice puts the text into the text box where the cursor was.
 
-## One dictation
+## While you speak
 
-![A dictation of 35 seconds: piece 1 goes to the model while you speak, piece 2 after the stop, and the text comes 2.3 s after the stop](img/dictation-timeline.svg)
+![A dictation of 35 seconds: piece 1 goes to the model while you speak, and piece 2 goes after the stop](img/dictation-timeline.svg)
 
-The model works on the first piece while you still speak, so after the stop it has only the last piece to do.
-
-On an Apple M5 with 24 GB, the model takes 2.35 s for a piece of about 13 s (the median of 417 pieces, 2026-10-22 to 2026-10-25). For recordings of 20 to 40 s, the text came 2.25 s after the stop (the median of 64 recordings).
+The model works on the first pieces while you still speak. After you stop, only the last piece is left, so the text comes soon after the stop. The bars show the order of the work, and their lengths are an example.
 
 ## Privacy
 
-- The model, the server and the app run on your Mac. With the default config, every connection goes to 127.0.0.1: from the app to the server, and from the server to `llama-server`.
-- A second key starts a private dictation. The app then reads nothing on the screen, and the server saves nothing and writes no text into its log.
-- The server saves every other recording, so that you can label it and train the model on your voice later. You can turn this off in the settings window.
+- The app, the server and the model run on your Mac. They send no analytics and no metrics.
+- The only connection to the internet is the download of the model, when you ask for it.
+- A second key starts a private dictation. The app then reads nothing on the screen, and nothing of the dictation is saved.
+- Other recordings are saved on your Mac, so that you can correct them and train the model on your voice later. You can turn this off in the settings.
 
-## What you need
+## Requirements
 
-- A Mac with Apple Silicon and macOS 13 or later. Local Voice was tested only on an Apple M5 with 24 GB and macOS 27.
-- About 9.7 GiB of memory while the model is loaded: 7.5 GiB for the model and 2.1 GiB for the rest of `llama-server` (measured on the M5).
-- About 9 GB of disk for the model files. The recordings take about 231 MB for each hour of speech.
-- [Homebrew](https://brew.sh) for llama.cpp, Python and the download tool.
+- A Mac with Apple Silicon and macOS 13 or later.
+- Memory and disk space for one of the two models:
 
-An estimate for other Macs, not measured: with 16 GB of memory, the model fits, but little memory is left for other apps. With 8 GB, it does not fit.
+| Model | Download | Memory while it runs | For a Mac with |
+|---|---|---|---|
+| Q4_0, smaller and faster | 5.6 GB | about 7 GB | 16 GB |
+| Q8_0, the most exact | 9.0 GB | about 10 GB | 24 GB or more |
+
+At the first start, the app recommends the model for your Mac. You can change the model later in the settings.
+
+Local Voice was tested on an Apple M5 with 24 GB and macOS 27.
 
 ## Install
 
-1. Install llama.cpp, Python and the Hugging Face download tool:
-
-   ```
-   brew install llama.cpp python hf
-   ```
-
-2. Download the model and its audio encoder into the models folder. This is the Q8_0 variant. For Q4_0, which is smaller, download `gemma-4-E4B-it-Q4_0.gguf` instead and choose Q4_0 in the settings window.
-
-   ```
-   hf download ggml-org/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q8_0.gguf mmproj-gemma-4-E4B-it-BF16.gguf --local-dir "$HOME/Library/Application Support/Local Voice/models/gemma-4-E4B-it-GGUF"
-   ```
-
-3. Set up the dictation server and start it as a launchd agent. It starts again at each login, and it starts the model itself.
-
-   ```
-   python3 -m venv server/.venv
-   server/.venv/bin/pip install -r server/requirements.txt
-   server/launchd.sh install
-   ```
-
-4. Create a self-signed code-signing certificate named "Local Voice Dev" in your login keychain (Keychain Access, Certificate Assistant, Create a Certificate). Without it, macOS asks for the permissions again after each build.
-5. Build the app and start it:
-
-   ```
-   macos/build-app.sh
-   open macos/build/LocalVoice.app
-   ```
-
-6. Allow Microphone and Accessibility when macOS asks. The app needs Accessibility for the keys and to insert the text.
+1. Download `LocalVoice.dmg` from the [Releases](https://github.com/wowgs/local-voice/releases) of this repository.
+2. Open it and drag Local Voice to the Applications folder.
+3. Open Local Voice. Its icon appears in the menu bar.
+4. Allow Microphone and Accessibility when macOS asks. The app needs Accessibility for the key and to insert the text.
+5. Choose the model in the window that opens, and click Download.
 
 ## Use
 
-- Tap the right Option key to start a dictation, and tap it again to stop.
+- Tap the right Option key to start a dictation. Tap it again to stop.
 - Tap the right Command key for a private dictation.
-- If you do not speak for 60 s, the recording stops by itself.
 - The menu bar icon shows the state: recording, private recording (purple), waiting for the text, or a problem.
-- Settings… in the menu (⌘,) opens the settings window: the keys, the microphone, the language, the model and its prompt, and the adapters.
-- Label Recordings… in the menu lets you correct the text of saved pieces. The labels are for training the model on your voice later.
+- Settings… in the menu opens the settings: the keys, the microphone, the language, the model and the adapters.
+- Label Recordings… in the menu lets you correct the text of saved recordings, for training the model later.
 
 ## Documentation
 
@@ -91,7 +71,7 @@ How Local Voice works, in detail:
 4. [The menu bar app](docs/reference/4-app.md): the keys, where the text goes, the settings window, labeling.
 5. [The recordings and labels](docs/reference/5-recordings.md): what the server saves, and where.
 6. [The protocol](docs/reference/6-protocol.md): the messages between the app and the server.
-7. [Tests and tools](docs/reference/7-development.md): the tests, the test server, the update of the working server.
+7. [Build, tests and tools](docs/reference/7-development.md): build from source, the tests, the test server.
 
 The design, in Russian:
 

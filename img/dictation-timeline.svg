@@ -23,11 +23,9 @@
     <rect x="430" y="104" width="360" height="26" rx="4" fill="#ecfdf5" stroke="#059669" stroke-dasharray="5 3"/>
     <text x="610" y="122" font-size="12" text-anchor="middle">piece 2, the rest, cut at the stop</text>
 
-    <!-- Model: piece 1 from 20 to 22.4 s, piece 2 from 35 to 37.3 s -->
+    <!-- Model: piece 1 after 20 s are heard, piece 2 after the stop; the bars show the order, not measured times -->
     <rect x="520" y="160" width="43" height="26" rx="4" fill="#ffedd5" stroke="#d97706"/>
-    <text x="569" y="178" font-size="12">2.4 s</text>
     <rect x="790" y="160" width="41" height="26" rx="4" fill="#ffedd5" stroke="#d97706"/>
-    <text x="837" y="178" font-size="12">2.3 s</text>
 
     <!-- The cut of piece 1 happens when 20 s are heard -->
     <line x1="520" y1="134" x2="520" y2="158" stroke="#059669" stroke-width="1.2" stroke-dasharray="3 3"/>
