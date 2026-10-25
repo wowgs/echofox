@@ -95,6 +95,6 @@ How Local Voice works, in detail:
 
 The design, in Russian:
 
-- [What and why](docs/design/1-what-and-why.md), [Requirements](docs/design/2-requirements.md), [Constraints](docs/design/3-constraints.md), [HLD](docs/design/4-hld.md), [UI](docs/design/5-ui.md), [Future ideas](docs/design/6-future-ideas.md).
+- [What and why](docs/design/1-what-and-why.md), [Requirements](docs/design/2-requirements.md), [Constraints](docs/design/3-constraints.md), [HLD](docs/design/4-hld.md), [UI](docs/design/5-ui.md), [Future ideas](docs/design/6-future-ideas.md), [Distribution](docs/design/7-distribution.md).
 - [Ideas](docs/ideas.md): the work that is left, by priority.
 - [Optional adapters](docs/adapters/1-idea.md), [LoRA training](docs/lora-training/1-idea.md), [Dictation terms](docs/dictation-terms/1-untitled.md).
