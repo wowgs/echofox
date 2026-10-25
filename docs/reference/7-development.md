@@ -22,7 +22,11 @@ Run these commands from the repository root on an Apple Silicon Mac. You need Ho
    server/launchd.sh install
    ```
 
-3. Create a self-signed code-signing certificate named "EchoFox Dev" in your login keychain (Keychain Access, Certificate Assistant, Create a Certificate). Without it, macOS asks for the permissions again after each build.
+3. Create the self-signed code-signing certificate "EchoFox Dev" in your login keychain. Without it, macOS asks for the permissions again after each build.
+
+   ```
+   macos/dev-cert.sh
+   ```
 4. Build the app and open it:
 
    ```
