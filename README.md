@@ -4,7 +4,7 @@
 
 Local dictation for Mac, built for conversations where your language and English technical terms naturally mix.
 
-![Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available.](img/how-it-works.svg)
+![Tap a key, speak, and get text in your app. Recognition runs on your Mac, with conversation context when available.](img/how-it-works.png)
 
 [Download for Mac](https://github.com/wowgs/local-voice/releases) · [User guide](docs/reference/4-app.md) · [Documentation](docs/README.md)
 
