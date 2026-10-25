@@ -1,79 +1,94 @@
 # Local Voice
 
-Local Voice is dictation for the Mac. Tap a key, speak, and tap the key again. The text appears where your cursor was, in any app.
+Local Voice is a dictation app for Mac. Tap the right Option key, speak, and tap it again to insert the text into the app you're using.
 
-A speech model runs on your Mac and turns the speech into text. The model is Gemma 4 E4B in [llama.cpp](https://github.com/ggml-org/llama.cpp). *The audio and the text do not leave your Mac.*
+Speech recognition runs on your Mac, using Gemma 4 E4B through [llama.cpp](https://github.com/ggml-org/llama.cpp). Once you've downloaded the model, you can dictate offline. Your audio and transcripts stay on your Mac.
 
-The model also reads the conversation that you write into, for example a Claude Code session or a Telegram chat. So it writes the names and terms of that conversation correctly.
+In supported apps, Local Voice can also use the current conversation to help recognize names and technical terms. Elsewhere, it works without conversation context.
+
+## Get started
+
+You'll need an Apple Silicon Mac running macOS 13 or later, with at least 16 GB of memory and enough disk space for a model. The app has been tested on an Apple M5 with 24 GB of memory running macOS 27; older macOS versions have not been verified.
+
+There are no published releases yet. For now, follow the [build from source guide](docs/reference/7-development.md#build-from-source).
+
+When a packaged release is available, installation will be:
+
+1. Download `LocalVoice.dmg` from [Releases](https://github.com/wowgs/local-voice/releases), open it, and drag Local Voice to Applications.
+2. Open Local Voice. Its icon appears in the menu bar.
+3. Grant Microphone and Accessibility permissions. Accessibility lets the app respond to the dictation keys, read conversation context in supported apps, and insert text.
+4. Choose a model and click **Download**. The app recommends a variant based on your Mac's memory.
+
+Both variants use the same speech model at different levels of compression:
+
+| Variant | Download size | Approximate memory use | Suggested Mac memory |
+|---|---|---|---|
+| Q4_0 — smaller download | 5.6 GB | 7 GB | 16 GB |
+| Q8_0 — less compressed | 9.0 GB | 10 GB | 24 GB or more |
+
+You can change the variant later in **Settings → Model**. These memory figures are approximate; a systematic comparison of recognition quality and speed is still pending.
+
+## Dictate
+
+1. Click where you want the text to appear.
+2. Tap and release the **right Option** key to start recording.
+3. Speak, then tap the same key again to stop.
+
+Local Voice processes the recording and inserts the text. If you move to another text field while speaking, the text goes to the field focused when the result arrives. If insertion isn't possible, the text is copied to the clipboard and the menu tells you.
+
+| Control | What it does |
+|---|---|
+| Right Option | Start or stop a regular dictation. |
+| Right Command | Start or stop a private dictation: no conversation context and no saved recording. |
+| **Settings…** in the menu bar | Change the keys, microphone, language, model, adapters, and recording preferences. |
+| **Label Recordings…** in the menu bar | Review saved recordings and correct their transcripts to prepare examples for future model training. |
+
+The menu bar icon shows when Local Voice is recording, processing speech, or needs attention. Private recording is shown in purple.
+
+## Conversation context
+
+Local Voice uses adapters to read the conversation you're dictating into. An adapter connects one supported app to the speech model; it provides recent messages and terms that may help with recognition.
+
+The built-in adapters support:
+
+- **Claude Desktop's Code tab:** reads the matching Claude Code session's local transcript and uses recent assistant responses as context.
+- **Telegram Desktop:** reads messages loaded in the open chat. Enable this adapter in Settings to allow it to read the chat.
+
+If no adapter can identify the conversation, dictation continues without context. Private dictation always skips adapters. See [how context works and how to add an adapter](docs/reference/3-context.md).
+
+## Privacy and saved recordings
+
+Speech recognition happens locally. Local Voice sends no analytics or telemetry; it connects to the internet to download a model when you request one.
+
+**Regular dictations are saved by default**, including audio, transcripts, and any conversation context supplied to the model. They are stored in `~/speech/recordings/` and are not automatically deleted. Turn off **Save recordings** in Settings if you don't want to keep future recordings.
+
+**Private dictation** uses no conversation context and saves no recording or transcript. Use the right Command key to start one.
+
+You can review and correct saved recordings with **Label Recordings…**. This prepares data for future training; correcting a transcript does not automatically train the model. See [recordings and labels](docs/reference/5-recordings.md) for storage locations and file details.
 
 ## How it works
 
-![You tap the key in any app and speak. Local Voice reads the chat of that app, records your voice, and writes the text into the text box where the cursor was](img/how-it-works.svg)
+![Local Voice records speech in the app you're using, adds conversation context when available, and inserts the recognized text.](img/how-it-works.svg)
 
-1. You tap the key in any app and speak. You do not switch to Local Voice.
-2. Local Voice records your voice and reads the chat of that app.
-3. Gemma 4 writes the text, with the names and terms of the chat.
-4. The text appears in the text box where your cursor was.
+The menu bar app records your microphone and passes the audio to a local dictation server. The server splits longer recordings into short pieces and sends them to Gemma 4 E4B through llama.cpp.
 
-Adapters are the parts of Local Voice that read the chat of one app. Local Voice has adapters for Claude and Telegram, and you can add your own.
-
-## While you speak
-
-![A dictation of 35 seconds: piece 1 goes to the model while you speak, and piece 2 goes after the stop](img/dictation-timeline.svg)
-
-The model works on the first pieces while you still speak. After you stop, only the last piece is left, so the text comes soon after the stop. The bars show the order of the work, and their lengths are an example.
-
-## Privacy
-
-- Local Voice and its model run on your Mac. They send no analytics and no metrics.
-- The only connection to the internet is the download of the model, when you ask for it.
-- A second key starts a private dictation. The app then reads nothing on the screen, and nothing of the dictation is saved.
-- Other recordings are saved on your Mac, so that you can correct them and train the model on your voice later. You can turn this off in the settings.
-
-## Requirements
-
-- A Mac with Apple Silicon and macOS 13 or later.
-- Memory and disk space for one of the two models:
-
-| Model | Download | Memory while it runs | For a Mac with |
-|---|---|---|---|
-| Q4_0, smaller and faster | 5.6 GB | about 7 GB | 16 GB |
-| Q8_0, the most exact | 9.0 GB | about 10 GB | 24 GB or more |
-
-At the first start, the app recommends the model for your Mac. You can change the model later in the settings.
-
-Local Voice was tested on an Apple M5 with 24 GB and macOS 27.
-
-## Install
-
-1. Download `LocalVoice.dmg` from the [Releases](https://github.com/wowgs/local-voice/releases) of this repository.
-2. Open it and drag Local Voice to the Applications folder.
-3. Open Local Voice. Its icon appears in the menu bar.
-4. Allow Microphone and Accessibility when macOS asks. The app needs Accessibility for the key and to insert the text.
-5. Choose the model in the window that opens, and click Download.
-
-## Use
-
-- Tap the right Option key to start a dictation. Tap it again to stop.
-- Tap the right Command key for a private dictation.
-- The menu bar icon shows the state: recording, private recording (purple), waiting for the text, or a problem.
-- Settings… in the menu opens the settings: the keys, the microphone, the language, the model and the adapters.
-- Label Recordings… in the menu lets you correct the text of saved recordings, for training the model later.
+Processing starts while you're still speaking, which reduces the work left after you stop. For the processing timeline and implementation details, see [the dictation server](docs/reference/1-server.md).
 
 ## Documentation
 
-How Local Voice works, in detail:
+The reference guides describe the implementation and how to use or change it:
 
-1. [The dictation server](docs/reference/1-server.md): the pieces, the speech detection, the prompt, the models.
-2. [The config file](docs/reference/2-config.md): every key of `~/.local-voice/config.json`.
-3. [The chat context](docs/reference/3-context.md): how adapters find the conversation, and how to write one.
-4. [The menu bar app](docs/reference/4-app.md): the keys, where the text goes, the settings window, labeling.
-5. [The recordings and labels](docs/reference/5-recordings.md): what the server saves, and where.
-6. [The protocol](docs/reference/6-protocol.md): the messages between the app and the server.
-7. [Build, tests and tools](docs/reference/7-development.md): build from source, the tests, the test server.
+| If you want to… | Read |
+|---|---|
+| Understand the controls, settings, and text insertion | [The menu bar app](docs/reference/4-app.md) |
+| Change settings in `~/.local-voice/config.json` | [Configuration reference](docs/reference/2-config.md) |
+| Understand conversation context or write an adapter | [Chat context and adapters](docs/reference/3-context.md) |
+| Find saved audio, transcripts, and labels | [Recordings and labels](docs/reference/5-recordings.md) |
+| Understand speech processing and model behavior | [The dictation server](docs/reference/1-server.md) |
+| Work on communication between the app and server | [Protocol reference](docs/reference/6-protocol.md) |
+| Build from source or run tests | [Development guide](docs/reference/7-development.md) |
 
-The design, in Russian:
+Design documents are in Russian. They include the reasoning behind decisions, proposals, and work still to be verified:
 
-- [What and why](docs/design/1-what-and-why.md), [Requirements](docs/design/2-requirements.md), [Constraints](docs/design/3-constraints.md), [HLD](docs/design/4-hld.md), [UI](docs/design/5-ui.md), [Future ideas](docs/design/6-future-ideas.md), [Distribution](docs/design/7-distribution.md).
-- [Ideas](docs/ideas.md): the work that is left, by priority.
-- [Optional adapters](docs/adapters/1-idea.md), [LoRA training](docs/lora-training/1-idea.md), [Dictation terms](docs/dictation-terms/1-untitled.md).
+- **Product and design:** [What and why](docs/design/1-what-and-why.md), [Requirements](docs/design/2-requirements.md), [Constraints](docs/design/3-constraints.md), [Architecture](docs/design/4-hld.md), [Interface](docs/design/5-ui.md), [Distribution](docs/design/7-distribution.md).
+- **Plans and ideas:** [Prioritized work](docs/ideas.md), [Future ideas](docs/design/6-future-ideas.md), [Optional adapters](docs/adapters/1-idea.md), [LoRA training](docs/lora-training/1-idea.md), [Dictation terms](docs/dictation-terms/1-untitled.md).
