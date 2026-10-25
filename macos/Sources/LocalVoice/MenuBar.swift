@@ -63,7 +63,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let inputs = AudioInputs.all()
         for id in SettingsLayout.menu {
             switch id {
-            case "permissions": menu.addItem(permissionsItem(s))
+            case "permissions":  // only while one is missing
+                if !s.accessibility || s.microphone != .authorized { menu.addItem(permissionsItem(s)) }
             case "microphone": menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
             case "inputVolume": menu.addItem(volumeItem(s))
             case "labelRecordings": menu.addItem(action("Label Recordings…") { $0.openLabeling() })
@@ -77,16 +78,15 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Quit Local Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    /// One line for the permissions: a granted one is a grey item with a check; a missing one opens the place in
-    /// System Settings where it is given.
+    /// One line for the permissions, shown only while one is missing: its title names what is missing; in it, a
+    /// granted one is a grey item with a check, and a missing one opens the place in System Settings where it is given.
     private func permissionsItem(_ s: MenuState) -> NSMenuItem {
         let micOK = s.microphone == .authorized
         let missing = [s.accessibility ? nil : "Accessibility", micOK ? nil : "Microphone"].compactMap { $0 }
         let accessibility = s.accessibility ? checked(disabled("Accessibility"), true)
             : action("Accessibility: Allow…") { $0.allowAccessibility() }
         let microphone = micOK ? checked(disabled("Microphone"), true) : action("Microphone: Allow…") { $0.allowMicrophone() }
-        let title = missing.isEmpty ? "Permissions: All Granted" : "Permissions: Allow " + missing.joined(separator: " and ")
-        return submenu(title, [accessibility, microphone])
+        return submenu("Permissions: Allow " + missing.joined(separator: " and "), [accessibility, microphone])
     }
 
     /// The config's microphone is this input: the built-in one for "builtin", the device for its UID.
