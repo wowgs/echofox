@@ -6,8 +6,7 @@
 
 Private, on-device dictation for Mac, built for conversations where your language and English terms mix.
 
-**Works offline · No account · No cloud · No telemetry**<br>
-<sub>The internet is used only once, to download the speech model.</sub>
+**Offline after a one-time model download · No account · No cloud · No telemetry**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/how-it-works-dark.svg">
