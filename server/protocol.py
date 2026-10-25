@@ -22,8 +22,9 @@ import metrics
 import recordings
 import settings
 import tuning
-from audio import FRAME_BYTES, Levels, has_speech, live_cut, seconds, split
+from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
 from dictation import MAX_PROMPT, Dictation, prompt
+from vad import Stream  # tests put a fake here
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
 WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording got long enough for one more slot
@@ -132,8 +133,7 @@ class Session:
                 log.exception("cannot start the recording folder")
         self.id = self.rec.id if self.rec else time.strftime("%Y-%m-%d/%H%M%S-") + "unsaved"
         opts = start.options
-        self.cut = {n: tuning.value(n, opts, args) for n in ("threshold_db", "speech_above_noise_db", "piece_seconds",
-                                                             "cut_search_seconds", "cut_while_speaking",
+        self.cut = {n: tuning.value(n, opts, args) for n in ("piece_seconds", "cut_search_seconds", "cut_while_speaking",
                                                              "min_last_piece_seconds")}
         self.max_audio = catalog.max_audio_seconds(start.entry)  # what the model takes in one request
         self.cut["piece_seconds"] = min(self.cut["piece_seconds"], self.max_audio)
@@ -141,7 +141,7 @@ class Session:
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
                      "options": opts, **({"private": True} if start.private else {})}
-        self.levels = Levels(self.cut["threshold_db"], self.cut["speech_above_noise_db"])
+        self.levels, self.speech = Levels(), Stream()
         self.audio, self.pending = bytearray(), asyncio.Queue()
         self.texts, self.errors, self.chat = [], [], {}
         self.stopped_at, self.stop_reason = None, None
@@ -178,8 +178,9 @@ class Session:
                 if self.rec:
                     self.rec.write(message)
                 self.levels.feed(message)
+                heard = self.speech.feed(message)
                 self.cut_live()
-                if self.levels.heard and time.monotonic() - last_speech >= SPEECH_EVERY_S:
+                if heard and time.monotonic() - last_speech >= SPEECH_EVERY_S:
                     last_speech = time.monotonic()
                     await self.send(type="speech")
                 if self.heard_seconds >= limit:
@@ -199,15 +200,15 @@ class Session:
         return None  # the connection ended without a stop
 
     def cut_live(self):
-        """While the speaker talks: each piece that can be cut goes to the model now, so that after the stop only the
-        rest is left. A piece without speech is dropped."""
+        """While the speaker talks: each piece that can be cut goes to the model now, with its seconds of speech, so
+        that after the stop only the rest is left."""
         if not self.cut["cut_while_speaking"]:
             return
         while (c := live_cut(self.levels.rms, self.cut_frame, self.cut["piece_seconds"], self.cut["cut_search_seconds"],
                              self.cut["min_last_piece_seconds"])) is not None:
-            if has_speech(self.levels.rms[self.cut_frame:c], self.levels.threshold):
-                self.pending.put_nowait(bytes(self.audio[self.cut_frame * FRAME_BYTES:c * FRAME_BYTES]))
-                self.live_pieces += 1
+            self.pending.put_nowait((bytes(self.audio[self.cut_frame * FRAME_BYTES:c * FRAME_BYTES]),
+                                     self.speech.seconds(self.cut_frame * FRAME_S, c * FRAME_S)))
+            self.live_pieces += 1
             self.cut_frame = c
 
     # The context and the pieces
@@ -218,8 +219,6 @@ class Session:
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
-        if self.start.client_options.get("chat_history_token_budget") == 0:
-            return None  # the client turned the context off (an experiment)
         try:
             found = await asyncio.wait_for(asyncio.to_thread(adapters.context, self.start.snapshot, self.start.hints,
                                                              self.args.adapters), adapters.CONTEXT_TIMEOUT_S)
@@ -269,11 +268,12 @@ class Session:
                     warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
                 # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots.
                 piece = 0
-                while (pcm := await self.pending.get()) is not None:
+                while (item := await self.pending.get()) is not None:
                     piece += 1
                     if dictation:
+                        pcm, speech = item
                         tasks.append(asyncio.ensure_future(
-                            dictation.piece(pcm, piece, slot=(piece - 1) % slots if slots > 1 else None)))
+                            dictation.piece(pcm, piece, speech, slot=(piece - 1) % slots if slots > 1 else None)))
                 for task in tasks:  # in the order of the pieces
                     try:
                         text = await task
@@ -294,15 +294,14 @@ class Session:
     # The whole recording
 
     def levels_report(self):
-        report = self.levels.report()
+        report = self.levels.report(self.speech.at)
         if report["longest_digital_silence_s"] >= 0.5:
             log.warning("recording %s: %.2f s of digital silence (all zeros): the microphone may have been closed or "
                         "muted", self.id, report["longest_digital_silence_s"])
         if report["clipped_samples"]:
             log.warning("recording %s: %d clipped samples: the input is too loud", self.id, report["clipped_samples"])
-        log.info("recording %s: %.1f s, speech %s dBFS, noise %s dBFS (floor %s), threshold %s dBFS, peak %s dBFS, "
-                 "speech in %.0f%% of the time", self.id, report["seconds"], report["speech_dbfs"],
-                 report["noise_dbfs"], report["noise_floor_dbfs"], report["threshold_dbfs"], report["peak_dbfs"],
+        log.info("recording %s: %.1f s, speech %s dBFS, noise %s dBFS, peak %s dBFS, speech in %.0f%% of the time",
+                 self.id, report["seconds"], report["speech_dbfs"], report["noise_dbfs"], report["peak_dbfs"],
                  100 * report["speech_fraction"])
         metrics.metric("audio", recording=self.id, **{k: v for k, v in report.items() if k != "dbfs_per_second"})
         if self.rec:
@@ -318,10 +317,11 @@ class Session:
                 self.errors.append("the client closed the connection before the stop")
                 return
             # The recording is whole: cut what is left of it now, into pieces as equal as the pauses allow.
-            rest = self.cut_frame * FRAME_BYTES
-            for pcm in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:], self.levels.threshold,
-                             self.cut["piece_seconds"], self.cut["cut_search_seconds"], self.max_audio):
-                self.pending.put_nowait(pcm)
+            rest, start = self.cut_frame * FRAME_BYTES, self.cut_frame * FRAME_S
+            self.speech.flush()
+            for pcm, a, b in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:],
+                                   self.cut["piece_seconds"], self.cut["cut_search_seconds"], self.max_audio):
+                self.pending.put_nowait((pcm, self.speech.seconds(start + a, start + b)))
             if self.live_pieces:
                 log.info("recording %s: %d pieces cut while the speaker talked, %.1f s left at the stop", self.id,
                          self.live_pieces, seconds(len(self.audio) - rest))

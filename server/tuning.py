@@ -13,11 +13,12 @@ import constants
 @dataclass(frozen=True)
 class Knob:
     key: str                # in the config file
-    name: str               # in the code, and the command-line flag with dashes
+    name: str               # in the code
     kind: type
     default: object         # the fallback when the owner gives none; None: none (the code says what that means)
     owner: str              # "server", "model" or "adapter"
-    help: str
+    title: str              # for the settings window
+    help: str               # for the settings window: what it does, in plain words for the user
     group: str              # what it is about, for the settings window: GROUPS
     low: float = None       # the range: low ≤ value ≤ high; None: no bound
     high: float = None
@@ -31,12 +32,14 @@ class Knob:
             return False
         return self.high is None or not (v >= self.high if self.open_high else v > self.high)
 
-    def schema(self, default, value):
-        """The knob's description for a client (info's "settings"): its owner, range, default and value in force."""
+    def schema(self, default, value, high=None):
+        """The knob's description for a client (info's "settings"): its owner, range, default and value in force.
+        `high`: a bound of the model's that is lower than the knob's own (pieceSeconds: the model's longest audio)."""
         kinds = {bool: "boolean", int: "integer", float: "number"}
+        high = self.high if high is None else high if self.high is None else min(high, self.high)
         return {"key": self.key, "owner": self.owner, "group": self.group, "kind": kinds[self.kind],
-                "default": default, **({"value": value} if value != default else {}),
-                **{k: v for k, v in (("min", self.low), ("max", self.high)) if v is not None},
+                "title": self.title, "default": default, **({"value": value} if value != default else {}),
+                **{k: v for k, v in (("min", self.low), ("max", high)) if v is not None},
                 **({"minExclusive": True} if self.open_low else {}),
                 **({"maxExclusive": True} if self.open_high else {}),
                 "help": self.help}
@@ -46,60 +49,68 @@ GROUPS = ("cutting", "speech", "recording", "sampling", "output", "context")
 OWNERS = ("server", "model", "adapter")
 
 KNOBS = [
-    # The server's: how a recording is cut, what counts as speech, the recording itself
-    Knob("pieceSeconds", "piece_seconds", float, 15.0, "server",
-         "the wanted length of a piece; while the speaker talks, pieces of at most this long are cut; what is left at "
-         "the stop is cut into pieces as close to it as possible and equal; never longer than the model takes",
+    # The server's: how a recording is cut into pieces, what counts as speech, the recording itself
+    Knob("pieceSeconds", "piece_seconds", float, 15.0, "server", "Piece length",
+         "The recording goes to the model in pieces of about this length. Longer pieces give the model more of "
+         "your sentence. Shorter pieces give the text sooner. A piece is never longer than the model accepts.",
          group="cutting", low=5),
-    Knob("cutSearchSeconds", "cut_search_seconds", float, 3.0, "server",
-         "how far from its point a cut may move to the quietest moment (while the speaker talks: only back)",
-         group="cutting", low=0, high=10, open_low=True),
-    Knob("cutWhileSpeaking", "cut_while_speaking", bool, True, "server",
-         "cut pieces and send them to the model while the speaker talks, so that after the stop only the rest is left",
+    Knob("cutSearchSeconds", "cut_search_seconds", float, 3.0, "server", "Search for a pause",
+         "A cut between two pieces moves up to this far to the quietest moment, so that it does not fall inside "
+         "a word.", group="cutting", low=0, high=10, open_low=True),
+    Knob("cutWhileSpeaking", "cut_while_speaking", bool, True, "server", "Send pieces while you speak",
+         "Pieces go to the model while you speak. When you stop, only the last piece is left to wait for.",
          group="cutting"),
-    Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server",
-         "while the speaker talks, a piece is cut only once this much more was heard after it, so the piece after "
-         "the stop is never shorter", group="cutting", low=0),
+    Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server", "Shortest last piece",
+         "While you speak, a piece is cut only when this much audio follows it. So the piece that is left when "
+         "you stop is never shorter.", group="cutting", low=0),
     # From the speech that Silero VAD found in the 2038 saved pieces (2026-10-15 to 2026-10-22): the 35 pieces with
     # 0 to 0.06 s of it all got text of the model's own or copied from the context; the shortest real answer had
-    # 0.51 s. Real pieces had at most 22.6 characters per second of speech in 99 % of them; a reply made up around
-    # one short word had 216.
-    Knob("minSpeechSeconds", "min_speech_seconds", float, 0.3, "server",
-         "a piece with less speech than this (Silero VAD) does not go to the model and gives no text; "
-         "0: every piece goes", group="speech", low=0),
-    Knob("maxCharsPerSpeechSecond", "max_chars_per_speech_second", float, 60.0, "server",
-         "a piece's text longer than this per second of its speech is the model's own and is dropped; 0: never",
-         group="speech", low=0),
-    Knob("thresholdDb", "threshold_db", float, -45.0, "server", "the lowest loudness of speech, dBFS",
-         group="speech", high=0, open_high=True),
-    Knob("speechAboveNoiseDb", "speech_above_noise_db", float, 12.0, "server",
-         "speech is at least this much louder than the recording's noise floor, dB", group="speech", low=0),
+    # 0.51 s.
+    Knob("minSpeechSeconds", "min_speech_seconds", float, 0.3, "server", "Least speech in a piece",
+         "A piece with less speech than this does not go to the model. On silence the model makes up text. "
+         "With 0, every piece goes to the model.", group="speech", low=0),
     Knob("maxRecordingSeconds", "max_recording_seconds", float, float(constants.MAX_RECORDING_S), "server",
-         "the longest recording; the server stops it there and tells the client",
+         "Longest recording", "The server stops a recording at this length.",
          group="recording", low=0, open_low=True, client=False),
-    Knob("warmText", "warm_text", bool, True, "server",
-         "send the text before the audio to llama-server while the speaker talks", group="recording", client=False),
+    Knob("warmText", "warm_text", bool, True, "server", "Prepare the model while you speak",
+         "The chat context and the instructions go to the model while you speak. After you stop, the model then "
+         "reads only the audio.", group="recording", client=False),
     # The model's: its sampler and the length of its answer (defaults: its catalog entry)
-    Knob("temperature", "temperature", float, None, "model", "the sampler's temperature", group="sampling", low=0),
-    Knob("topK", "top_k", int, None, "model", "the sampler's top_k", group="sampling", low=1),
-    Knob("topP", "top_p", float, None, "model", "the sampler's top_p", group="sampling", low=0, high=1),
-    Knob("seed", "seed", int, None, "model", "the sampler's seed", group="sampling"),
-    Knob("outputTokensPerSecond", "output_tokens_per_second", float, 10.0, "model",
-         "the limit of a piece's text: tokens per second of its audio", group="output", low=0, open_low=True),
-    Knob("outputTokensBase", "output_tokens_base", int, 32, "model",
-         "plus this many tokens; maxOutputTokens overrides both", group="output", low=0),
-    Knob("maxOutputTokens", "max_output_tokens", int, None, "model", "a fixed limit of a piece's text, in tokens",
-         group="output", low=1),
-    Knob("contextAsSystem", "context_as_system", bool, False, "model",
-         "the context goes in a system turn, and the user turn holds only the prompt and the audio", group="context"),
-    # The adapter's: the context it gives (defaults: its manifest's "context")
-    Knob("chatHistoryTokenBudget", "chat_history_token_budget", int, 1000, "adapter",
-         "tokens of the context's messages before the audio; 0 turns the context off", group="context", low=0),
-    Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, None, "adapter",
-         "tokens of the context's terms; none: a tenth of chatHistoryTokenBudget", group="context", low=0),
-    Knob("proseOnly", "prose_only", bool, True, "adapter",
-         "keep only the messages' lines of prose: a line goes when less than 60 % of its characters are letters "
-         "(a table row of numbers, a list of paths); its terms are taken before", group="context"),
+    Knob("temperature", "temperature", float, None, "model", "Temperature",
+         "Higher values make the text more random. Lower values make it more predictable.", group="sampling", low=0),
+    Knob("topK", "top_k", int, None, "model", "Top K",
+         "The model picks each next token (a part of a word) from this many most likely ones.",
+         group="sampling", low=1),
+    Knob("topP", "top_p", float, None, "model", "Top P",
+         "The model picks each next token from the most likely ones, until their probabilities add up to this "
+         "value.", group="sampling", low=0, high=1),
+    Knob("seed", "seed", int, None, "model", "Seed",
+         "With a seed, the same audio gives the same text each time. Without one, the model draws a new seed for "
+         "each piece.", group="sampling"),
+    # In 346 pieces with speech (2026-10-22 to 2026-10-25, Gemma 4 E4B), the text had at most 10.4 tokens per second
+    # of speech (8.1 for 99 % of them, more in pieces under 2 s of speech). 20 is twice the most. A text that reaches
+    # it is the model's own: all 10 saved pieces that reached the old limit (10 tokens per second of audio plus 32,
+    # 2026-10-14 to 2026-10-22) had no speech, or 0.8 s of it for 28 words.
+    Knob("maxTokensPerSpeechSecond", "max_tokens_per_speech_second", float, 20.0, "model",
+         "Longest text per second of speech",
+         "The model writes at most this many tokens (parts of words) for each second of your speech. Speech never "
+         "gives that much text. So a text that reaches the limit is made up by the model, and it is dropped.",
+         group="output", low=0, open_low=True),
+    Knob("contextAsSystem", "context_as_system", bool, False, "model", "Context in a separate message",
+         "The chat context goes to the model in a system message of its own, not in the message with the audio.",
+         group="context"),
+    # The adapter's: the context it gives (defaults: its manifest's "context"). The adapter's switch ("enabled") turns
+    # the context off; a budget does not.
+    Knob("chatHistoryTokenBudget", "chat_history_token_budget", int, 1000, "adapter", "Chat context",
+         "How much of the chat goes to the model with your speech, in tokens (parts of words). First the list of "
+         "names and terms, then the newest messages that fit. The chat shows the model the words that you use.",
+         group="context", low=1),
+    Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, 100, "adapter", "Names and terms",
+         "How much of the chat context the list of names and terms from the chat can take, in tokens. The list "
+         "helps the model spell them.", group="context", low=0),
+    Knob("proseOnly", "prose_only", bool, True, "adapter", "Only sentences",
+         "Lines that are mostly digits and symbols, such as table rows and file paths, do not go to the model. "
+         "Their names and terms still go to the list.", group="context"),
 ]
 BY_KEY = {k.key: k for k in KNOBS}
 BY_NAME = {k.name: k for k in KNOBS}

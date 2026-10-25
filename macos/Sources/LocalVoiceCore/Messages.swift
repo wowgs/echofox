@@ -153,6 +153,8 @@ public struct SettingInfo: Decodable, Equatable {
     public let group: String
     /// number, integer, boolean or string.
     public let kind: String
+    /// Its name in the settings window, for the user.
+    public let title: String
     /// The owner's default: the menu's model's for a model's setting; the fallback for an adapter's (each adapter's
     /// own default is in its info's context).
     public let `default`: SettingValue?
@@ -162,6 +164,7 @@ public struct SettingInfo: Decodable, Equatable {
     public let max: Double?
     public let minExclusive: Bool?
     public let maxExclusive: Bool?
+    /// What it does and what changes when it changes, in plain words for the user.
     public let help: String
 
     /// Whether `v` is in the setting's range.

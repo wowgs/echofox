@@ -84,7 +84,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 4
+  "version": 5
 }
 
 """
@@ -104,7 +104,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 4,
+  "version": 5,
   "adapters": {"enabled": true}
 }
 
@@ -209,10 +209,10 @@ do {
     var config = Config.load(from: file)
     check(SettingStore.path(of: cut, model: "a") == ["server", "cutSearchSeconds"], "settings: a server's at the server")
     check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the config's value is shown")
-    let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","default":64,"help":"h"}"#.utf8))
+    let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","title":"Top K","default":64,"help":"h"}"#.utf8))
     check(SettingStore.path(of: topK, model: "a") == ["models", "a", "options", "topK"]
           && SettingStore.value(of: topK, in: config, model: "a") == .number(2), "settings: a model's in its options")
-    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","default":null,"help":"h"}"#.utf8))
+    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","title":"Names and terms","default":100,"help":"h"}"#.utf8))
     let claude = info.adapters.first { $0.name == "claude" }!
     check(SettingStore.value(of: messages, in: config, model: "a", adapter: claude) == .number(3),
           "settings: an adapter's in its entry")

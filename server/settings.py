@@ -1,8 +1,8 @@
 """The server's settings and the config file it shares with its clients.
 
-The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 4. Each setting has one owner
-(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner:
-  {"version": 4,
+The config, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG), version 5. Each setting has one owner
+(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only:
+  {"version": 5,
    "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
    "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
                          "prompt": "…", "options": {the model's knobs}}},
@@ -14,8 +14,8 @@ The app's settings the server does not read. adapters: the adapter plugins that 
 the base mode, dictation without context. languages: changes to the language table (languages.json; an empty list
 turns a list off). models: the registry; each a llama.cpp llama-server, started and stopped through its launchd
 agent, with its catalog entry (catalog.json). Only the model chosen in the menus ("model") is in memory; a name not in
-the registry, or none: no model in memory. A setting's value: the command line, then the file, then the default (the
-test server keeps its own port, log and metrics). The server watches the file:
+the registry, or none: no model in memory. A setting's value: the file's, else the default (the test server has a
+config file of its own: test_server.sh). The server watches the file:
   "recording" settings take effect at the next recording;
   "model" settings (models) take effect after the running recording;
   "process" settings (host, port) end the process after the running recording; launchd starts it again.
@@ -44,13 +44,13 @@ MODEL_DEFAULT = {"gemma-e4b": {"catalog": catalog.DEFAULT,
 @dataclass(frozen=True)
 class Setting:
     key: str                 # in the config file
-    name: str                # in the code; with a command-line flag if `flag`
+    name: str                # in the code
     kind: type
     ok: Callable
     default: object
     level: str               # "recording", "model" or "process"
     section: str = None      # "server", or None: at the top of the file
-    flag: bool = True
+    title: str = ""          # for the settings window, if it shows the setting
     help: str = ""
 
 
@@ -97,23 +97,23 @@ def good_languages(v):
 
 
 SETTINGS = [
-    Setting("host", "host", str, bool, constants.HOST, "process", "server", help="where the server listens"),
-    Setting("port", "port", int, lambda v: 0 < v < 65536, constants.WORKING_PORT, "process", "server",
-            help="the server's port"),
+    Setting("host", "host", str, bool, constants.HOST, "process", "server"),
+    Setting("port", "port", int, lambda v: 0 < v < 65536, constants.WORKING_PORT, "process", "server"),
     Setting("models", "models", dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT,
-            "model", flag=False),
-    Setting("adapters", "adapters", dict, good_adapters, {}, "recording", flag=False),
-    Setting("adapterDefaults", "adapter_defaults", dict, good_adapter_defaults, {}, "recording", flag=False),
-    Setting("languages", "languages", dict, good_languages, {}, "recording", flag=False),
-    Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server", flag=False,
-            help="save each recording, its pieces and their texts (never a private dictation)"),
+            "model"),
+    Setting("adapters", "adapters", dict, good_adapters, {}, "recording"),
+    Setting("adapterDefaults", "adapter_defaults", dict, good_adapter_defaults, {}, "recording"),
+    Setting("languages", "languages", dict, good_languages, {}, "recording"),
+    Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
+            "Save recordings", "Keep each recording on disk with its pieces and their texts. A private dictation "
+            "is never saved."),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
-            help="where the recordings are saved"),
+            "Recordings folder", "The folder where the recordings are saved."),
     Setting("labeled", "labeled", str, bool, constants.LABELED, "recording", "server",
-            help="where the labeled pieces are kept (the app's labeling window, the training)"),
-    Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server", help="the metrics file"),
-    *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server", flag=k.kind is not bool, help=k.help)
-      for k in tuning.KNOBS if k.owner == "server"),
+            "Labels folder", "The folder for the pieces that you labeled with their correct text."),
+    Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server"),
+    *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server") for k in tuning.KNOBS
+      if k.owner == "server"),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
 
@@ -130,10 +130,12 @@ def schema(st, model_entry=None):
     adapters, "context")."""
     defaults = model_defaults(model_entry) if model_entry else {}
     own = tuning.parse((model_entry or {}).get("options"), "model") if model_entry else {}
+    longest = catalog.max_audio_seconds(model_entry) if model_entry else None  # what the model takes in one piece
     out = []
     for k in tuning.KNOBS:
         if k.owner == "server":
-            out.append(k.schema(k.default, getattr(st, k.name, k.default)))
+            out.append(k.schema(k.default, getattr(st, k.name, k.default),
+                                high=longest if k.key == "pieceSeconds" else None))
         elif k.owner == "model":
             d = defaults.get(k.name, k.default)
             out.append(k.schema(d, own.get(k.name, d)))
@@ -143,21 +145,14 @@ def schema(st, model_entry=None):
         s = BY_KEY[key]
         now = getattr(st, s.name, s.default)
         shown = constants.path(s.default) if kind == "string" else s.default
-        out.append({"key": key, "owner": "server", "group": "storage", "kind": kind, "default": s.default,
-                    **({"value": now} if now not in (s.default, shown) else {}), "help": s.help})
+        out.append({"key": key, "owner": "server", "group": "storage", "kind": kind, "title": s.title,
+                    "default": s.default, **({"value": now} if now not in (s.default, shown) else {}),
+                    "help": s.help})
     return out
 
 
 def config_file():
     return os.environ.get("LOCAL_VOICE_CONFIG") or constants.path(constants.CONFIG)
-
-
-def add_flags(parser):
-    """A command-line flag for each setting that has one: --piece-seconds and so on."""
-    for s in SETTINGS:
-        if s.flag:
-            parser.add_argument("--" + s.name.replace("_", "-"), type=s.kind, dest=s.name,
-                                help=f"{s.help} (default {s.default})" if s.help else None)
 
 
 def _checked(s, value):
@@ -212,14 +207,9 @@ def file_settings(path):
     return out
 
 
-def resolve(cli, from_file):
-    """The settings in force: the command line, then the file, then the defaults: {key: value}. A command-line value
-    out of range raises ValueError."""
-    out = {}
-    for s in SETTINGS:
-        given = getattr(cli, s.name, None) if s.flag else None
-        out[s.key] = _checked(s, given) if given is not None else from_file.get(s.key, s.default)
-    return out
+def resolve(from_file):
+    """The settings in force: the file's, then the defaults: {key: value}."""
+    return {s.key: from_file.get(s.key, s.default) for s in SETTINGS}
 
 
 def recording_settings(now, into=None):
@@ -254,9 +244,55 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
-    """The config brought to this version, step by step (migrate_2, migrate_3)."""
+    """The config brought to this version, step by step (migrate_2, migrate_3, migrate_4)."""
     migrate_2(path)
     migrate_3(path)
+    migrate_4(path)
+
+
+# Version 4 → 5: the settings that were a second way to set the same thing. The length of the text and the drop of
+# the model's own text are one knob (maxTokensPerSpeechSecond); speech is only Silero VAD's (the loudness threshold
+# is gone); a context budget of 0 is not the adapter's switch.
+GONE_IN_5 = ("thresholdDb", "speechAboveNoiseDb", "maxCharsPerSpeechSecond", "outputTokensPerSecond",
+             "outputTokensBase", "maxOutputTokens")
+
+
+def migrate_4(path):
+    """Version 4 → 5 (GONE_IN_5): the gone settings leave the file; an adapter whose chatHistoryTokenBudget is 0 is
+    turned off instead, and a 0 in adapterDefaults leaves the file. The file keeps its order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(c, dict) or c.get("version") != 4:
+        return
+    gone = []
+
+    def drop(d, keys, where):
+        for k in keys:
+            if isinstance(d, dict) and k in d:
+                gone.append(f"{where}.{k}={d.pop(k)!r}")
+
+    drop(c.get("server"), GONE_IN_5, "server")
+    for name, entry in (c.get("models") or {}).items():
+        if isinstance(entry, dict):
+            drop(entry.get("options"), GONE_IN_5, f"models.{name}.options")
+            if isinstance(entry.get("options"), dict) and not entry["options"]:
+                del entry["options"]
+    for name, entry in (c.get("adapters") or {}).items():
+        if isinstance(entry, dict) and entry.get("chatHistoryTokenBudget") == 0:
+            del entry["chatHistoryTokenBudget"]
+            entry["enabled"] = False
+            gone.append(f"adapters.{name}.chatHistoryTokenBudget=0 (the adapter is turned off instead)")
+    if isinstance(c.get("adapterDefaults"), dict) and c["adapterDefaults"].get("chatHistoryTokenBudget") == 0:
+        drop(c["adapterDefaults"], ("chatHistoryTokenBudget",), "adapterDefaults")
+    c["version"] = 5
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    log.info("config %s: version 4 → 5; gone: %s", path, ", ".join(gone) or "nothing")
 
 
 def migrate_3(path):
@@ -306,7 +342,7 @@ def migrate_3(path):
         else:
             entry.pop("options", None)
         models[name] = entry
-    new = {"version": constants.CONFIG_VERSION, "models": models, "adapters": adapters_, "server": server}
+    new = {"version": 4, "models": models, "adapters": adapters_, "server": server}
     out = {k: new.get(k, v) for k, v in c.items() if k not in ("fillers", "saveRecordings", "labeled")}
     if langs:
         out["languages"] = langs
@@ -350,8 +386,8 @@ class ConfigWatcher:
     """Applies changes of the config file (see the levels above) and, with `follow`, keeps in memory only the model
     chosen in the menus. `current`: the settings in force; `st`: the recording settings' namespace."""
 
-    def __init__(self, path, cli, models, st, current, stop, follow=True):
-        self.path, self.cli, self.models, self.st, self.current, self.stop = path, cli, models, st, current, stop
+    def __init__(self, path, models, st, current, stop, follow=True):
+        self.path, self.models, self.st, self.current, self.stop = path, models, st, current, stop
         self.follow, self.chosen, self.chosen_known = follow, None, False
         self.seen = self._mtime()  # before the first model loads, so a change during that load is not lost
 
@@ -381,11 +417,7 @@ class ConfigWatcher:
             self.seen = mtime
             from_file = file_settings(self.path)
             if from_file is not None:
-                try:
-                    now = resolve(self.cli, from_file)
-                except ValueError as e:
-                    log.error("config %s: %s", self.path, e)
-                    now = None
+                now = resolve(from_file)
                 changed = {k for k in BY_KEY if now and now[k] != self.current[k]}
                 if changed:
                     levels = {BY_KEY[k].level for k in changed}

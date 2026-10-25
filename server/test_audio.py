@@ -8,7 +8,7 @@ from fakes import LOUD, QUIET, seconds
 
 
 def levels(pcm, chunk=None):
-    lv = a.Levels(-45)
+    lv = a.Levels()
     for i in range(0, len(pcm), chunk or len(pcm) or 1):
         lv.feed(pcm[i:i + (chunk or len(pcm))])
     return lv
@@ -16,7 +16,7 @@ def levels(pcm, chunk=None):
 
 def split(pcm, piece_s=20, search_s=3):
     lv = levels(pcm)
-    return [round(seconds(p), 1) for p in a.split(pcm, lv.rms, lv.threshold, piece_s, search_s)]
+    return [round(seconds(p), 1) for p, _, _ in a.split(pcm, lv.rms, piece_s, search_s)]
 
 
 class SplitTest(unittest.TestCase):
@@ -24,8 +24,11 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(split(LOUD + QUIET + LOUD), [3.0])
         self.assertEqual(split(LOUD * 28), [28.0])  # round(28 / 20) = 1, and 28 s fits the model
 
-    def test_silence_never_becomes_a_piece(self):
-        self.assertEqual(split(QUIET * 3), [])
+    def test_the_pieces_cover_the_audio_and_say_where_they_are(self):
+        lv = levels(LOUD * 45)
+        pieces = a.split(LOUD * 45, lv.rms, 20, 3)
+        self.assertEqual([(s, e) for _, s, e in pieces], [(0.0, 22.5), (22.5, 45.0)])
+        self.assertEqual(b"".join(p for p, _, _ in pieces), LOUD * 45)
 
     def test_pieces_are_equal_and_as_close_to_the_wanted_length_as_possible(self):
         self.assertEqual(split(LOUD * 45), [22.5, 22.5])  # 2 pieces of 22.5 s, not 20 + 20 + 5
@@ -70,28 +73,16 @@ class LiveCutTest(unittest.TestCase):
 
 
 class LevelsTest(unittest.TestCase):
-    def test_the_threshold_follows_the_noise_floor_of_a_loud_microphone(self):
-        noise, speech = tone(100), tone(2300)  # -50.3 and -23.1 dBFS: a microphone at full input volume
-        lv = levels(noise * 3 + speech + noise * 3 + speech)
-        r = lv.report()
-        self.assertEqual(r["noise_floor_dbfs"], -50.3)
-        self.assertEqual(r["threshold_dbfs"], -38.3)  # the floor + 12 dB, above -45
-        self.assertAlmostEqual(r["speech_fraction"], 0.25, delta=0.01)  # the noise is not speech
-        self.assertEqual(split(noise * 3), [])  # and alone never becomes a piece
-
-    def test_a_quiet_microphone_keeps_the_lowest_threshold(self):
-        r = levels(tone(20) * 3 + tone(500)).report()  # noise -64.3, speech -36.3 dBFS
-        self.assertEqual(r["threshold_dbfs"], -45.0)
+    def test_speech_and_noise_are_where_the_vad_says(self):
+        noise, speech = tone(100), tone(2300)  # -50.3 and -23.1 dBFS
+        r = levels(noise * 3 + speech).report(lambda t: t >= 3)
+        self.assertEqual((r["noise_dbfs"], r["speech_dbfs"]), (-50.3, -23.1))
         self.assertAlmostEqual(r["speech_fraction"], 0.25, delta=0.01)
-
-    def test_speech_without_pauses_still_counts(self):
-        self.assertEqual(levels(LOUD * 5).report()["speech_fraction"], 1.0)  # the cap: 6 dB under the 90th percentile
-        self.assertEqual(split(LOUD * 5), [5.0])
-
+        self.assertEqual(levels(noise).report(lambda t: False)["speech_dbfs"], None)
 
     def test_speech_noise_clipping_and_digital_silence(self):
         clip = array.array("h", [32767, -32768] * (a.RATE // 2)).tobytes()
-        r = levels(LOUD * 2 + QUIET + clip).report()
+        r = levels(LOUD * 2 + QUIET + clip).report(lambda t: True)
         self.assertEqual(r["seconds"], 3.99)
         self.assertEqual(r["peak_dbfs"], 0.0)
         self.assertEqual(r["clipped_samples"], 33 * a.FRAME)  # whole 30 ms frames; the last 10 ms wait for more

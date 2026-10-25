@@ -14,6 +14,7 @@
     "lists"
   ],
   "context": {
-    "chatHistoryTokenBudget": 2000
+    "chatHistoryTokenBudget": 2000,
+    "chatTermsTokenBudget": 200
   }
 }

@@ -1,6 +1,5 @@
 """Shared pieces of the server's tests: audio, stub models and a fake llama-server. Not a test module."""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
-import argparse
 import array
 import json
 import tempfile
@@ -11,12 +10,28 @@ import audio
 import llama
 import metrics
 import recordings
+import protocol
 import settings
+import vad
 from audio import RATE
 
 # No test waits for a real llama-server, touches the real launchd agents or asks macOS about the microphone.
 llama.wait_healthy = lambda url, seconds=0: True
 recordings.input_info = lambda: None
+
+
+class ToneStream(vad.Stream):
+    """The VAD for the tests' audio, which is a tone, not speech (test_vad.py): a 32 ms chunk is speech when it is
+    loud (an RMS over 1000, about -30 dBFS)."""
+
+    def __init__(self):
+        super().__init__(vad=self)
+
+    def run(self, chunk, context, state):
+        return float(((chunk * 32768.0) ** 2).mean() ** 0.5 > 1000), state
+
+
+protocol.Stream = ToneStream
 LOUD = array.array("h", [8000, -8000] * (RATE // 2)).tobytes()  # 1 s, about -12 dBFS
 QUIET = b"\0\0" * RATE  # 1 s of silence
 ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"llamaServer": "http://127.0.0.1:9"}}
@@ -25,10 +40,9 @@ ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"ll
 def args(**over):
     """The recording settings protocol.handle() gets: the defaults, with the recordings in the sandbox and the
     built-in adapter enabled."""
-    st = settings.recording_settings(settings.resolve(argparse.Namespace(), {}))
+    st = settings.recording_settings(settings.resolve({}))
     st.recordings = tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT)
     st.adapters = ["claude"]
-    st.min_speech_seconds = st.max_chars_per_speech_second = 0  # the fake audio is a tone, not speech (test_vad.py)
     for k, v in over.items():
         setattr(st, k, v)
     return st

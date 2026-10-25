@@ -29,9 +29,7 @@
     "options": {
       "temperature": 1.0,
       "topK": 64,
-      "topP": 0.95,
-      "outputTokensPerSecond": 10.0,
-      "outputTokensBase": 32
+      "topP": 0.95
     },
     "llamaServer": {
       "args": [

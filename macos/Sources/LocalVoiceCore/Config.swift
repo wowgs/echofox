@@ -1,12 +1,12 @@
 // The config file the app shares with the dictation server, ~/.local-voice/config.json ($LOCAL_VOICE_CONFIG),
-// version 4 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
+// version 5 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
 // recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
 // value out to go back to its default.
 import Foundation
 
 public struct Config: Equatable {
-    public static let version = 4
+    public static let version = 5
     public static let defaultHost = "127.0.0.1"
     public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
     public static let defaultRecordings = "~/speech/recordings"  // the server's own default (constants.py RECORDINGS)
@@ -74,7 +74,7 @@ public struct Config: Equatable {
         for (name, entry) in (d["adapters"] as? [String: Any]) ?? [:] {
             c.adapters[name] = ((entry as? [String: Any])?["enabled"] as? Bool) ?? false
         }
-        if let s = d["silenceStopSeconds"] as? Double, s >= 0 { c.silenceStopSeconds = s }
+        if let s = d["silenceStopSeconds"] as? Double, s > 0 { c.silenceStopSeconds = s }
         if let m = d["microphone"] as? String, !m.isEmpty { c.microphone = m }
         if let k = d["dictationKey"] as? String { c.dictationKey = TapKeyChoice(rawValue: k) }
         if let k = d["privateDictationKey"] as? String { c.privateDictationKey = TapKeyChoice(rawValue: k) }

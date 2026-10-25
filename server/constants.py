@@ -23,7 +23,7 @@ METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
 PLUGINS = "~/Library/Application Support/Local Voice/adapters"  # $LOCAL_VOICE_PLUGINS sets another
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
 RATE = 16000

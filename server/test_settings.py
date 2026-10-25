@@ -28,29 +28,15 @@ class ModelsTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):
-    def cli(self, **given):
-        return types.SimpleNamespace(**{**{x.name: None for x in s.SETTINGS if x.flag}, **given})
-
     def write(self, f, **c):
         json.dump({"version": constants.CONFIG_VERSION, **c}, open(f, "w"))
         os.utime(f, ns=(time.time_ns(), time.time_ns()))
 
-    def test_the_command_line_wins_then_the_file_then_the_defaults(self):
+    def test_the_file_wins_then_the_defaults(self):
         models = {"a": {"llamaServer": "http://h:1"}}
-        now = s.resolve(self.cli(port=8091), {"port": 9000, "pieceSeconds": 25.0, "models": models})
-        self.assertEqual((now["port"], now["pieceSeconds"], now["cutSearchSeconds"], now["models"]), (8091, 25.0, 3.0, models))
-        self.assertEqual((s.resolve(self.cli(), {})["models"], s.resolve(self.cli(), {})["saveRecordings"]),
-                         (s.MODEL_DEFAULT, True))
-
-    def test_every_setting_with_a_flag_has_it_and_a_command_line_value_out_of_range_is_refused(self):
-        import argparse
-        p = argparse.ArgumentParser()
-        s.add_flags(p)
-        cli = p.parse_args(["--piece-seconds", "25", "--port", "9000", "--max-recording-seconds", "60"])
-        now = s.resolve(cli, {})
-        self.assertEqual((now["pieceSeconds"], now["port"], now["maxRecordingSeconds"]), (25.0, 9000, 60.0))
-        with self.assertRaisesRegex(ValueError, "pieceSeconds"):
-            s.resolve(p.parse_args(["--piece-seconds", "2"]), {})
+        now = s.resolve({"port": 9000, "pieceSeconds": 25.0, "models": models})
+        self.assertEqual((now["port"], now["pieceSeconds"], now["cutSearchSeconds"], now["models"]), (9000, 25.0, 3.0, models))
+        self.assertEqual((s.resolve({})["models"], s.resolve({})["saveRecordings"]), (s.MODEL_DEFAULT, True))
 
     def test_the_file_has_the_registry_at_the_top_and_the_server_in_its_section(self):
         with tempfile.TemporaryDirectory() as d:
@@ -62,7 +48,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                                                   "port": 9000, "languages": {"ru": {"fillers": ["э"]}}})
 
     def test_an_adapters_entry_may_set_its_context_budgets_and_nothing_else(self):
-        now = s.resolve(self.cli(), {"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
+        now = s.resolve({"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
                                                   "claude": {"enabled": False}}})
         st = s.recording_settings(now)
         self.assertEqual((st.adapters, st.adapter_options), (["telegram"], {"telegram": {"chat_history_token_budget": 600},
@@ -107,11 +93,10 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as d:
                 f = os.path.join(d, "config.json")
                 self.write(f)
-                cli = self.cli()
-                current = s.resolve(cli, {})
+                current = s.resolve({})
                 st = s.recording_settings(current)
                 stop = asyncio.get_running_loop().create_future()
-                w = s.ConfigWatcher(f, cli, FakeModels(), st, current, stop, follow=False)
+                w = s.ConfigWatcher(f, FakeModels(), st, current, stop, follow=False)
                 self.write(f, server={"pieceSeconds": 25, "saveRecordings": False})  # recording settings
                 self.assertTrue(await w.check())
                 self.assertEqual((st.piece_seconds, st.save_recordings, calls), (25.0, False, []))
@@ -125,7 +110,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                 self.write(f, server={"port": 9998})
                 stop2 = asyncio.get_running_loop().create_future()
                 stop2.set_result(None)  # already stopping (a signal): a second stop is no error
-                w2 = s.ConfigWatcher(f, cli, FakeModels(), st, dict(current), stop2, follow=False)
+                w2 = s.ConfigWatcher(f, FakeModels(), st, dict(current), stop2, follow=False)
                 self.write(f, server={"port": 9997})
                 self.assertFalse(await w2.check())
         finally:
@@ -135,8 +120,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             self.write(f)
-            cli = self.cli()
-            current = s.resolve(cli, {})
+            current = s.resolve({})
             st = s.recording_settings(current)
 
             class SlowModels:
@@ -148,7 +132,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                     self_test.write(f, server={"pieceSeconds": 26})  # while the model loads
 
             self_test = self
-            w = s.ConfigWatcher(f, cli, SlowModels(), st, current, asyncio.get_running_loop().create_future())
+            w = s.ConfigWatcher(f, SlowModels(), st, current, asyncio.get_running_loop().create_future())
             await w.follow_selection()
             await w.check()
             self.assertEqual(st.piece_seconds, 26.0)
@@ -161,7 +145,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             choose = lambda model: json.dump({"version": constants.CONFIG_VERSION, "model": model}, open(f, "w"))
             models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
                                    "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
-            w = s.ConfigWatcher(f, self.cli(), models, s.recording_settings(s.resolve(self.cli(), {})), {}, None)
+            w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
             choose("e4b")
             await w.follow_selection()
             self.assertEqual(agents.calls, [("stop", "x.big"), ("start", "x.e4b")])
@@ -175,9 +159,6 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             n = len(agents.calls)
             await models.get("big")
             self.assertEqual(len(agents.calls), n)
-
-    def cli(self):
-        return types.SimpleNamespace(**{x.name: None for x in s.SETTINGS if x.flag})
 
 
 class LaunchdTest(unittest.TestCase):
@@ -219,7 +200,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate_2(f)  # a version-3 file stays as it is
             self.assertEqual(json.load(open(f, encoding="utf-8")), c)
 
-    def test_version_3_becomes_4_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_5_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -233,16 +214,41 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 4)
+            self.assertEqual(c["version"], 5)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
-                                                "options": {"outputTokensBase": 40, "temperature": 1},
-                                                "catalog": "gemma-4-e4b"})
+                                                "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude"]["chatHistoryTokenBudget"], 1000)   # its own value stays
             self.assertEqual(c["adapters"]["telegram"]["chatHistoryTokenBudget"], 2000)  # the model's was its value
             self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l", "pieceSeconds": 12})
             self.assertEqual(c["languages"], {"ru": {"fillers": ["э"]}})
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
+
+    def test_version_4_becomes_5_without_the_second_ways_and_the_order_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            v4 = {"model": "m", "version": 4,
+                  "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 0}, "telegram": {"enabled": True}},
+                  "adapterDefaults": {"chatHistoryTokenBudget": 0, "proseOnly": False},
+                  "models": {"m": {"llamaServer": "http://h:1", "options": {"outputTokensPerSecond": 8,
+                                                                         "maxOutputTokens": 99, "topK": 5}},
+                             "n": {"llamaServer": "http://h:2", "options": {"outputTokensBase": 40}}},
+                  "server": {"thresholdDb": -45, "speechAboveNoiseDb": 12, "maxCharsPerSpeechSecond": 60,
+                             "pieceSeconds": 15}}
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump(v4, fh)
+            with self.assertLogs("gemma_voice", "INFO") as logs:
+                s.migrate(f)
+            c = json.load(open(f, encoding="utf-8"))
+            self.assertEqual(list(c), list(v4))
+            self.assertEqual(c["version"], 5)
+            self.assertEqual(c["server"], {"pieceSeconds": 15})
+            self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
+            self.assertNotIn("options", c["models"]["n"])
+            self.assertEqual(c["adapters"]["claude"], {"enabled": False})  # a budget of 0 was the switch
+            self.assertEqual(c["adapterDefaults"], {"proseOnly": False})
+            self.assertIn("thresholdDb=-45", logs.output[0])
+            self.assertEqual(s.file_settings(f)["pieceSeconds"], 15.0)
 
 
 if __name__ == "__main__":

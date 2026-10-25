@@ -1,8 +1,7 @@
 #!/bin/zsh
 # Runs server/gemma_voice.py as a launchd agent of this user: it starts at login and again after a crash.
-# Usage: server/launchd.sh install [server arguments] | uninstall | status
-# The server arguments go into the agent as they are, for example:
-#   server/launchd.sh install --port 8090
+# Usage: server/launchd.sh install [--config FILE] | uninstall | status
+# The settings are in the config file (default ~/.local-voice/config.json); --config goes into the agent as it is.
 # Log: ~/Library/Logs/local-voice/gemma-voice.log
 set -e
 # The shared numbers and names come from server/constants.py.

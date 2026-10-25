@@ -17,10 +17,11 @@ model's prompt and options, the adapters that give the chat context, and the rec
                    then it closes
 
 A model takes at most its catalog entry's maxAudioSeconds of audio per request (catalog.json; Gemma 4: 30 s). While
-the speaker talks, a piece is cut each time --piece-seconds plus --min-last-piece-seconds are heard since the cut
-before, at the quietest moment shortly before --piece-seconds, and goes to the model at once; at the stop, the rest is
-cut into pieces as close to --piece-seconds as possible and equal, none longer than the model takes, each cut moved to
-the quietest moment near its equal point. Each piece then goes to the model in a request of its own, so the model
+the speaker talks, a piece is cut each time pieceSeconds plus minLastPieceSeconds are heard since the cut before, at
+the quietest moment shortly before pieceSeconds, and goes to the model at once; at the stop, the rest is cut into
+pieces as close to pieceSeconds as possible and equal, none longer than the model takes, each cut moved to the
+quietest moment near its equal point. What is speech is Silero VAD's (vad.py), on the whole recording as it arrives:
+it sends the client "speech", and a piece with less than minSpeechSeconds of it does not go to the model. Each piece then goes to the model in a request of its own, so the model
 never sees its answers to earlier pieces (with them in the conversation it repeated them). The prompt is the model's
 template (its catalog entry's, or its own in the config) with the notes of the dictation's language (languages.json),
 with the text before the audio, as Gemma's model card advises.
@@ -35,11 +36,10 @@ A piece's request holds the text before the audio (the messages of the place tha
 its chatHistoryTokenBudget, terms within its chatTermsTokenBudget, then the prompt) and the piece's audio. The text is
 warmed in llama-server's cache while the speaker talks (cache_prompt).
 
-The text of a piece is limited to the model's outputTokensPerSecond tokens per second of its audio plus its
-outputTokensBase (maxOutputTokens overrides it): without a limit, a model that never writes its end token decodes
-until the context is full.
+The text of a piece is limited to the model's maxTokensPerSpeechSecond tokens per second of the piece's speech: a
+text that reaches it is the model's own and is dropped, and a model that never writes its end token stops there.
 
-Each recording gets a folder in --recordings (recordings.py): the whole audio (mic.wav), adapter.json, each piece's
+Each recording gets a folder in the config's recordings folder (recordings.py): the whole audio (mic.wav), adapter.json, each piece's
 audio, the text before the audio, each piece's text (pieces.jsonl) and the levels (audio.json); "saveRecordings":
 false in the config turns this off.
 """
@@ -61,21 +61,16 @@ log = logging.getLogger("gemma_voice")
 
 async def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0],
-                                epilog="Each setting can also be set in the config file; the command line wins. The "
-                                       "models are set only in the file. The server watches the file.")
+                                epilog="The settings are in the config file only. The server watches the file.")
     p.add_argument("--config", default=None, help=f"the config file (default {settings.config_file()})")
     p.add_argument("--ignore-selection", action="store_true",
                    help="do not follow the model chosen in the menus, and never start or stop llama-server agents "
                         "(for a test server)")
-    settings.add_flags(p)
     cli = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     path = cli.config or settings.config_file()
     settings.migrate(path)
-    try:
-        current = settings.resolve(cli, settings.file_settings(path) or {})
-    except ValueError as e:
-        p.error(str(e))
+    current = settings.resolve(settings.file_settings(path) or {})
     st = settings.apply(current)
     models = Models(current["models"], manage=not cli.ignore_selection)
     if cli.ignore_selection:
@@ -85,7 +80,7 @@ async def main():
     stop = loop.create_future()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: stop.done() or stop.set_result(None))
-    watcher = settings.ConfigWatcher(path, cli, models, st, current, stop, follow=not cli.ignore_selection)
+    watcher = settings.ConfigWatcher(path, models, st, current, stop, follow=not cli.ignore_selection)
     watching = asyncio.create_task(watcher.run())
     async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"],
                      max_size=None) as server:

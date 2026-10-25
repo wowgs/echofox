@@ -118,8 +118,7 @@ final class Dictation {
     }
 
     private func checkSilence() {
-        guard phase == .recording, config.silenceStopSeconds > 0,
-              Date().timeIntervalSince(lastSpeech) >= config.silenceStopSeconds else { return }
+        guard phase == .recording, Date().timeIntervalSince(lastSpeech) >= config.silenceStopSeconds else { return }
         stop(.silence)
     }
 

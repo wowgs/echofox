@@ -14,8 +14,6 @@ import languages
 import metrics
 import tuning
 from audio import seconds, wav
-from vad import CHUNK_S
-from vad import speech_in as speech_seconds  # tests put a fake here
 
 MAX_PROMPT = 4000  # characters of a prompt, the model's or a client's
 NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
@@ -34,13 +32,9 @@ def prompt(language, custom="", entry=None, configured=None):
     return template.replace("{LANGUAGE}", name or "its original language") + "".join(f"\n* {n}" for n in notes)
 
 
-def output_limit(audio_seconds, options, server):
-    """The limit of a piece's text, in tokens."""
-    fixed = tuning.value("max_output_tokens", options, server)
-    if fixed is not None:
-        return fixed
-    return math.ceil(tuning.value("output_tokens_per_second", options, server) * audio_seconds) \
-        + tuning.value("output_tokens_base", options, server)
+def output_limit(speech_seconds, options, server):
+    """The limit of a piece's text, in tokens: maxTokensPerSpeechSecond for each second of its speech."""
+    return max(1, math.ceil(tuning.value("max_tokens_per_speech_second", options, server) * speech_seconds))
 
 
 async def run_blocking(fn, *args, cancel=None):
@@ -113,10 +107,7 @@ class Dictation:
             return
         options = self.adapter_options(context.get("adapter"))
         budget = tuning.value("chat_history_token_budget", options, self.server)
-        if budget <= 0:
-            return
         terms_budget = tuning.value("chat_terms_token_budget", options, self.server)
-        terms_budget = budget // 10 if terms_budget is None else terms_budget
         all_terms = [t for t in context.get("terms") or [] if isinstance(t, str)]
         n_terms, used = self._fit(all_terms, terms_budget, lambda ts: "Terms: " + ", ".join(ts))
         terms = all_terms[:n_terms]
@@ -172,14 +163,12 @@ class Dictation:
                  took, timings.get("prefill_tokens"), timings.get("cached_tokens"))
         metrics.metric("warm", model=self.m.name, **self.meta, slot=slot, wall_seconds=round(took, 3), **timings)
 
-    async def piece(self, pcm, piece, slot=None):
+    async def piece(self, pcm, piece, speech, slot=None):
+        """One piece with `speech` seconds of speech in it (the VAD's) → its text. A piece with too little speech does
+        not go to the model; a text that reaches the limit is the model's own and is dropped."""
         t, audio = time.monotonic(), seconds(pcm)
-        limit = output_limit(audio, self.options, self.server)
         meta = {**self.meta, "piece": piece, "slot": slot}
-        least = tuning.value("min_speech_seconds", self.options, self.server)
-        most = tuning.value("max_chars_per_speech_second", self.options, self.server)
-        speech = await asyncio.to_thread(speech_seconds, pcm) if least or most else None
-        if speech is not None and speech < least:
+        if speech < tuning.value("min_speech_seconds", self.options, self.server):
             log.info("%s: piece %d, %.1f s of audio with %.2f s of speech: not sent to the model", self.m.name, piece,
                      audio, speech)
             metrics.metric("piece_skipped", model=self.m.name, **meta, audio_seconds=round(audio, 2),
@@ -187,6 +176,7 @@ class Dictation:
             self._save_piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2), "speech_seconds": round(speech, 2),
                                    "text": "", "skipped": "no speech"})
             return ""
+        limit = output_limit(speech, self.options, self.server)
         try:
             text, timings = await run_blocking(self.m.complete, self.text, pcm, limit, self.options, slot,
                                                *self._system(), cancel=self.m.cancel)
@@ -200,26 +190,22 @@ class Dictation:
         timings["llama_footprint_mb"] = await asyncio.to_thread(self.m.footprint_mb)
         hit = timings.get("decode_tokens") is not None and timings["decode_tokens"] >= limit
         shown = f"{len(text)} characters" if self.meta.get("private") else repr(text)  # a private text is not logged
-        log.info("%s: piece %d, %.1f s of audio in %.2f s, %s prefill (%s cached) + %s decode tokens: %s", self.m.name,
-                 piece, audio, took, timings.get("prefill_tokens"), timings.get("cached_tokens"),
-                 timings.get("decode_tokens"), shown)
+        log.info("%s: piece %d, %.1f s of audio, %.2f s of speech, in %.2f s, %s prefill (%s cached) + %s decode "
+                 "tokens: %s", self.m.name, piece, audio, speech, took, timings.get("prefill_tokens"),
+                 timings.get("cached_tokens"), timings.get("decode_tokens"), shown)
         raw, text = text, fillers.remove(text, self.sounds)
         if text != raw and not self.meta.get("private"):
             log.info("%s: piece %d without hesitation sounds: %r", self.m.name, piece, text)
-        if hit:
-            log.warning("%s: the text reached the limit of %d tokens for %.1f s of audio and was cut", self.m.name,
-                        limit, audio)
         dropped = None
-        if speech is not None and most and len(text) > most * max(speech, CHUNK_S):
-            log.warning("%s: piece %d, %d characters for %.2f s of speech: the model's own text, dropped", self.m.name,
-                        piece, len(text), speech)
+        if hit:
+            log.warning("%s: piece %d, the text reached the limit of %d tokens for %.2f s of speech: the model's own "
+                        "text, dropped", self.m.name, piece, limit, speech)
             dropped, text = text, ""
         metrics.metric("piece", model=self.m.name, **meta, audio_seconds=round(audio, 2), wall_seconds=round(took, 3),
-                       text_chars=len(text), raw_chars=len(raw), output_limit=limit, output_limit_hit=hit,
-                       **({"speech_seconds": round(speech, 2)} if speech is not None else {}),
-                       **({"dropped_chars": len(dropped)} if dropped is not None else {}), **timings)
-        self._save_piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2),
-                               **({"speech_seconds": round(speech, 2)} if speech is not None else {}),
+                       speech_seconds=round(speech, 2), text_chars=len(text), raw_chars=len(raw), output_limit=limit,
+                       output_limit_hit=hit, **({"dropped_chars": len(dropped)} if dropped is not None else {}),
+                       **timings)
+        self._save_piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2), "speech_seconds": round(speech, 2),
                                "text": text, **({"raw": raw} if raw != text and dropped is None else {}),
                                **({"dropped": dropped} if dropped is not None else {}),
                                "output_limit": limit, "output_limit_hit": hit, **timings})

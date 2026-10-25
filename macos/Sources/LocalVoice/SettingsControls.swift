@@ -30,7 +30,8 @@ struct SettingLine<Control: View>: View {
     }
 }
 
-/// A text or number field that looks like one.
+/// A text or number field that looks like one. The placeholder shows inside the empty field, grey; the field has no
+/// title of its own: in a grouped Form, SwiftUI shows a TextField's title as a label next to it.
 struct InputField: View {
     var placeholder = ""
     @Binding var text: String
@@ -41,7 +42,8 @@ struct InputField: View {
     var onSubmit: () -> Void = {}
 
     var body: some View {
-        TextField(placeholder, text: $text)
+        TextField("", text: $text, prompt: placeholder.isEmpty ? nil : Text(placeholder))
+            .labelsHidden()
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(number ? .trailing : .leading)
             .font(number ? .body.monospacedDigit() : .body)
@@ -85,13 +87,12 @@ extension View {
     }
 }
 
-/// The unit of a server setting, from its key: "pieceSeconds" is in seconds, "thresholdDb" in dB.
+/// The unit of a server setting, from its key: "pieceSeconds" is in seconds, "maxTokensPerSpeechSecond" in tokens
+/// per second of speech, "chatHistoryTokenBudget" in tokens.
 func unit(of key: String) -> String? {
-    if key.hasSuffix("PerSpeechSecond") { return "chars/s" }
-    if key.hasSuffix("PerSecond") { return "tokens/s" }
+    if key.hasSuffix("PerSpeechSecond") { return "tokens/s" }
     if key.hasSuffix("Seconds") { return "s" }
-    if key.hasSuffix("Db") { return "dB" }
-    if key.hasSuffix("TokenBudget") || key.hasSuffix("Tokens") || key.hasSuffix("TokensBase") { return "tokens" }
+    if key.hasSuffix("TokenBudget") { return "tokens" }
     return nil
 }
 

@@ -62,6 +62,11 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 await ws.send(json.dumps({"type": "info"}))
                 return json.loads(await ws.recv())
 
+    async def test_silence_is_never_speech_and_never_goes_to_the_model(self):
+        stub, got = await self.run_stream(START, QUIET * 25)  # 25 s: a piece cut while "speaking", and the rest
+        self.assertEqual([m["type"] for m in got], ["done"])
+        self.assertEqual(stub.calls, [])
+
     async def test_speech_then_pieces_in_order_then_done(self):
         stub, got = await self.run_stream({**START, "sampleRate": 16000, "encoding": "pcm_s16le"}, LOUD + QUIET + LOUD)
         self.assertEqual(got[0], {"type": "speech"})
@@ -238,7 +243,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 metrics.configure(saved)
         by = {l["event"]: l for l in lines}
-        self.assertEqual(sorted(by), ["audio", "piece", "prepare", "recording", "warm"])
+        # "warm" only if the warm-up ended before the piece: once the pieces are done, it is cancelled
+        self.assertEqual(sorted(set(by) - {"warm"}), ["audio", "piece", "prepare", "recording"])
         self.assertEqual(by["audio"]["speech_fraction"], 0.68)
         r = by["recording"]
         self.assertEqual((r["audio_seconds"], r["model"], r["client"], r["prompt"], r["stop_reason"]),
@@ -252,8 +258,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                                           LOUD * 12, entries=entries)
         self.assertEqual(sorted(c[0] for c in stub.calls), [5.0, 7.0])  # pieceSeconds 5: a cut at 10 s heard, 7 s left
         options = stub.calls[0][2]  # the catalog's defaults, the model's options over them, the client's over both
-        self.assertEqual({k: options[k] for k in ("temperature", "top_k", "top_p", "output_tokens_per_second")},
-                         {"temperature": 0.0, "top_k": 1, "top_p": 0.9, "output_tokens_per_second": 10.0})
+        self.assertEqual({k: options[k] for k in ("temperature", "top_k", "top_p")},
+                         {"temperature": 0.0, "top_k": 1, "top_p": 0.9})
         stub, got = await self.run_stream(START, LOUD, entries={"g": {"llamaServer": "http://127.0.0.1:9",
                                                                       "options": {"pieceSeconds": 5}}})
         self.assertEqual(got[0]["type"], "error")  # a server's setting is not the model's to set
