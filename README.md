@@ -4,7 +4,7 @@
 
 [Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Docs](docs/README.md)
 
-Private, on-device dictation for Mac, built for conversations where your language and English technical terms mix. Your voice, your text and your conversations never leave your Mac.
+Private, on-device dictation for Mac, built for conversations where your language and English terms mix.
 
 Works offline · No account · No cloud · No telemetry
 
