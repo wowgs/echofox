@@ -41,6 +41,11 @@
             "client": "local-voice-mac", "snapshot": {"app": {"bundleId": "com.example.app", "pid": 1, "name": "Example"}},
             "hints": {}},
   "stop": {"type": "stop", "reason": "user"},
+  "download": {"type": "download", "catalog": "gemma-4-e4b", "variant": "q4_0"},
+  "remove": {"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"},
+  "cancel": {"type": "cancel"},
+  "models": [{"type": "progress", "bytes": 1048576, "total": 5582359648}, {"type": "downloaded"},
+             {"type": "removed", "bytes": 4590807392}, {"type": "error", "message": "not enough free disk"}],
   "server": [{"type": "speech"}, {"type": "text", "text": "Привет"}, {"type": "error", "message": "boom"},
              {"type": "stopped", "reason": "max_duration"}, {"type": "done"}]
 }

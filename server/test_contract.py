@@ -43,6 +43,11 @@ class ContractTest(unittest.TestCase):
         for kind in ("speech", "text", "error", "stopped", "done", "info"):
             self.assertIn(f'type="{kind}"' if kind != "info" else '"type": "info"', source)
         self.assertEqual(kinds, {"speech", "text", "error", "stopped", "done"})
+        models = {m["type"] for m in EXAMPLES["models"]}  # the answers to download and remove
+        for kind in ("progress", "downloaded", "removed"):
+            self.assertIn(f'type="{kind}"', source)
+        self.assertEqual(models, {"progress", "downloaded", "removed", "error"})
+        self.assertEqual({EXAMPLES[k]["type"] for k in ("download", "remove", "cancel")}, {"download", "remove", "cancel"})
 
 
 if __name__ == "__main__":

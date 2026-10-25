@@ -274,5 +274,17 @@ do {
     check(false, "settings: \(error)")
 }
 
+// The messages of a model's download and removal, as the examples have them.
+do {
+    let answers = (examples["models"] as? [[String: Any]] ?? []).map { m -> ServerMessage? in
+        ServerMessage.parse(String(decoding: try! JSONSerialization.data(withJSONObject: m), as: UTF8.self))
+    }
+    check(answers == [.progress(bytes: 1048576, total: 5582359648), .downloaded, .removed(4590807392),
+                      .error("not enough free disk")], "models: the server's answers \(answers)")
+    let sent = try JSONSerialization.jsonObject(with: Data(ClientMessage.download(catalog: "gemma-4-e4b", variant: "q4_0").utf8))
+    check(NSDictionary(dictionary: sent as? [String: Any] ?? [:]).isEqual(to: examples["download"] as? [String: Any] ?? [:]),
+          "models: the download message is the example's")
+}
+
 print(failures == 0 ? "lv-tests: all checks pass" : "lv-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

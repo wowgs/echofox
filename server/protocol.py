@@ -18,6 +18,7 @@ from websockets.exceptions import ConnectionClosed
 import adapters
 import catalog
 import constants
+import downloads
 import languages
 import metrics
 import recordings
@@ -29,6 +30,7 @@ from vad import Stream  # tests put a fake here
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
 WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording got long enough for one more slot
+DOWNLOAD_PROGRESS_S = 0.5   # at most one "progress" message of a download per this long
 MIC_INFO_WAIT_S = 15        # for the input device's description at the end
 CLIENT_NAME_CHARS = 40
 STOP_REASONS = ("user", "silence", "max_duration", "error")
@@ -61,16 +63,69 @@ def info(args, models=None):
             "settings": settings.schema(args, entry)}
 
 
+def _folder(args):
+    return getattr(args, "models_folder", None) or constants.path(constants.MODELS_FOLDER)
+
+
+async def download(ws, send, m, models, args):
+    """One download of a model's variant (docs/reference/6-protocol.md): its progress until it ends; a cancel
+    message stops it. The download goes on when the client leaves."""
+    try:
+        job = downloads.start(str(m.get("catalog") or catalog.DEFAULT), str(m.get("variant") or ""), _folder(args))
+    except ValueError as e:
+        await send(type="error", message=str(e))
+        return
+
+    async def cancels():
+        async for message in ws:
+            with contextlib.suppress(ValueError, TypeError, AttributeError):
+                if json.loads(message).get("type") == "cancel":
+                    job.cancelled.set()
+                    return
+
+    listening = asyncio.ensure_future(cancels())
+    try:
+        while not await asyncio.to_thread(job.finished.wait, DOWNLOAD_PROGRESS_S):
+            await send(type="progress", bytes=job.done, total=job.total)
+        if job.error:
+            await send(type="error", message=job.error)
+        elif job.cancelled.is_set():
+            await send(type="error", message="the download was cancelled")
+        else:
+            await send(type="progress", bytes=job.total, total=job.total)
+            await send(type="downloaded")
+    except ConnectionClosed:
+        pass  # the client left; the download goes on
+    finally:
+        listening.cancel()
+
+
+async def remove(ws, send, m, models, args):
+    """Deletes a variant's own files, unless it is the one in force of the menu's model."""
+    entries = getattr(models, "entries", None) or {}
+    name = settings.selected_model(settings.config_file(), models) if models else None
+    entry = entries.get(name) if name else None
+    cat = str(m.get("catalog") or catalog.DEFAULT)
+    in_force = catalog.variant(entry)[0] if entry and entry.get("catalog", catalog.DEFAULT) == cat else None
+    try:
+        freed = await asyncio.to_thread(downloads.remove, cat, str(m.get("variant") or ""), _folder(args), in_force)
+        await send(type="removed", bytes=freed)
+    except (ValueError, OSError) as e:
+        await send(type="error", message=str(e))
+
+
 def variants(entry, models_folder):
     """The variants of a registry entry's model, for the settings window: the one in force, and each with its name,
     the bytes of its files and whether they are all in the models folder."""
     vid, _ = catalog.variant(entry)
     folder = models_folder or constants.path(constants.MODELS_FOLDER)
+    running = downloads.running()
     out = []
     for v, spec in (catalog.of(entry).get("variants") or {}).items():
         paths = catalog.files({**entry, "variant": v}, folder)
         out.append({"id": v, "name": spec["name"], "bytes": sum(f["bytes"] for f in spec["files"].values()),
-                    "downloaded": all(os.path.isfile(p) for p in paths.values())})
+                    "downloaded": all(os.path.isfile(p) for p in paths.values()),
+                    **({"downloading": True} if (entry.get("catalog", catalog.DEFAULT), v) in running else {})})
     return {"variant": vid, "variants": out}
 
 
@@ -124,6 +179,10 @@ async def handle(ws, models, args):
         first = None
     if isinstance(first, dict) and first.get("type") == "info":
         await send(**await asyncio.to_thread(info, args, models))
+        await ws.close()
+        return
+    if isinstance(first, dict) and first.get("type") in ("download", "remove"):
+        await (download if first["type"] == "download" else remove)(ws, send, first, models, args)
         await ws.close()
         return
     try:

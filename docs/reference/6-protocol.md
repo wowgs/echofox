@@ -1,6 +1,6 @@
 # The protocol
 
-A client and [the dictation server](1-server.md) talk over one WebSocket, `ws://127.0.0.1:8090`. A connection is one recording, or one question about the server. `shared/protocol-examples.json` has an example of every message. `server/test_contract.py` and the app's `lv-tests` both check them.
+A client and [the dictation server](1-server.md) talk over one WebSocket, `ws://127.0.0.1:8090`. A connection is one recording, one question about the server, or one download or removal of a model. `shared/protocol-examples.json` has an example of every message. `server/test_contract.py` and the app's `lv-tests` both check them.
 
 ## A recording
 
@@ -63,3 +63,22 @@ The app takes from it the format of the audio, the wait for the text, the time l
 | `min`, `max` | The range of a number. `minExclusive` and `maxExclusive` mean that the value cannot be equal to the bound. |
 
 The constants of the server are not settings and are not in this list.
+
+## Download a model
+
+The client sends `{"type": "download", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server downloads the files of that variant that are not in the models folder yet. The URL, the size and the SHA-256 of each file are in `server/catalog.json`.
+
+| The server sends | When |
+|---|---|
+| `{"type": "progress", "bytes": 1048576, "total": 5582359648}` | At most every 0.5 s. `bytes` counts the files that are already there too. |
+| `{"type": "downloaded"}` | All files of the variant are there. Then the server closes the connection. |
+| `{"type": "error", "message": "…"}` | The download stopped. Then the server closes the connection. |
+
+- The download goes on when the connection closes. Another `download` message for the same variant joins it and gets its progress.
+- `{"type": "cancel"}` on the connection stops the download. What is downloaded stays, and the next download goes on from there.
+- A file is written as `<file>.part`. It gets its own name only when its size and its SHA-256 are right. A wrong SHA-256 deletes the part and stops the download with an error.
+- The server refuses a download when the disk has less free space than the rest of the files and 1 GB more.
+
+## Remove a model
+
+The client sends `{"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server deletes the files of that variant that no other downloaded variant uses. It refuses to remove the variant in force of the menu's model. It answers `{"type": "removed", "bytes": 4590807392}` or an error, and closes the connection.

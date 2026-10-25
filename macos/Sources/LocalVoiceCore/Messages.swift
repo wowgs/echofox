@@ -44,8 +44,9 @@ public struct ServerInfo: Decodable, Equatable {
         public let name: String
         /// The size of its files.
         public let bytes: Double
-        /// Whether all its files are in the models folder.
+        /// Whether all its files are in the models folder, and whether the server downloads them now.
         public let downloaded: Bool
+        public let downloading: Bool?
     }
     public let interface: Int
     public let sampleRate: Int
@@ -83,6 +84,16 @@ public struct MessageError: Error, CustomStringConvertible {
 
 public enum ClientMessage {
     public static let info = #"{"type":"info"}"#
+    public static let cancel = #"{"type":"cancel"}"#
+
+    /// The download, or the removal, of a variant of a catalog's model.
+    public static func download(catalog: String, variant: String) -> String {
+        json(["type": "download", "catalog": catalog, "variant": variant])
+    }
+
+    public static func remove(catalog: String, variant: String) -> String {
+        json(["type": "remove", "catalog": catalog, "variant": variant])
+    }
 
     /// The start of a recording. `isPrivate`: the server saves nothing of it, runs no adapter and logs no text.
     public static func start(model: String?, language: String, sampleRate: Int, client: String,
@@ -107,6 +118,8 @@ public enum ClientMessage {
 /// A message from the server during a recording.
 public enum ServerMessage: Equatable {
     case speech, text(String), error(String), stopped(String), done, other
+    /// A model's download (docs/reference/6-protocol.md): its bytes so far of its total; its end; a removal's bytes.
+    case progress(bytes: Double, total: Double), downloaded, removed(Double)
 
     public static func parse(_ s: String) -> ServerMessage? {
         guard let m = (try? JSONSerialization.jsonObject(with: Data(s.utf8))) as? [String: Any] else { return nil }
@@ -116,6 +129,10 @@ public enum ServerMessage: Equatable {
         case "error": return .error(m["message"] as? String ?? "error")
         case "stopped": return .stopped(m["reason"] as? String ?? "")
         case "done": return .done
+        case "progress": return .progress(bytes: (m["bytes"] as? NSNumber)?.doubleValue ?? 0,
+                                          total: (m["total"] as? NSNumber)?.doubleValue ?? 0)
+        case "downloaded": return .downloaded
+        case "removed": return .removed((m["bytes"] as? NSNumber)?.doubleValue ?? 0)
         default: return .other
         }
     }

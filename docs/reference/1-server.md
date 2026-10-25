@@ -46,6 +46,8 @@ The model catalog, `server/catalog.json`, gives what each model needs: the longe
 
 A variant is one quantization of the model with its files. Gemma 4 E4B has two: Q4_0 and Q8_0 (the default). Both come from the Hugging Face repository `ggml-org/gemma-4-E4B-it-GGUF` at a fixed revision, and the catalog has the size and the SHA-256 of each file. The files are in the models folder (`server.modelsFolder`), in a folder with the name of the repository: `gemma-4-E4B-it-GGUF/`. The two variants share their audio encoder file.
 
+The server downloads the files of a variant when a client asks it to, and it can remove them again ([the protocol](6-protocol.md#download-a-model)). It continues a download that stopped, and it checks the SHA-256 of each file.
+
 The server writes the launchd agent of the chosen model itself: `llama-server` with the files of the variant, the address of the model and the arguments of the catalog. When you choose another variant or another models folder, the server writes the agent again and restarts `llama-server` after the recording that runs.
 
 For Gemma 4 E4B, `llama-server` runs on `127.0.0.1:8092` with these arguments:

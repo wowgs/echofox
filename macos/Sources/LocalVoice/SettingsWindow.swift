@@ -137,6 +137,31 @@ final class SettingsModel: ObservableObject {
 
     func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
 
+    /// The downloads and removals of model variants that this window started, by variant.
+    @Published var jobs: [String: ModelJob] = [:]
+
+    func download(catalog: String, variant: String) {
+        let job = ModelJob(url: config.serverURL, message: ClientMessage.download(catalog: catalog, variant: variant))
+        job.onChange = { [weak self] in
+            self?.objectWillChange.send()
+            if job.finished { self?.actions?.askServer() }  // the variant is downloaded, or not
+        }
+        jobs[variant] = job
+        job.start()
+    }
+
+    func cancel(_ variant: String) { jobs[variant]?.cancel() }
+
+    func remove(catalog: String, variant: String) {
+        let job = ModelJob(url: config.serverURL, message: ClientMessage.remove(catalog: catalog, variant: variant))
+        job.onChange = { [weak self] in
+            self?.objectWillChange.send()
+            if job.finished { self?.actions?.askServer() }
+        }
+        jobs[variant] = job
+        job.start()
+    }
+
     private var watch: Timer?
 
     /// Asks the server for its state now and every Tuning.serverStatusPollSeconds, while the state is shown.
@@ -546,8 +571,9 @@ struct ModelPicker: View {
     }
 }
 
-/// The variant of the menu's model: one quantization of it, with the size of its files. Only a variant whose files are
-/// in the models folder can be chosen; the others say so.
+/// The variants of the menu's model: one quantization of it each, with the size of its files. Only a variant whose
+/// files are in the models folder can be chosen; another one has Download, with its progress; one that is there and
+/// not in force has Remove.
 struct VariantPicker: View {
     @ObservedObject var model: SettingsModel
 
@@ -563,14 +589,46 @@ struct VariantPicker: View {
                     model.actions?.refreshServer()
                 })) {
                     ForEach(variants, id: \.id) { v in
-                        Text("\(v.name), \(String(format: "%.1f", v.bytes / 1e9)) GB" + (v.downloaded ? "" : " (not downloaded)"))
-                            .tag(v.id)
+                        Text("\(v.name), \(gigabytes(v.bytes))" + (v.downloaded ? "" : " (not downloaded)")).tag(v.id)
                     }
                 }
                 .labelsHidden()
                 .fixedSize()
             }
+            ForEach(variants.filter { $0.id != info?.variant }, id: \.id) { v in
+                VariantFiles(model: model, catalog: info?.catalog ?? "", variant: v)
+            }
         }
+    }
+}
+
+func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
+
+/// The files of a variant not in force: Download with its progress, or Remove.
+struct VariantFiles: View {
+    @ObservedObject var model: SettingsModel
+    let catalog: String
+    let variant: ServerInfo.Variant
+
+    private var job: ModelJob? { model.jobs[variant.id] }
+
+    var body: some View {
+        SettingLine(title: variant.name, note: note, refused: job?.error != nil) {
+            if let job, job.error == nil, !job.finished {
+                ProgressView(value: job.total > 0 ? job.bytes / job.total : 0).frame(width: 140)
+                Button("Cancel") { model.cancel(variant.id) }
+            } else if variant.downloaded {
+                Button("Remove") { model.remove(catalog: catalog, variant: variant.id) }
+            } else {
+                Button("Download") { model.download(catalog: catalog, variant: variant.id) }
+            }
+        }
+    }
+
+    private var note: String {
+        if let e = job?.error { return e }
+        if let job, !job.finished { return "\(gigabytes(job.bytes)) of \(gigabytes(job.total))" }
+        return variant.downloaded ? "Downloaded, \(gigabytes(variant.bytes))." : "Not downloaded, \(gigabytes(variant.bytes))."
     }
 }
 

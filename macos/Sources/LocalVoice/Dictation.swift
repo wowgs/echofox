@@ -183,7 +183,7 @@ final class Dictation {
             }
         case .done:
             finish(error: nil)
-        case .other, .none:
+        case .other, .none, .progress, .downloaded, .removed:  // not messages of a recording
             break
         }
     }
