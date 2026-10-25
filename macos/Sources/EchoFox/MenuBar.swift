@@ -1,7 +1,7 @@
-// The menu bar item: an icon for the state (recording, a private recording, waiting, a problem), and a short menu of
-// what is touched often, built each time it opens from SettingsLayout.menu (docs/design/5-ui.md); everything else is
-// in the settings window. A dictation is the hotkeys', not the menu's. It shows; it never decides: the actions go
-// back to the App.
+// The menu bar item: the fox of the state (idle, recording, Ultra Private Dictation, writing the text; MenuBarIcon), or
+// the crossed-out microphone of a problem, and a short menu of what is touched often, built each time it opens from
+// SettingsLayout.menu (docs/design/5-ui.md); everything else is in the settings window. A dictation is the hotkeys',
+// not the menu's. It shows; it never decides: the actions go back to the App.
 import AppKit
 import AVFoundation
 import EchoFoxCore
@@ -26,9 +26,21 @@ protocol MenuActions: AnyObject {
 }
 
 final class MenuBar: NSObject, NSMenuDelegate {
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    /// What the icon shows: the fox (MenuBarIcon), or the crossed-out microphone of a problem, with its words.
+    private enum Icon: Equatable {
+        case fox(MenuBarIcon.Kind)
+        case problem(String)
+    }
+
+    // 30 pt: the fox is 26 × 24 pt and needs some room on its sides
+    private let item = NSStatusBar.system.statusItem(withLength: 30)
     private weak var actions: MenuActions?
     var state: () -> MenuState = { MenuState() }
+    private var icon = Icon.fox(.idle)
+    private var appearance: NSKeyValueObservation?
+    /// The processing ring turns only while the app waits for the text, and not with Reduce Motion.
+    private var spin: Timer?
+    private var phase: CGFloat = 0
 
     init(actions: MenuActions) {
         self.actions = actions
@@ -36,24 +48,76 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
+        item.button?.imagePosition = .imageOnly
+        // The fox's colors follow the menu bar under it, which can be dark in Light Mode (a dark wallpaper)
+        appearance = item.button?.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.draw() }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.update() }
     }
 
     func update() {
         let s = state()
-        let symbol: String, tint: NSColor?
         if s.recording {
-            (symbol, tint) = ("mic.fill", s.privateRecording ? .systemPurple : .systemRed)
+            icon = .fox(s.privateRecording ? .ultraPrivate : .recording)
         } else if s.waiting {
-            (symbol, tint) = ("ellipsis.circle", nil)
-        } else if !s.accessibility || s.microphone != .authorized || s.lastError != nil || s.serverProblem != nil {
-            (symbol, tint) = ("mic.slash", nil)
+            icon = .fox(.processing)
+        } else if !s.accessibility {
+            icon = .problem("Accessibility permission needed")
+        } else if s.microphone != .authorized {
+            icon = .problem("Microphone permission needed")
+        } else if let e = s.lastError {
+            icon = .problem(e)
+        } else if s.serverProblem != nil {
+            icon = .problem("the dictation server does not answer")
         } else {
-            (symbol, tint) = ("mic", nil)
+            icon = .fox(.idle)
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "EchoFox")
-        image?.isTemplate = true
-        item.button?.image = image
-        item.button?.contentTintColor = tint
+        let turning = icon == .fox(.processing) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if turning, spin == nil {
+            let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.phase = (self.phase + 24).truncatingRemainder(dividingBy: 360)
+                self.draw()
+            }
+            RunLoop.main.add(timer, forMode: .common)  // also while the menu is open
+            spin = timer
+        } else if !turning {
+            spin?.invalidate()
+            spin = nil
+            phase = 0
+        }
+        draw()
+    }
+
+    private func draw() {
+        guard let button = item.button else { return }
+        button.contentTintColor = nil
+        let label: String
+        switch icon {
+        case .problem(let what):
+            label = "EchoFox: " + what
+            let image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: label)
+            image?.isTemplate = true
+            button.image = image
+        case .fox(let kind):
+            switch kind {
+            case .idle: label = "EchoFox: ready"
+            case .recording: label = "EchoFox: recording"
+            case .ultraPrivate: label = "EchoFox: recording, Ultra Private Dictation"
+            case .processing: label = "EchoFox: writing the text"
+            }
+            var dark = false
+            button.effectiveAppearance.performAsCurrentDrawingAppearance {
+                dark = (NSColor.labelColor.usingColorSpace(.deviceRGB)?.brightnessComponent ?? 0) > 0.5
+            }
+            let image = MenuBarIcon.image(kind, dark: dark, phase: phase)
+            image.accessibilityDescription = label
+            button.image = image
+        }
+        button.setAccessibilityLabel(label)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

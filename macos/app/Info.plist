@@ -10,6 +10,8 @@
 	<string>EchoFox</string>
 	<key>CFBundleExecutable</key>
 	<string>EchoFox</string>
+	<key>CFBundleIconFile</key>
+	<string>EchoFox</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

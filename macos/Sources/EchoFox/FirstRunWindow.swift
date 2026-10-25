@@ -1,6 +1,7 @@
 // The window of the first start (docs/design/7-distribution.md, "Скачивание"): when no variant of the menu's model is
 // downloaded, it asks which one to download, shows the download, and then names the variant in the config. The
-// dictation server does the download (ModelJob), so it goes on if the window closes.
+// dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
+// only place of the full character in the app (macos/art/README.md).
 import AppKit
 import EchoFoxCore
 import SwiftUI
@@ -24,11 +25,12 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
             self?.window?.close()
         }
         self.model = model
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360), styleMask: [.titled, .closable],
+        let view = NSHostingView(rootView: FirstRunView(model: model))
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
         w.title = "EchoFox"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: FirstRunView(model: model))
+        w.contentView = view
         w.center()
         w.delegate = self
         window = w
@@ -75,8 +77,23 @@ final class FirstRunModel: ObservableObject {
 
 struct FirstRunView: View {
     @ObservedObject var model: FirstRunModel
+    /// The fox, from the app's Resources (build-app.sh); without it, the window shows the text alone.
+    private let fox = Bundle.main.image(forResource: "echofox-welcome")
 
     var body: some View {
+        HStack(spacing: 0) {
+            if let fox {
+                Image(nsImage: fox).resizable().scaledToFit()
+                    .frame(width: 160)
+                    .padding(.leading, 20)
+                    .accessibilityHidden(true)  // a picture only; the text says what the window is for
+            }
+            choice.frame(width: 520)
+        }
+        .frame(height: 360)
+    }
+
+    private var choice: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Download the speech model").font(.title2.bold())
             Text("EchoFox turns your speech into text with a model on this Mac. The audio never leaves it. "
@@ -118,6 +135,5 @@ struct FirstRunView: View {
             }
         }
         .padding(20)
-        .frame(width: 520, height: 360)
     }
 }

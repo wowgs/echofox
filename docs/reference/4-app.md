@@ -10,7 +10,7 @@ See also: [configuration](2-config.md), [saved recordings](5-recordings.md), and
 2. Tap and release **right Option** to start recording.
 3. Speak, then tap the same key to stop.
 
-Use **right Command** for private dictation. It skips conversation context and saves no audio or transcript. The app still identifies the input field so it can insert your text. The recording icon is purple.
+Use **right Command** for private dictation. It skips conversation context and saves no audio or transcript. The app still identifies the input field so it can insert your text. While it records, the earpiece of the fox in the menu bar is a shield with a keyhole.
 
 A tap means pressing and releasing the key on its own. Change either key in **Settings → General**.
 
@@ -57,7 +57,7 @@ The server handles downloads, so they continue if you close the settings window.
 
 The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Settings…** (⌘,), and Quit. Input volume is the same control as in macOS Sound settings.
 
-The icon shows recording, private recording, processing, or an error.
+The menu bar icon is a fox face. While you dictate, the fox wears a white headset: the earpiece is red for a recording, a shield with a keyhole for private dictation, and a turning ring while the text is written. If a permission is missing or something fails, the icon is a crossed-out microphone.
 
 | Settings page | Use it to |
 |---|---|

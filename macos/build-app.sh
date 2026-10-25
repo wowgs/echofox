@@ -30,6 +30,9 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/EchoFox "$app/Contents/MacOS/"
 cp app/Info.plist "$app/Contents/"
+# The app icon and the fox of the first start (macos/art/README.md)
+mkdir -p "$app/Contents/Resources"
+cp app/EchoFox.icns app/echofox-welcome.png "$app/Contents/Resources/"
 
 if $bundle; then
   . ./pins.sh
