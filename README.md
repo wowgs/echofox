@@ -24,7 +24,9 @@ Context is available in **Claude Desktop's Code tab** and **Telegram Desktop**. 
 
 Gemma 4 E4B runs locally through bundled llama.cpp. Pick a model variant in the app, click **Download**, and you're ready to dictate offline.
 
-Tap **right Option** to speak; tap again to insert the text. Use **right Command** for private dictation, without conversation context or saved recordings.
+Tap <kbd>⌥</kbd> **right Option** to speak; tap again to insert the text.
+
+Use <kbd>⌘</kbd> **right Command** for **Ultra Private Dictation**: the same local recognition, without conversation context or saved recordings.
 
 Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
 
