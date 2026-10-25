@@ -95,7 +95,7 @@ final class SettingsModel: ObservableObject {
     func setting(_ key: String) -> SettingInfo? { settings.first { $0.key == key } }
 
     func sections(_ page: SettingsPage) -> [(section: String, ids: [String])] {
-        let keys = settings.map { (key: $0.key, group: $0.group) }
+        let keys = settings.map { (key: $0.key, owner: $0.owner, group: $0.group) }
         return SettingsLayout.sections(of: page, serverKeys: keys)
     }
 
@@ -173,6 +173,10 @@ struct ItemView: View {
         case "privateDictationKey": KeyPicker(model: model, path: "privateDictationKey", title: "Private dictation",
                                               note: "The same, without reading the screen: no context, nothing saved.")
         case "language": LanguagePicker(model: model)
+        case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for the prompt",
+                                           note: "One rule a line, added to the prompt for this language.")
+        case "languageFillers": LanguageList(model: model, field: "fillers", title: "Hesitation sounds",
+                                             note: "Taken out of the text; separated by commas. Empty: none.")
         case "silenceStopSeconds": AppNumberRow(model: model, path: ["silenceStopSeconds"], title: "Stop after silence",
                                                 unit: "s", fallback: model.config.silenceStopSeconds,
                                                 note: "The recording stops by itself after this long without speech.")
@@ -218,7 +222,7 @@ struct SettingRow: View {
     let setting: SettingInfo
     private var id: String { "setting." + setting.key }
 
-    private var path: [String]? { SettingStore.path(of: setting, in: model.config, model: model.config.model) }
+    private var path: [String]? { SettingStore.path(of: setting, model: model.config.model) }
     private var value: SettingValue? { SettingStore.value(of: setting, in: model.config, model: model.config.model) }
     private var set: Bool { path.map { model.config.value($0) != nil } ?? false }
     private var shown: String { show(value) == "none" ? "" : show(value) }
@@ -401,25 +405,29 @@ struct ModelPicker: View {
     }
 }
 
-/// The model's own prompt; without one, the server uses Google's speech recognition template.
+/// The model's prompt template: its own in the config, or its catalog entry's. The language's notes follow it.
 struct PromptEditor: View {
     @ObservedObject var model: SettingsModel
     private let id = "prompt"
 
     private var path: [String]? { model.config.model.map { ["models", $0, "prompt"] } }
-    private var text: String { model.drafts[id] ?? own ?? "" }
     private var own: String? { path.flatMap { model.config.value($0) as? String } }
+    private var catalog: String { model.info?.model?.prompt ?? "" }
+    private var shown: String { own ?? catalog }
+    private var text: String { model.drafts[id] ?? shown }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: model.draft(id, shown: own ?? "")).font(.system(.body, design: .monospaced))
+            TextEditor(text: model.draft(id, shown: shown)).font(.system(.body, design: .monospaced))
                 .frame(minHeight: 160).inputBox()
             HStack {
-                Text(own == nil ? "Google's template is used: the model has no prompt of its own."
-                                : "{LANGUAGE} becomes the language of the speech.")
+                Text(own == nil ? "The model's catalog template. {LANGUAGE} becomes the language; its notes follow."
+                                : "The model's own template. {LANGUAGE} becomes the language; its notes follow.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if own != nil { Button("Use Google's Template") { if let p = path { model.done(id); model.remove(p) } } }
+                if own != nil {
+                    Button("Use the Catalog's Template") { if let p = path { model.done(id); model.remove(p) } }
+                }
                 Button("Save") {
                     let t = text
                     model.done(id)
@@ -427,9 +435,61 @@ struct PromptEditor: View {
                 }
                 .keyboardShortcut("s", modifiers: .command)
                 .buttonStyle(.borderedProminent)
-                .disabled(text == (own ?? ""))
+                .disabled(text == shown)
             }
         }
+    }
+}
+
+/// A language's list (its notes or its hesitation sounds): the config's for the language, else the table's.
+struct LanguageList: View {
+    @ObservedObject var model: SettingsModel
+    let field: String, title: String, note: String
+
+    private var code: String { String(model.config.language.prefix(while: { $0 != "-" })) }
+    private var id: String { "language.\(field)" }
+    private var path: [String] { ["languages", code, field] }
+    private var own: [String]? { model.config.value(path) as? [String] }
+    private var defaults: [String] {
+        let l = model.info?.languages.first { $0.code == code }
+        return (field == "notes" ? l?.notes : l?.fillers) ?? []
+    }
+    private var separator: String { field == "notes" ? "\n" : ", " }
+    private var shown: String { (own ?? defaults).joined(separator: separator) }
+
+    var body: some View {
+        if code.isEmpty {
+            Text("The speech's own language has no notes or sounds of its own.").foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(title)
+                    Spacer()
+                    ResetButton(visible: own != nil, help: "Back to the language's defaults") {
+                        model.done(id)
+                        model.remove(path)
+                    }
+                }
+                if field == "notes" {
+                    TextEditor(text: model.draft(id, shown: shown)).frame(minHeight: 60).inputBox()
+                } else {
+                    InputField(text: model.draft(id, shown: shown), width: 360) { save() }
+                }
+                HStack {
+                    Text(note + (own == nil ? " Now: the language's defaults." : "")).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if field == "notes" { Button("Save") { save() }.disabled((model.drafts[id] ?? shown) == shown) }
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let text = model.drafts[id] else { return }
+        let items = text.components(separatedBy: field == "notes" ? "\n" : ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        model.done(id)
+        model.write(path, items)
     }
 }
 
@@ -448,8 +508,8 @@ struct AdapterList: View {
                     if let d = a.description { Text(d).font(.caption).foregroundStyle(.secondary) }
                     if let e = a.error { Text(e).font(.caption).foregroundStyle(.red) }
                     if model.config.adapters[a.name] == true {
-                        ForEach(model.settings.filter { $0.where.contains("adapter") }, id: \.key) { s in
-                            AdapterSettingRow(model: model, adapter: a.name, setting: s)
+                        ForEach(model.settings.filter { $0.owner == "adapter" }, id: \.key) { s in
+                            AdapterSettingRow(model: model, adapter: a, setting: s)
                         }
                     }
                 }
@@ -460,34 +520,41 @@ struct AdapterList: View {
     }
 }
 
-/// A context setting of one adapter: its entry in the config wins over the model's options for that adapter.
+/// A setting of one adapter: its entry in the config, else the adapter's own default (its manifest's context).
 struct AdapterSettingRow: View {
     @ObservedObject var model: SettingsModel
-    let adapter: String, setting: SettingInfo
-    private var id: String { "adapter.\(adapter).\(setting.key)" }
+    let adapter: ServerInfo.Adapter, setting: SettingInfo
+    private var id: String { "adapter.\(adapter.name).\(setting.key)" }
 
-    private var path: [String] { ["adapters", adapter, setting.key] }
+    private var path: [String] { ["adapters", adapter.name, setting.key] }
     private var own: SettingValue? { SettingValue(json: model.config.value(path)).flatMap { $0 == .null ? nil : $0 } }
+    private var fallback: SettingValue? { SettingStore.defaultValue(of: setting, adapter: adapter) }
     private var shown: String { own.map { show($0) } ?? "" }
 
     var body: some View {
-        SettingLine(title: title(of: setting.key), note: setting.help, refused: model.refused.contains(id),
-                    pending: model.drafts[id].map { $0 != shown } ?? false) {
-            InputField(placeholder: show(setting.value ?? setting.default), text: model.draft(id, shown: shown),
-                       width: 80, number: true, refused: model.refused.contains(id)) {
-                guard let text = model.drafts[id] else { return }
-                if text.isEmpty {
-                    model.done(id)
-                    if own != nil { model.remove(path) }
-                } else if let n = Double(text), setting.allows(n) {
-                    model.done(id)
-                    model.write(path, Int(n))
-                } else {
-                    model.refused.insert(id)
+        SettingLine(title: title(of: setting.key), note: setting.help + " (\(adapter.name)'s default: \(show(fallback)))",
+                    refused: model.refused.contains(id), pending: model.drafts[id].map { $0 != shown } ?? false) {
+            if setting.kind == "boolean" {
+                Toggle("", isOn: Binding(get: { if case .bool(true)? = own ?? fallback { return true } else { return false } },
+                                         set: { model.write(path, $0) }))
+                    .labelsHidden().toggleStyle(.switch)
+            } else {
+                InputField(placeholder: show(fallback), text: model.draft(id, shown: shown), width: 80, number: true,
+                           refused: model.refused.contains(id)) {
+                    guard let text = model.drafts[id] else { return }
+                    if text.isEmpty {
+                        model.done(id)
+                        if own != nil { model.remove(path) }
+                    } else if let n = Double(text), setting.allows(n) {
+                        model.done(id)
+                        model.write(path, setting.kind == "integer" ? Int(n) as Any : n as Any)
+                    } else {
+                        model.refused.insert(id)
+                    }
                 }
+                UnitLabel(unit: unit(of: setting.key))
             }
-            UnitLabel(unit: unit(of: setting.key))
-            ResetButton(visible: own != nil, help: "Back to the model's value") { model.done(id); model.remove(path) }
+            ResetButton(visible: own != nil, help: "Back to \(adapter.name)'s default") { model.done(id); model.remove(path) }
         }
         .padding(.leading, 16)
     }

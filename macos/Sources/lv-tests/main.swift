@@ -83,8 +83,8 @@ let text = """
     "b": {"llamaServer": "http://h:2"}
   },
   "silenceStopSeconds": 30,
-  "server": {"port": 8099},
-  "version": 3
+  "server": {"port": 8099, "labeled": "~/elsewhere"},
+  "version": 4
 }
 
 """
@@ -94,7 +94,7 @@ check(c.models == ["a", "b"] && c.model == "a" && c.language == "ru" && c.silenc
       && c.error == nil, "config: read \(c)")
 check(c.microphone == "builtin", "config: the built-in microphone by default")
 check(c.recordings.path.hasSuffix("/speech/recordings") && !c.recordings.path.contains("~")
-      && c.labeled.path.hasSuffix("/speech/labeled"), "config: the default folders, ~ expanded")
+      && c.labeled.path.hasSuffix("/elsewhere"), "config: the folders, ~ expanded; the labels' from the server's section")
 try Config.set(["model"], to: "b", in: file)
 var after = try String(contentsOf: file, encoding: .utf8)
 check(after == text.replacingOccurrences(of: #""model": "a""#, with: #""model": "b""#), "config: only the model changed")
@@ -104,7 +104,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 3,
+  "version": 4,
   "adapters": {"enabled": true}
 }
 
@@ -182,11 +182,14 @@ do {
     check(false, "labeling: \(error)")
 }
 
-// The settings: the server's description, where a value is read and written, and the layout.
+// The settings: the server's description, where a value is read and written (at its owner), and the layout.
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     let settings = info.settings ?? []
-    check(settings.map(\.key) == ["pieceSeconds", "cutSearchSeconds"], "settings: decoded \(settings.map(\.key))")
+    check(settings.map(\.key) == ["pieceSeconds", "cutSearchSeconds"] && settings.allSatisfy { $0.owner == "server" },
+          "settings: decoded \(settings.map(\.key))")
+    check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
+          "settings: the model and the languages")
     let cut = settings[1]
     check(cut.value == .number(2.5) && cut.default == .number(3.0) && cut.minExclusive == true, "settings: values")
     check(!cut.allows(0) && cut.allows(0.5) && cut.allows(10) && !cut.allows(10.5), "settings: range")
@@ -196,26 +199,31 @@ do {
     let text = """
     {
       "model": "a",
-      "models": {"a": {"llamaServer": "http://h:1", "options": {"cutSearchSeconds": 2, "temperature": 1}}},
-      "server": {"port": 8090}
+      "models": {"a": {"llamaServer": "http://h:1", "options": {"topK": 2, "temperature": 1}}},
+      "adapters": {"claude": {"enabled": true, "chatHistoryMessages": 3}},
+      "server": {"port": 8090, "cutSearchSeconds": 2}
     }
 
     """
     try text.write(to: file, atomically: true, encoding: .utf8)
     var config = Config.load(from: file)
-    check(SettingStore.path(of: cut, in: config, model: "a") == ["models", "a", "options", "cutSearchSeconds"],
-          "settings: the model's option wins")
-    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the model's value is shown")
-    check(SettingStore.path(of: settings[0], in: config, model: "a") == ["server", "pieceSeconds"],
-          "settings: a new value goes to the server's section")
-    try Config.remove(["models", "a", "options", "cutSearchSeconds"], in: file)
+    check(SettingStore.path(of: cut, model: "a") == ["server", "cutSearchSeconds"], "settings: a server's at the server")
+    check(SettingStore.value(of: cut, in: config, model: "a") == .number(2), "settings: the config's value is shown")
+    let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","default":64,"help":"h"}"#.utf8))
+    check(SettingStore.path(of: topK, model: "a") == ["models", "a", "options", "topK"]
+          && SettingStore.value(of: topK, in: config, model: "a") == .number(2), "settings: a model's in its options")
+    let messages = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatHistoryMessages","owner":"adapter","group":"context","kind":"integer","default":null,"help":"h"}"#.utf8))
+    let claude = info.adapters.first { $0.name == "claude" }!
+    check(SettingStore.value(of: messages, in: config, model: "a", adapter: claude) == .number(3),
+          "settings: an adapter's in its entry")
+    try Config.remove(["server", "cutSearchSeconds"], in: file)
     config = Config.load(from: file)
-    check(config.value(["models", "a", "options", "cutSearchSeconds"]) == nil
-          && config.value(["models", "a", "options", "temperature"]) as? Int == 1, "settings: a value taken out")
+    check(config.value(["server", "cutSearchSeconds"]) == nil && config.value(["server", "port"]) as? Int == 8090,
+          "settings: a value taken out")
     check(SettingStore.value(of: cut, in: config, model: "a") == .number(2.5), "settings: then the server's value")
     let edited = try String(contentsOf: file, encoding: .utf8)
-    check(edited.contains(#""options": {"temperature": 1}"#) && edited.contains(#""server": {"port": 8090}"#),
-          "settings: the rest of the file as it was: \(edited)")
+    check(edited.contains(#""server": {"port": 8090}"#), "settings: the rest of the file as it was: \(edited)")
+    try Config.remove(["models", "a", "options", "topK"], in: file)
     try Config.remove(["models", "a", "options", "temperature"], in: file)
     let emptied = try String(contentsOf: file, encoding: .utf8)
     check(emptied.contains(#""options": {}"#), "settings: the last member out")
@@ -224,10 +232,16 @@ do {
     check(first == #"{"b": 2}"#, "settings: the first member out")
     check(SettingsLayout.menu == ["permissions", "microphone", "inputVolume", "labelRecordings"],
           "settings: the menu \(SettingsLayout.menu)")
-    let recognition = SettingsLayout.sections(of: .recognition, serverKeys: [("pieceSeconds", "cutting"),
-                                                                             ("brandNew", "unknownGroup")])
-    check(recognition.first?.section == "Prompt" && recognition.contains { $0.section == "Cutting into pieces" }
-          && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }, "settings: the page \(recognition)")
+    let keys: [(key: String, owner: String, group: String)] = [("pieceSeconds", "server", "cutting"),
+        ("topK", "model", "sampling"), ("chatHistoryMessages", "adapter", "context"), ("brandNew", "server", "new")]
+    let recognition = SettingsLayout.sections(of: .recognition, serverKeys: keys)
+    let model = SettingsLayout.sections(of: .model, serverKeys: keys)
+    check(recognition.contains { $0.section == "Cutting into pieces" && $0.ids == ["pieceSeconds"] }
+          && recognition.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
+          && !recognition.contains { $0.ids.contains("topK") || $0.ids.contains("chatHistoryMessages") },
+          "settings: the server's page \(recognition)")
+    check(model.first?.section == "Model" && model.contains { $0.section == "Sampling" && $0.ids == ["topK"] },
+          "settings: the model's page \(model)")
 } catch {
     check(false, "settings: \(error)")
 }

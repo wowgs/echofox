@@ -16,11 +16,23 @@ public struct ServerInfo: Decodable, Equatable {
         public let screen: [String]?
         public let description: String?
         public let error: String?
+        /// The defaults of its context settings, from its manifest.
+        public let context: [String: SettingValue]?
     }
     /// A language the server's prompt names (server/dictation.py LANGUAGES).
     public struct Language: Decodable, Equatable {
         public let code: String
         public let name: String
+        /// The language's defaults (server/languages.json): lines added to the prompt, hesitation sounds.
+        public let notes: [String]?
+        public let fillers: [String]?
+    }
+    /// The menu's model: its catalog entry and the catalog's prompt template.
+    public struct Model: Decodable, Equatable {
+        public let name: String?
+        public let catalog: String?
+        public let prompt: String?
+        public let maxAudioSeconds: Double?
     }
     public let interface: Int
     public let sampleRate: Int
@@ -31,6 +43,7 @@ public struct ServerInfo: Decodable, Equatable {
     public let adapters: [Adapter]
     /// The settings the server describes; an older server sends none.
     public let settings: [SettingInfo]?
+    public let model: Model?
 
     /// Apps whose focus an enabled adapter reads.
     public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }
@@ -132,20 +145,21 @@ public enum SettingValue: Decodable, Equatable {
 /// it may write it.
 public struct SettingInfo: Decodable, Equatable {
     public let key: String
-    /// What it is about: cutting, speech, output, recording, context, sampling.
+    /// Its owner: server (the config's "server"), model (a model's "options"), adapter (an adapter's entry).
+    public let owner: String
+    /// What it is about: cutting, speech, recording, storage, sampling, output, context.
     public let group: String
     /// number, integer, boolean or string.
     public let kind: String
+    /// The owner's default: the menu's model's for a model's setting; the fallback for an adapter's (each adapter's
+    /// own default is in its info's context).
     public let `default`: SettingValue?
-    /// The server's value, when it is not the default.
+    /// The value in force at its owner, when it is not the default.
     public let value: SettingValue?
     public let min: Double?
     public let max: Double?
     public let minExclusive: Bool?
     public let maxExclusive: Bool?
-    /// Where it may be set: server (the config's "server"), model (a model's "options"), client, adapter (an
-    /// adapter's entry), config (the top of the file).
-    public let `where`: [String]
     public let help: String
 
     /// Whether `v` is in the setting's range.
