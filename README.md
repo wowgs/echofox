@@ -1,6 +1,10 @@
 # Local Voice
 
-Local Voice is a dictation app for Mac. Tap the right Option key, speak, and tap it again to insert the text into the app you're using.
+Local Voice is a Mac dictation app with local speech recognition and conversation context.
+
+![Local Voice records speech in the app you're using, adds conversation context when available, and inserts the recognized text.](img/how-it-works.svg)
+
+Tap the right Option key, speak, and tap it again to insert the text into the app you're using.
 
 Speech recognition runs on your Mac, using Gemma 4 E4B through [llama.cpp](https://github.com/ggml-org/llama.cpp). Once you've downloaded the model, you can dictate offline. Your audio and transcripts stay on your Mac.
 
@@ -66,9 +70,7 @@ Speech recognition happens locally. Local Voice sends no analytics or telemetry;
 
 You can review and correct saved recordings with **Label Recordings…**. This prepares data for future training; correcting a transcript does not automatically train the model. See [recordings and labels](docs/reference/5-recordings.md) for storage locations and file details.
 
-## How it works
-
-![Local Voice records speech in the app you're using, adds conversation context when available, and inserts the recognized text.](img/how-it-works.svg)
+## Speech processing
 
 The menu bar app records your microphone and passes the audio to a local dictation server. The server splits longer recordings into short pieces and sends them to Gemma 4 E4B through llama.cpp.
 
