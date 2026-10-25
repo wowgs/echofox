@@ -249,9 +249,10 @@ def migrate(path):
 
 def migrate_3(path):
     """Version 3 → 4: each setting has its owner (docs/design/4-hld.md, "Настройки"). "fillers" go to the languages;
-    "saveRecordings" and "labeled" to the section "server"; a model's options keep only the model's knobs: an
-    adapter's knob goes to each adapter's entry that has no value of its own (the model's value was every adapter's),
-    a server's knob to the section "server" if it has none; a model gets its catalog entry. The file keeps its order."""
+    "saveRecordings" and "labeled" to the section "server"; a model's knob in the section "server" (the length of
+    the text) goes to each model's options; a model's options keep only the model's knobs: an adapter's knob goes to
+    each adapter's entry that has no value of its own (the model's value was every adapter's), a server's knob to the
+    section "server" if it has none; a model gets its catalog entry. The file keeps its order."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
@@ -267,11 +268,16 @@ def migrate_3(path):
     for key in ("saveRecordings", "labeled"):
         if key in c:
             server.setdefault(key, c[key])
+    moved = {}  # the server section's knobs that are now a model's: every model's value, where it has none
+    for key in list(server):
+        knob = tuning.BY_KEY.get(key)
+        if knob is not None and knob.owner != "server":
+            moved[key] = server.pop(key)
     models = {}
     for name, entry in (c.get("models") or {}).items():
         entry = dict(entry)
         entry.setdefault("catalog", catalog.DEFAULT)
-        kept = {}
+        kept = {k: v for k, v in moved.items() if tuning.BY_KEY[k].owner == "model"}
         for key, value in (entry.get("options") or {}).items():
             knob = tuning.BY_KEY.get(key)
             if knob is None:

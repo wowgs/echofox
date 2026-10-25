@@ -228,14 +228,15 @@ class MigrateTest(unittest.TestCase):
                                    "options": {"chatHistoryTokenBudget": 2000, "temperature": 1, "pieceSeconds": 12,
                                                "gone": 1}}},
                   "saveRecordings": False, "labeled": "~/l", "fillers": {"ru": ["э"]},
-                  "server": {"port": 8090}, "version": 3}
+                  "server": {"port": 8090, "outputTokensBase": 40}, "version": 3}
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
             self.assertEqual(c["version"], 4)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
-                                                "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
+                                                "options": {"outputTokensBase": 40, "temperature": 1},
+                                                "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude"]["chatHistoryTokenBudget"], 1000)   # its own value stays
             self.assertEqual(c["adapters"]["telegram"]["chatHistoryTokenBudget"], 2000)  # the model's was its value
             self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l", "pieceSeconds": 12})
