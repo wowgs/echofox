@@ -32,7 +32,7 @@ class SandboxTest(unittest.TestCase):
 
     def test_launchctl_is_a_fake(self):
         import llama
-        self.assertEqual(llama.LAUNCHCTL, os.environ["ECHOFOX_LAUNCHCTL"])
+        self.assertEqual(llama.LAUNCHCTL, sandbox._fake)
         self.assertFalse(llama.agent_running("echofox.anything"))
 
 

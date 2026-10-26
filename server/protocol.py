@@ -8,8 +8,8 @@ import variants
 from session import Session, parse_start
 
 
-async def handle(ws, models, args):
-    """One connection. `args`: the recording settings (settings.recording_settings)."""
+async def handle(ws, models, args, make_stream=None):
+    """One connection. `args`: the recording settings (settings.recording_settings); `make_stream`: Session's."""
     async def send(**m):
         await ws.send(json.dumps(m, ensure_ascii=False))
 
@@ -31,4 +31,4 @@ async def handle(ws, models, args):
         await send(type="error", message=str(e))
         await ws.close()
         return
-    await Session(ws, send, models, args, start).run()
+    await Session(ws, send, models, args, start, make_stream).run()

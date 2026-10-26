@@ -17,9 +17,8 @@ import adapters
 import dictation
 import metrics
 import constants
-import protocol
 import recordings
-from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, stub_models
+from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, handle, stub_models
 
 START = {"type": "start", "language": "ru"}
 
@@ -36,7 +35,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     async def run_stream(self, start, audio, entries=ENTRIES, stop=None, model=StubModel, between=None):
         stubs = {}
         models = stub_models(entries, make=lambda name, entry: stubs.setdefault(name, model(name)))
-        async with serve(lambda ws: protocol.handle(ws, models, self.args), "127.0.0.1", 0, max_size=None) as server:
+        async with serve(lambda ws: handle(ws, models, self.args), "127.0.0.1", 0, max_size=None) as server:
             got = []
             async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                 try:  # a server that refuses the stream closes it while the client still sends
@@ -59,7 +58,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         return d, json.load(open(os.path.join(d, "adapter.json"), encoding="utf-8"))
 
     async def ask_info(self):
-        async with serve(lambda ws: protocol.handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
+        async with serve(lambda ws: handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
             async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                 await ws.send(json.dumps({"type": "info"}))
                 return json.loads(await ws.recv())
@@ -298,7 +297,7 @@ class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
 
         async def handler(ws):
             try:
-                await protocol.handle(ws, models, args())
+                await handle(ws, models, args())
             finally:
                 handled.set()
 
@@ -318,7 +317,7 @@ class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
         models = stub_models({"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}}, make=lambda *a: stub)
         a = args()
         async with asyncio.timeout(10):
-            async with serve(lambda ws: protocol.handle(ws, models, a), "127.0.0.1", 0, max_size=None) as server:
+            async with serve(lambda ws: handle(ws, models, a), "127.0.0.1", 0, max_size=None) as server:
                 async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                     await ws.send(json.dumps(START))
                     await ws.send(LOUD)
@@ -352,7 +351,7 @@ class OneRecordingAtATimeTest(unittest.IsolatedAsyncioTestCase):
                 return [json.loads(m) async for m in ws]
 
         async with asyncio.timeout(10):
-            async with serve(lambda ws: protocol.handle(ws, models, args()), "127.0.0.1", 0, max_size=None) as server:
+            async with serve(lambda ws: handle(ws, models, args()), "127.0.0.1", 0, max_size=None) as server:
                 port = server.sockets[0].getsockname()[1]
                 first = asyncio.create_task(record("one", port))
                 await asyncio.sleep(0.05)

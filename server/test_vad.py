@@ -9,6 +9,15 @@ import vad
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+
+def probabilities(pcm):
+    """16-bit mono PCM at 16 kHz → the speech probability of each 32 ms chunk, from a fresh state (the last chunk
+    padded with zeros)."""
+    s = vad.Stream()
+    s.feed(pcm)
+    s.flush()
+    return s.probabilities
+
 def speech():
     """2.25 s of Russian speech (macOS say, voice Milena: «Проверь, пожалуйста, коммит.»), 16 kHz mono 16-bit."""
     with wave.open(os.path.join(HERE, "testdata", "speech-ru.wav")) as w:
@@ -16,7 +25,7 @@ def speech():
 
 
 def speech_in(pcm):
-    return vad.speech_seconds(vad.shared().probabilities(pcm))
+    return vad.speech_seconds(probabilities(pcm))
 
 
 class VadTest(unittest.TestCase):
@@ -29,11 +38,11 @@ class VadTest(unittest.TestCase):
         self.assertEqual(os.environ.get("ORT_DISABLE_TELEMETRY"), "1")
 
     def test_audio_of_any_length_works(self):
-        self.assertEqual(len(vad.shared().probabilities(b"\0\0" * 100)), 1)  # padded to one chunk
+        self.assertEqual(len(probabilities(b"\0\0" * 100)), 1)  # padded to one chunk
         self.assertEqual(speech_in(b""), 0)
 
     def test_a_stream_in_any_parts_finds_what_one_run_finds(self):
-        whole = vad.shared().probabilities(speech())
+        whole = probabilities(speech())
         s = vad.Stream()
         audio = b"\0\0" * 16000 + speech()  # 1 s of silence, then the speech
         heard = [s.feed(audio[i:i + 3200]) for i in range(0, len(audio), 3200)]  # 100 ms at a time, as the app sends

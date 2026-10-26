@@ -23,7 +23,7 @@ import settings
 import tuning
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
 from dictation import Dictation, prompt
-from vad import Stream  # tests put a fake here
+from vad import Stream
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
 WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording got long enough for one more slot
@@ -75,7 +75,8 @@ def parse_start(m, models, args=None):
 class Session:
     """One recording on one connection."""
 
-    def __init__(self, ws, send, models, args, start):
+    def __init__(self, ws, send, models, args, start, make_stream=None):
+        """`make_stream`: what makes the speech detector of the recording (vad.Stream; tests give another)."""
         self.ws, self.send, self.models, self.args, self.start = ws, send, models, args, start
         self.rec = None
         if args.save_recordings and not start.private:
@@ -93,7 +94,7 @@ class Session:
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
                      "options": opts, **({"private": True} if start.private else {})}
-        self.levels, self.speech = Levels(), Stream()
+        self.levels, self.speech = Levels(), (make_stream or Stream)()
         self.audio, self.pending = bytearray(), asyncio.Queue()
         self.texts, self.errors, self.chat = [], [], {}
         self.stopped_at, self.stop_reason = None, None

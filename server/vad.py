@@ -48,14 +48,6 @@ class Vad:
                                                "sr": self.sr})
         return float(p[0][0]), state
 
-    def probabilities(self, pcm):
-        """16-bit mono PCM at 16 kHz → the speech probability of each 32 ms chunk, from a fresh state (the last chunk
-        padded with zeros)."""
-        s = Stream(self)
-        s.feed(pcm)
-        s.flush()
-        return s.probabilities
-
 
 _shared, _shared_lock = None, threading.Lock()
 
