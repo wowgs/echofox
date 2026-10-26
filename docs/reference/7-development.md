@@ -75,13 +75,13 @@ The ports are in `server/constants.py`.
 |---|---|---|
 | `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac. |
 | `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, the server's tests again with the bundled Python, and the DMG signed and sent to Apple's notary service. |
-| `staple.yml` | The notary relay, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
+| `staple.yml` | The webhook, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
 
 No checkout keeps the token. Only one job can write to the repository: the last job of `staple.yml`, which creates the release on Linux.
 
 An ordinary branch push starts none of them.
 
-With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the notary relay, a Cloudflare Worker kept apart from this repository, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` stops. The secret names are listed at the top of each workflow.
+With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the webhook named in `release.yml`, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the webhook does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` stops. The secret names are listed at the top of each workflow.
 
 ## Diagrams
 

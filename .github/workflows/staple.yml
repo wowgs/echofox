@@ -1,5 +1,5 @@
-# The second half of a release (docs/distribution.md, "Releases"): the notary relay
-# (a Cloudflare Worker, kept apart) starts it when Apple has checked a dmg that release.yml sent; the button (Actions, Run workflow)
+# The second half of a release (docs/distribution.md, "Releases"): release.yml's NOTARY_WEBHOOK starts it when
+# Apple has checked a dmg that release.yml sent; the button (Actions, Run workflow)
 # starts it too, with the submission's id from release.yml's log or notarytool history. It takes the signed dmg of the
 # submission (the artifact EchoFox-notarizing-<id>), asks Apple for the verdict, and on Accepted staples Apple's
 # ticket to the dmg and publishes it: a GitHub Release for a tag v*, else the artifact EchoFox-dmg. It needs no

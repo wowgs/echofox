@@ -1,7 +1,7 @@
 # The bundled app (macos/build-app.sh --dmg) as EchoFox.dmg (docs/distribution.md), after the tests
 # (tests.yml). With the Developer ID secrets, the app is signed with Developer ID and the hardened runtime, and the dmg
 # goes to Apple's notary service without waiting for it: the run keeps the signed dmg as the artifact
-# EchoFox-notarizing-<submission id>, and when Apple has checked it, the notary relay (a Cloudflare Worker, kept apart) starts
+# EchoFox-notarizing-<submission id>, and when Apple has checked it, Apple calls NOTARY_WEBHOOK, which starts
 # staple.yml, which staples Apple's ticket and publishes the dmg (a GitHub Release for a tag v*, else an artifact).
 # Without the secrets the run stops: the build signs only with Developer ID. The version is the tag's (build-app.sh), so the checkout
 # takes the whole history. This workflow publishes nothing itself, so its token only reads; the checkout does not keep

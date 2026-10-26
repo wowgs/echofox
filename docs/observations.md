@@ -41,7 +41,7 @@ These hold for the versions named; check them again when an app updates.
 
 - 2026-10-25: the package was about 217 MB; the stack from the package recognized a 49 s recording on the test server with no outside connections.
 - 2026-10-25: onnxruntime 1.31 connected to Microsoft telemetry (20.42.65.85, by whois) at the start of the VAD. 2026-10-26: bare onnxruntime opened a connection to 4.150.223.99 (Microsoft) within 25 s of creating the VAD model; through `vad.py`, with the switch, no outside connection in 25 s.
-- 2026-10-25: the first notarization request of the new team was still `In Progress` after 5 minutes, and the run that waited for it was cancelled; it was `Accepted` when checked about two hours later, at an unknown time in between. 2026-10-26: two submissions were accepted in about 72 s and 66 s (from the submission to the relay's start of `staple.yml`). A tag push to a published release took about 4 minutes.
+- 2026-10-25: the first notarization request of the new team was still `In Progress` after 5 minutes, and the run that waited for it was cancelled; it was `Accepted` when checked about two hours later, at an unknown time in between. 2026-10-26: two submissions were accepted in about 72 s and 66 s (from the submission to the webhook's start of `staple.yml`). A tag push to a published release took about 4 minutes.
 - 2026-10-26, compression of one package on the M5; the open time is the best of three copies of the app out of the mounted image:
 
 | Format | Size | Open |
