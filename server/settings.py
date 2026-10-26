@@ -1,23 +1,11 @@
-"""The server's settings and the config file it shares with its clients.
+"""The server's settings and the config file it shares with its clients (docs/reference/2-config.md; its version is
+constants.CONFIG_VERSION). Each setting has one owner (docs/design.md, "Settings"), and the user's change of it is at
+that owner; the knobs that are constants (tuning.py) are not in the file. A setting's value: the file's, else the
+default. The server reads the "server" section and the registries; the app's own settings it does not read.
 
-The config, ~/.echofox/config.json ($ECHOFOX_CONFIG), version 7. Each setting has one owner
-(docs/design.md, "Settings"), and the user's change of it is at that owner, in this file only; the knobs
-that are constants (tuning.py) are not in it:
-  {"version": 7,
-   "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
-   "models": {"<name>": {"catalog": "<catalog id>", "llamaServer": "http://127.0.0.1:8092", "launchd": "<label>",
-                         "prompt": "…", "options": {the model's knobs}}},
-   "adapters": {"<plugin>": {"enabled": true, the adapter's knobs: over its manifest's defaults}},
-   "languages": {"<code>": {"notes": ["…"], "fillers": ["э", "мм"]}},
-   "server": {"host": …, "port": …, "recordings": …, "saveRecordings": true, "labeled": …, "maxRecordingMinutes": 30}}
-The app's settings the server does not read. adapters: the adapter plugins that work (adapters/registry.py); none:
-the base mode, dictation without context. languages: changes to the language table (languages.json; an empty list
-turns a list off). models: the registry; each a llama.cpp llama-server, started and stopped through its launchd
-agent, with its catalog entry (catalog.json). Only the model chosen in the menus ("model") is in memory; a name not in
-the registry, or none: no model in memory. A setting's value: the file's, else the default (the test server has a
-config file of its own: test_server.sh). The server watches the file:
+The server watches the file (ConfigWatcher), and each setting has a level:
   "recording" settings take effect at the next recording;
-  "model" settings (models) take effect after the running recording;
+  "model" settings (the model registry, the models folder) after the running recording;
   "process" settings (host, port) end the process after the running recording; launchd starts it again.
 """
 import argparse
