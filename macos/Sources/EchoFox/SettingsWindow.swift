@@ -32,9 +32,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var model: SettingsModel?
     private var titles: AnyCancellable?
     weak var actions: SettingsActions?
+    /// The app's model downloads, which the first-start window shares.
+    var downloads = ModelDownloads()
 
     func show() {
-        let model = self.model ?? SettingsModel(actions: actions)
+        let model = self.model ?? SettingsModel(actions: actions, downloads: downloads)
         self.model = model
         model.reload()
         actions?.askServer()  // its info may be older than a download that the first start's window began
@@ -130,7 +132,14 @@ final class SettingsModel: ObservableObject {
         refused.remove(id)
     }
 
-    init(actions: SettingsActions?) { self.actions = actions }
+    let downloads: ModelDownloads
+    private var downloadsChanged: AnyCancellable?
+
+    init(actions: SettingsActions?, downloads: ModelDownloads) {
+        self.actions = actions
+        self.downloads = downloads
+        downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+    }
 
     /// Everything the window shows, read again: when it opens.
     func reload() {
@@ -142,29 +151,17 @@ final class SettingsModel: ObservableObject {
 
     func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
 
-    /// The downloads and removals of model variants that this window started, by variant.
-    @Published var jobs: [String: ModelJob] = [:]
+    /// The downloads and removals of model variants that the app started, by variant (ModelDownloads).
+    var jobs: [String: ModelJob] { downloads.jobs }
 
     func download(catalog: String, variant: String) {
-        let job = ModelJob(url: config.serverURL, message: ClientMessage.download(catalog: catalog, variant: variant))
-        job.onChange = { [weak self] in
-            self?.objectWillChange.send()
-            if job.finished { self?.actions?.askServer() }  // the variant is downloaded, or not
-        }
-        jobs[variant] = job
-        job.start()
+        downloads.download(catalog: catalog, variant: variant, url: config.serverURL)
     }
 
-    func cancel(_ variant: String) { jobs[variant]?.cancel() }
+    func cancel(_ variant: String) { downloads.cancel(variant) }
 
     func remove(catalog: String, variant: String) {
-        let job = ModelJob(url: config.serverURL, message: ClientMessage.remove(catalog: catalog, variant: variant))
-        job.onChange = { [weak self] in
-            self?.objectWillChange.send()
-            if job.finished { self?.actions?.askServer() }
-        }
-        jobs[variant] = job
-        job.start()
+        downloads.remove(catalog: catalog, variant: variant, url: config.serverURL)
     }
 
     private var watch: Timer?

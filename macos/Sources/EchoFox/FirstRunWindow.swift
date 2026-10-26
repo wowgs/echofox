@@ -3,6 +3,7 @@
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
 // only place of the full character in the app (macos/art/README.md).
 import AppKit
+import Combine
 import EchoFoxCore
 import SwiftUI
 
@@ -13,6 +14,8 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     var askServer: () -> Void = {}
     /// The app's config, which the chosen variant is written to.
     var store: ConfigStore?
+    /// The app's model downloads, which the settings window shares.
+    var downloads = ModelDownloads()
 
     /// Opens the window once in a run of the app, when the server's info says that no variant of the menu's model is
     /// downloaded or downloading.
@@ -21,8 +24,8 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
               !variants.contains(where: { $0.downloaded || $0.downloading == true }),
               let name = m.name, let catalog = m.catalog else { return }
         shown = true
-        let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant, store: store)
-        model.askServer = { [weak self] in self?.askServer() }
+        let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant, store: store,
+                                  downloads: downloads)
         model.done = { [weak self] in
             self?.askServer()
             self?.window?.close()
@@ -50,43 +53,36 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
 final class FirstRunModel: ObservableObject {
     let name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?
     @Published var choice: String
-    @Published var job: ModelJob?
     var done: () -> Void = {}
-    /// Asked when the download runs and when it fails, so that the server's info (and the settings window) says
-    /// whether the variant downloads.
-    var askServer: () -> Void = {}
+    /// The chosen variant's job, the app's (ModelDownloads), also when the settings window started it.
+    var job: ModelJob? { downloads.jobs[choice] }
 
     private let store: ConfigStore?
+    private let downloads: ModelDownloads
+    private var downloadsChanged: AnyCancellable?
 
-    init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?, store: ConfigStore?) {
+    init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?, store: ConfigStore?,
+         downloads: ModelDownloads) {
         self.store = store
+        self.downloads = downloads
         self.name = name
         self.catalog = catalog
         self.variants = variants
         self.inForce = inForce
         choice = ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
-    }
-
-    func download() {
-        let job = ModelJob(url: (store?.config ?? Config()).serverURL, message: ClientMessage.download(catalog: catalog, variant: choice))
-        var running = false
-        job.onChange = { [weak self] in
-            guard let self else { return }
-            self.objectWillChange.send()
-            if !job.finished, !running {
-                running = true
-                self.askServer()
-            }
-            if job.finished, job.error != nil { self.askServer() }
-            guard job.finished, job.error == nil else { return }
+        downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        downloads.onEnd { [weak self] variant, job, isDownload in
+            guard let self, isDownload, variant == self.choice, job.error == nil else { return }
             if self.choice != self.inForce {  // the catalog's default needs no line in the config
                 self.store?.set(["models", self.name, "variant"], to: self.choice,
                                 "first start: \(self.name) variant \(self.choice)")
             }
             self.done()
         }
-        self.job = job
-        job.start()
+    }
+
+    func download() {
+        downloads.download(catalog: catalog, variant: choice, url: (store?.config ?? Config()).serverURL)
     }
 }
 

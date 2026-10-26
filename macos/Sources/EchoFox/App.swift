@@ -10,6 +10,7 @@ import EchoFoxCore
 
 final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let store = ConfigStore()
+    private let downloads = ModelDownloads()
     private let permissions = Permissions()
     private let server = Server()
     private let key = TapKey()
@@ -34,6 +35,9 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         store.observe { [weak self] old, new in self?.configChanged(from: old, to: new) }
         store.start()
         firstRun.store = store
+        firstRun.downloads = downloads
+        settings.downloads = downloads
+        downloads.askServer = { [weak self] in self?.askServer() }
         menu.state = { [unowned self] in self.state() }
         settings.actions = self
         key.onTap = { [weak self] action in self?.toggle(isPrivate: action == .privateDictation) }
