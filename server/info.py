@@ -27,6 +27,7 @@ def info(args, models=None):
             "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()],
             "models": list(entries),
             "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
+                      "title": model.get("name"),
                       "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
                       **(variants(entry, getattr(args, "models_folder", None)) if entry else {})},
             "settings": settings.schema(args, entry)}

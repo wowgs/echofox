@@ -48,13 +48,13 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
  "adapters": [{"name", "enabled", "builtin", "version", "author", "source", "description", "apps",
                "electronTree", "reads", "screen", "context", "error"}],
  "models": ["<name>"],
- "model": {"name", "catalog", "prompt", "maxAudioSeconds", "variant",
+ "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "variant",
            "variants": [{"id", "name", "bytes", "memoryBytes", "downloaded", "downloading"}]},
  "settings": [{"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
                "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
-The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `models` lists registry names. `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
+The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
 
 `settings` describes each setting that the settings window can show and change:
 

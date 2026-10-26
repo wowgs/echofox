@@ -24,7 +24,11 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
               !variants.contains(where: { $0.downloaded || $0.downloading == true }),
               let name = m.name, let catalog = m.catalog else { return }
         shown = true
-        let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant, store: store,
+        let config = store?.config ?? Config()
+        let languages = info?.languages ?? []
+        let model = FirstRunModel(name: name, catalog: catalog, title: m.title ?? name, variants: variants,
+                                  inForce: m.variant, languages: languages,
+                                  language: info?.proposedLanguage(config.language) ?? "en", store: store,
                                   downloads: downloads)
         model.done = { [weak self] in
             self?.askServer()
@@ -51,8 +55,11 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
 }
 
 final class FirstRunModel: ObservableObject {
-    let name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?
+    let name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?
+    let languages: [ServerInfo.Language]
     @Published var choice: String
+    /// The speaker's main language, written to the config when the download starts.
+    @Published var language: String
     var done: () -> Void = {}
     /// The chosen variant's job, the app's (ModelDownloads), also when the settings window started it.
     var job: ModelJob? { downloads.jobs[choice] }
@@ -61,14 +68,17 @@ final class FirstRunModel: ObservableObject {
     private let downloads: ModelDownloads
     private var downloadsChanged: AnyCancellable?
 
-    init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?, store: ConfigStore?,
-         downloads: ModelDownloads) {
+    init(name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?,
+         languages: [ServerInfo.Language], language: String, store: ConfigStore?, downloads: ModelDownloads) {
         self.store = store
         self.downloads = downloads
         self.name = name
         self.catalog = catalog
+        self.title = title
         self.variants = variants
         self.inForce = inForce
+        self.languages = languages
+        self.language = language
         choice = ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
         downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         downloads.onEnd { [weak self] variant, job, isDownload in
@@ -82,6 +92,7 @@ final class FirstRunModel: ObservableObject {
     }
 
     func download() {
+        store?.set(["language"], to: language, "first start: language \(language)")
         downloads.download(catalog: catalog, variant: choice, url: (store?.config ?? Config()).serverURL)
     }
 }
@@ -101,19 +112,24 @@ struct FirstRunView: View {
             }
             choice.frame(width: 520)
         }
-        .frame(height: 360)
+        .frame(height: 400)
     }
 
     private var choice: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Download the speech model").font(.title2.bold())
-            Text("EchoFox turns your speech into text with a model on this Mac. The audio never leaves it. "
-                 + "Choose the model to download.")
+            Text("EchoFox turns your speech into text with \(model.title), a model that runs on this Mac. The audio "
+                 + "never leaves it. Choose the language you speak most and the model to download.")
                 .fixedSize(horizontal: false, vertical: true)
+            Picker("Language", selection: $model.language) {
+                ForEach(model.languages, id: \.code) { l in Text(l.name).tag(l.code) }
+            }
+            .fixedSize()
+            .disabled(model.job != nil && model.job?.error == nil)
             Picker("", selection: $model.choice) {
                 ForEach(model.variants, id: \.id) { v in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(v.name + (v.id == ServerInfo.Variant.recommended(model.variants, memory: ProcessInfo.processInfo.physicalMemory)
+                        Text("\(model.title), " + v.name + (v.id == ServerInfo.Variant.recommended(model.variants, memory: ProcessInfo.processInfo.physicalMemory)
                                        ? ", recommended for this Mac" : ""))
                         Text("Download \(gigabytes(v.bytes))" + (v.memoryBytes.map { ", uses about \(gigabytes($0)) of memory" } ?? ""))
                             .font(.caption).foregroundStyle(.secondary)

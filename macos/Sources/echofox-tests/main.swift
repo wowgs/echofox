@@ -20,6 +20,8 @@ func data(_ o: Any) -> Data { try! JSONSerialization.data(withJSONObject: o) }
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     check(info.sampleRate == 16000 && info.textWaitSeconds == 180, "info: the audio and the wait")
+    check(info.model?.title == "Gemma 4 E4B", "info: the model's name for people")
+    check(info.proposedLanguage("ru") == "ru" && info.proposedLanguage("xx") == "en", "info: the first start's language")
     check(info.snapshotApps == ["com.anthropic.claudefordesktop", "com.tdesktop.Telegram"]
           && info.treeApps == ["com.anthropic.claudefordesktop"] && info.listApps == ["com.tdesktop.Telegram"],
           "info: apps, trees and lists")

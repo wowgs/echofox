@@ -26,6 +26,8 @@
 	<string>fQqOUCUcN1GnRc7Tovcj4qH5mB/AUFYVpJJ5N5+fDEU=</string>
 	<key>SURequireSignedFeed</key>
 	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>SUEnableSystemProfiling</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>

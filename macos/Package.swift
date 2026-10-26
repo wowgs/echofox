@@ -14,6 +14,7 @@ let package = Package(
         .executable(name: "echofox-snapshot", targets: ["echofox-snapshot"]),
         .executable(name: "EchoFox", targets: ["EchoFox"]),
         .executable(name: "echofox-tests", targets: ["echofox-tests"]),
+        .executable(name: "echofox-updater-check", targets: ["echofox-updater-check"]),
     ],
     dependencies: [
         // The updater (docs/reference/7-development.md, "Updates"); its tools for the release are pinned in pins.sh
@@ -28,5 +29,8 @@ let package = Package(
                           // Sparkle.framework is in the app's Contents/Frameworks (build-app.sh)
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .executableTarget(name: "echofox-tests", dependencies: ["EchoFoxCore"]),
+        // Sparkle.framework next to it, where swift build puts it
+        .executableTarget(name: "echofox-updater-check", dependencies: [.product(name: "Sparkle", package: "Sparkle")],
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]),
     ]
 )

@@ -35,6 +35,8 @@ public struct ServerInfo: Decodable, Equatable {
     public struct Model: Decodable, Equatable {
         public let name: String?
         public let catalog: String?
+        /// The model's name for people, from the catalog ("Gemma 4 E4B"); an older server sends none.
+        public let title: String?
         public let prompt: String?
         /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
         public let variant: String?
@@ -97,6 +99,12 @@ public struct ServerInfo: Decodable, Equatable {
     public func folder(_ key: String) -> URL? {
         guard case .string(let p)? = settings?.first(where: { $0.key == key })?.value, !p.isEmpty else { return nil }
         return Config.path(p)
+    }
+
+    /// The language the first start proposes: `current` (the config's, macOS's own until one is chosen) if the model
+    /// knows it, else English.
+    public func proposedLanguage(_ current: String) -> String {
+        languages.contains { $0.code == current } ? current : "en"
     }
 
     public static func decode(_ data: Data) throws -> ServerInfo {

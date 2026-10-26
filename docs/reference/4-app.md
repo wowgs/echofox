@@ -46,6 +46,8 @@ Memory figures are approximate. A systematic comparison of recognition quality a
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications. If you open it from the dmg, it asks you to move it to Applications and quits: its server must not depend on a disk image that goes away.
 
+If no model is downloaded, a window asks for the language you speak most (it proposes macOS's language, or English) and the variant of Gemma 4 E4B to download, and recommends one for your Mac's memory. The language goes into the config when the download starts; Settings can change both later.
+
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.

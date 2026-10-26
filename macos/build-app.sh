@@ -38,6 +38,7 @@ echo "$version" | grep -Eq '^[0-9]+(\.[0-9]+){1,2}$' || { echo "the tag $tag is 
 # The Sparkle that Package.swift links is the one of pins.sh, whose tools sign the release's feed
 grep -q "\"version\" : \"$SPARKLE_VERSION\"" Package.resolved || { echo "Package.resolved's Sparkle is not pins.sh's $SPARKLE_VERSION" >&2; exit 1; }
 swift build -c release --product EchoFox
+swift build -c release --product echofox-updater-check
 app=build/EchoFox.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
@@ -52,6 +53,8 @@ cp app/Info.plist "$app/Contents/"
 # agent, so that a new version starts the server again (ServerAgent).
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $version" -c "Add :CFBundleVersion string $build" \
   -c "Add :LSMinimumSystemVersion string $MACOS_MIN" "$app/Contents/Info.plist"
+# Sparkle starts with the app's update settings, as it must at the app's launch
+.build/release/echofox-updater-check "$app" >/dev/null || { .build/release/echofox-updater-check "$app" >&2; exit 1; }
 # The fox of the first start, and the app icon (macos/art/README.md): Icon Composer's app/EchoFox.icon, compiled by
 # actool of Xcode into Assets.car, with EchoFox.icns for older macOS
 mkdir -p "$app/Contents/Resources"
