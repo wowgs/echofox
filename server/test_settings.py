@@ -6,7 +6,6 @@ import os
 import plistlib
 import tempfile
 import time
-import types
 import unittest
 from unittest import mock
 

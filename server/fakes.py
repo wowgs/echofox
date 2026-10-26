@@ -8,7 +8,6 @@ import time
 
 import audio
 import llama
-import metrics
 import recordings
 import session
 import settings

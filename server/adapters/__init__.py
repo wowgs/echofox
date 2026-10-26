@@ -161,7 +161,7 @@ def _guarded(adapter, what, fn, *args):
     the dictation."""
     try:
         return "ok", fn(*args)
-    except Exception as e:  # noqa: BLE001: a plugin is anyone's code
+    except Exception as e:  # any exception: a plugin is anyone's code
         log.exception("adapter %s: %s failed", adapter.name, what)
         return "error", f"{adapter.name}.{what}: {type(e).__name__}: {e}"
 

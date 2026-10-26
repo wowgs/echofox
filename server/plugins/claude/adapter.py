@@ -12,7 +12,7 @@ one that runs in the background. Like the Code tab's, a chat's context has only 
 own messages, the model copied the previous dictation instead of transcribing the new one (2026-10-14).
 Claude writes its replies in Markdown; clean makes them plain prose.
 """
-from adapters import Adapter, Claim, bundle, markdown
+from adapters import Adapter, Claim, markdown
 
 from . import chat, desktop, transcripts
 

@@ -45,7 +45,6 @@ class Plugin:
     builtin: bool
     manifest: dict = field(default_factory=dict)
     adapter: object = None
-    module: object = None
     error: str = None
 
     def info(self, enabled):
@@ -83,7 +82,6 @@ def load(folder, builtin):
             del sys.modules[name]  # a plugin that loads again gets its modules fresh
         sys.modules[package] = module
         spec.loader.exec_module(module)
-        p.module = module
         classes = [c for c in vars(module).values() if isinstance(c, type) and issubclass(c, adapters.Adapter)
                    and c is not adapters.Adapter and c.__module__ == module.__name__]
         if len(classes) != 1:

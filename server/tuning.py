@@ -20,7 +20,7 @@ class Knob:
     name: str               # in the code
     kind: type
     default: object         # the fallback when the owner gives none; None: none (the code says what that means)
-    owner: str              # "server", "model" or "adapter"
+    owner: str              # what gives its default: OWNERS
     group: str              # what it is about: GROUPS
     user: str = None        # "basic", "advanced", or None: a constant, not the user's setting
     title: str = ""         # for the settings window (a setting of the user's)
@@ -98,7 +98,9 @@ KNOBS = [
 BY_KEY = {k.key: k for k in KNOBS}
 BY_NAME = {k.name: k for k in KNOBS}
 SAMPLER = ("temperature", "top_k", "top_p", "seed")
-ADAPTER_KNOBS = tuple(k.key for k in KNOBS if k.owner == "adapter")
+for _k in KNOBS:  # a typo in a group or an owner stops the server at its start, not a setting at its use
+    if _k.group not in GROUPS or _k.owner not in OWNERS:
+        raise ValueError(f"knob {_k.key}: group {_k.group!r} or owner {_k.owner!r} is not one of GROUPS, OWNERS")
 
 
 def check(knob, value):
