@@ -11,8 +11,9 @@ import session
 import variants
 from fakes import args, stub_models
 
-EXAMPLES = json.load(open(os.path.join(os.path.dirname(__file__), "..", "shared", "protocol-examples.json"),
-                          encoding="utf-8"))
+SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
+EXAMPLES = json.load(open(os.path.join(SHARED, "protocol-examples.json"), encoding="utf-8"))
+CONSTANTS = json.load(open(os.path.join(SHARED, "constants.json"), encoding="utf-8"))
 
 
 class ContractTest(unittest.TestCase):
@@ -32,6 +33,15 @@ class ContractTest(unittest.TestCase):
             self.assertIn(entry["kind"], ("number", "integer", "boolean", "string", "folder"), entry)
         self.assertEqual((constants.PROTOCOL_INTERFACE, constants.RATE, constants.TEXT_WAIT_S),
                          (example["interface"], example["sampleRate"], example["textWaitSeconds"]))
+
+    def test_the_shared_values_are_the_servers(self):
+        c = constants
+        mine = {"interface": c.PROTOCOL_INTERFACE, "configVersion": c.CONFIG_VERSION, "config": c.CONFIG, "host": c.HOST,
+                "workingPort": c.WORKING_PORT, "sampleRate": c.RATE, "encoding": c.ENCODING,
+                "serverLabel": c.SERVER_LABEL, "serverLog": c.SERVER_LOG,
+                "launchdExitTimeoutSeconds": c.LAUNCHD_EXIT_TIMEOUT_S, "configCheckSeconds": c.CONFIG_CHECK_S,
+                "recordings": c.RECORDINGS, "labeled": c.LABELED}
+        self.assertEqual(mine, {k: v for k, v in CONSTANTS.items() if k != "about"})
 
     def test_the_apps_start_message_is_one_the_server_takes(self):
         start = session.parse_start(EXAMPLES["start"], stub_models({"gemma-e4b": {"llamaServer": "http://h:1"}}))

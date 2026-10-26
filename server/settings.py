@@ -22,7 +22,6 @@ import metrics
 import tuning
 
 log = logging.getLogger("gemma_voice")
-CONFIG_CHECK_S = 2  # how often the file is looked at
 MODEL_DEFAULT = {"gemma-e4b": {"catalog": catalog.DEFAULT,
                                "llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}",
                                "launchd": constants.LLAMA_LABEL}}
@@ -477,4 +476,4 @@ class ConfigWatcher:
         if self.follow:
             await self.follow_selection()
         while await self.check():
-            await asyncio.sleep(CONFIG_CHECK_S)
+            await asyncio.sleep(constants.CONFIG_CHECK_S)

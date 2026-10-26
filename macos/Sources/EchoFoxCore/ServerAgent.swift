@@ -4,13 +4,15 @@
 // of its own and leaves the agent alone. The agent carries the app's version, so a new version in the same place
 // starts the server again. An app that runs from a disk image or from App Translocation writes no agent: launchd would
 // keep a path that is gone after the image is ejected or the app quits. The label, the log and the exit timeout are
-// the server's (server/constants.py SERVER_LABEL, LOGS, LAUNCHD_EXIT_TIMEOUT_S).
+// the server's (shared/constants.json); server/launchd.sh writes the same agent for a server that runs from the
+// repository, so one Mac has one server on the working port, whichever wrote it last.
 import Foundation
 
 public enum ServerAgent {
     public static let label = "echofox.gemma-voice"
-    /// launchd waits this long for the server to stop: it lets a running recording end (constants.py).
+    /// launchd waits this long for the server to stop: it lets a running recording end.
     public static let exitTimeoutSeconds = 210
+    public static let logInHome = "Library/Logs/EchoFox/gemma-voice.log"
 
     /// The server in the app's resources, if the app carries one.
     public static func bundled(resources: URL?) -> (python: URL, server: URL)? {
@@ -33,7 +35,7 @@ public enum ServerAgent {
     /// The agent's property list for the bundled server of this app version. Python writes no bytecode: the bundle
     /// carries it (build-app.sh), and a new file would break the app's signature.
     public static func plist(python: URL, server: URL, home: URL, version: String) -> [String: Any] {
-        let log = home.appendingPathComponent("Library/Logs/EchoFox/gemma-voice.log").path
+        let log = home.appendingPathComponent(logInHome).path
         return ["Label": label,
                 "ProgramArguments": [python.path, server.appendingPathComponent("gemma_voice.py").path],
                 "WorkingDirectory": server.path,

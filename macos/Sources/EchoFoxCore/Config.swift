@@ -8,8 +8,10 @@ import Foundation
 public struct Config: Equatable {
     public static let version = 7
     public static let defaultHost = "127.0.0.1"
-    public static let defaultPort = 8090  // the server's own default (server/constants.py WORKING_PORT)
-    public static let defaultRecordings = "~/speech/recordings"  // the server's own default (constants.py RECORDINGS)
+    /// The server's own defaults (shared/constants.json); the app uses them before it can ask the server.
+    public static let defaultFile = "~/.echofox/config.json"
+    public static let defaultPort = 8090
+    public static let defaultRecordings = "~/speech/recordings"
     public static let defaultLabeled = "~/speech/labeled"
     /// "microphone": the Mac's own microphone (the default), macOS's input, or a device's UID.
     public static let builtInMicrophone = "builtin"
@@ -17,7 +19,7 @@ public struct Config: Equatable {
 
     public static var url: URL {
         if let p = ProcessInfo.processInfo.environment["ECHOFOX_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".echofox/config.json")
+        return path(defaultFile)
     }
 
     public var models: [String] = []
@@ -51,6 +53,11 @@ public struct Config: Equatable {
     public init() {}
 
     /// A path of the config: "~" is the home folder.
+    /// The recordings and the labeled pieces: the server's folders, else the config's (the server is not running).
+    public func folders(_ info: ServerInfo?) -> (recordings: URL, labeled: URL) {
+        (info?.folder("recordings") ?? recordings, info?.folder("labeled") ?? labeled)
+    }
+
     public static func path(_ p: String) -> URL {
         URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
     }

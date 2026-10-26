@@ -276,7 +276,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func write(_ path: [String], _ value: Any, _ done: String) -> Bool { store.set(path, to: value, done) }
 
     func openLabeling() {
-        labeling.show(config: store.config)
+        let (recordings, labeled) = store.config.folders(server.info)
+        labeling.show(recordings: recordings, labeled: labeled)
     }
 
     func openSettings() {

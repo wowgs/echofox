@@ -438,6 +438,40 @@ do {
     check(false, "variants: \(error)")
 }
 
+// The values both sides use (shared/constants.json); the server's tests check the same file.
+do {
+    let c = try JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent(
+        "shared/constants.json"))) as! [String: Any]
+    check(c["interface"] as? Int == protocolInterface && c["configVersion"] as? Int == Config.version
+          && c["config"] as? String == Config.defaultFile && c["host"] as? String == Config.defaultHost
+          && c["workingPort"] as? Int == Config.defaultPort && c["encoding"] as? String == audioEncoding
+          && c["recordings"] as? String == Config.defaultRecordings && c["labeled"] as? String == Config.defaultLabeled
+          && c["sampleRate"] as? Int == (examples["info"] as! [String: Any])["sampleRate"] as? Int,
+          "shared values: the app's copies")
+    check(c["serverLabel"] as? String == ServerAgent.label
+          && c["launchdExitTimeoutSeconds"] as? Int == ServerAgent.exitTimeoutSeconds
+          && c["serverLog"] as? String == "~/" + ServerAgent.logInHome, "shared values: the server agent's")
+    check(c["configCheckSeconds"] as? Double == Tuning.configCheckSeconds
+          && Tuning.serverConfigApplySeconds > Tuning.configCheckSeconds, "shared values: the config is looked at as often")
+} catch {
+    check(false, "shared values: \(error)")
+}
+
+// The folders: the server's, from its info, else the config's.
+do {
+    var info = examples["info"] as! [String: Any]
+    var settings = info["settings"] as! [[String: Any]]
+    settings.append(["key": "labeled", "owner": "server", "group": "recording", "kind": "folder", "title": "Labels",
+                     "default": "~/speech/labeled", "value": "/srv/labeled", "help": ""])
+    info["settings"] = settings
+    let (recordings, labeled) = Config().folders(try ServerInfo.decode(data(info)))
+    check(labeled.path == "/srv/labeled" && recordings.path.hasSuffix("/speech/recordings"),
+          "folders: the server's \(recordings.path), \(labeled.path)")
+    check(Config().folders(nil).labeled == Config().labeled, "folders: the config's without a server")
+} catch {
+    check(false, "folders: \(error)")
+}
+
 // The launchd agent of a bundled server.
 do {
     let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/EchoFox.app/Contents/Resources")

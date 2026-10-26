@@ -146,7 +146,7 @@ final class SettingsModel: ObservableObject {
         config = actions?.config ?? Config()
         serverChanged()
         microphoneChanged()
-        let labeled = config.labeled  // the label files are read off the main thread
+        let labeled = config.folders(info).labeled  // the label files are read off the main thread
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let stats = Labeling.stats(labeled: labeled)
             DispatchQueue.main.async { self?.labels = stats }

@@ -93,6 +93,12 @@ public struct ServerInfo: Decodable, Equatable {
                      lists: listApps.contains(bundleId), outline: outlineApps.contains(bundleId))
     }
 
+    /// A folder setting's value as the server has it (its config's, else its default), nil from an older server.
+    public func folder(_ key: String) -> URL? {
+        guard case .string(let p)? = settings?.first(where: { $0.key == key })?.value, !p.isEmpty else { return nil }
+        return Config.path(p)
+    }
+
     public static func decode(_ data: Data) throws -> ServerInfo {
         let info = try JSONDecoder().decode(ServerInfo.self, from: data)
         guard info.interface == protocolInterface else {

@@ -11,13 +11,13 @@ final class LabelWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var model: LabelModel?
 
-    func show(config: Config) {
+    func show(recordings: URL, labeled: URL) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let model = LabelModel(recordings: config.recordings, labeled: config.labeled)
+        let model = LabelModel(recordings: recordings, labeled: labeled)
         model.onStop = { [weak self] in self?.window?.close() }
         let w = NSWindow(contentRect: Self.corner(), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)

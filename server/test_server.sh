@@ -42,7 +42,7 @@ case ${1:-start} in
   start)
     stop_tests
     mkdir -p $STATE $LOGS
-    python3 - $CONFIG $STATE/config.json http://127.0.0.1:$LLAMA_PORT $PORT $LOGS/gemma-voice-test-metrics.jsonl \
+    $PY - $CONFIG $STATE/config.json http://127.0.0.1:$LLAMA_PORT $PORT $LOGS/gemma-voice-test-metrics.jsonl \
       $STATE/recordings <<'PY'
 import json, os, sys
 src, dst, url, port, metrics, recordings = sys.argv[1:7]
