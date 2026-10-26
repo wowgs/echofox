@@ -320,5 +320,22 @@ do {
     check(false, "first start: \(error)")
 }
 
+// A download's speed and time left: from the progress every 0.5 s, over the last 5 s.
+do {
+    var r = TransferRate()
+    r.add(bytes: 0, at: 100)
+    check(r.bytesPerSecond == nil, "rate: unknown with one message")
+    for i in 1...20 { r.add(bytes: Double(i) * 50e6, at: 100 + Double(i) / 2) }  // 100 MB/s for 10 s
+    check(abs((r.bytesPerSecond ?? 0) - 100e6) < 1, "rate: 100 MB/s, \(r.bytesPerSecond ?? -1)")
+    for i in 21...30 { r.add(bytes: 1e9 + Double(i - 20) * 10e6, at: 100 + Double(i) / 2) }  // then 20 MB/s for 5 s
+    check(abs((r.bytesPerSecond ?? 0) - 20e6) < 1, "rate: the window follows the change, \(r.bytesPerSecond ?? -1)")
+    check(abs((r.secondsLeft(total: 2.1e9) ?? 0) - 50) < 0.01, "rate: 1 GB left at 20 MB/s is 50 s")
+    r.add(bytes: 5e6, at: 116)
+    check(r.bytesPerSecond == nil, "rate: a new download starts over")
+    check(TransferRate.speed(74.4e6) == "74 MB/s" && TransferRate.speed(4.25e6) == "4.2 MB/s", "rate: the speed's words")
+    check(TransferRate.left(30) == "less than a minute left" && TransferRate.left(250) == "about 4 min left"
+          && TransferRate.left(4800) == "about 1 h 20 min left", "rate: the time's words")
+}
+
 print(failures == 0 ? "echofox-tests: all checks pass" : "echofox-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

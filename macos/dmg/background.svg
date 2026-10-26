@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 400" width="660" height="400">
+  <title>EchoFox installer background</title>
+  <!-- The window of the dmg: EchoFox's icon on the left at (170, 175), Applications on the right at (490, 175) -->
+  <rect width="660" height="400" fill="#f2f3f7"/>
+  <!-- The arrow from the app to Applications, in the navy of the app icon -->
+  <path d="M276,175 H372" fill="none" stroke="#1d3f7a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M358,157 L384,175 L358,193" fill="none" stroke="#1d3f7a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="330" y="338" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="15" fill="#4b5563" text-anchor="middle">Drag EchoFox to Applications</text>
+</svg>

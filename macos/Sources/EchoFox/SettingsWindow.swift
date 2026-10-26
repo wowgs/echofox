@@ -628,7 +628,7 @@ struct VariantFiles: View {
 
     private var note: String {
         if let e = job?.error { return e }
-        if let job, !job.finished { return "\(gigabytes(job.bytes)) of \(gigabytes(job.total))" }
+        if let job, !job.finished { return job.status }
         return variant.downloaded ? "Downloaded, \(gigabytes(variant.bytes))." : "Not downloaded, \(gigabytes(variant.bytes))."
     }
 }

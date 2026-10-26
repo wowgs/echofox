@@ -118,7 +118,7 @@ struct FirstRunView: View {
                     Text(e).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 } else {
                     ProgressView(value: job.total > 0 ? job.bytes / job.total : 0)
-                    Text("\(gigabytes(job.bytes)) of \(gigabytes(job.total))").font(.caption).foregroundStyle(.secondary)
+                    Text(job.status).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
             Spacer()

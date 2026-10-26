@@ -108,8 +108,16 @@ fi
 codesign -dr - "$app" 2>&1 | tail -1
 
 if $dmg; then
+  # The installer window (dmg/settings.py): the app, a link to Applications and the background, by dmgbuild, which
+  # runs from its own environment, pinned with hashes (dmg/requirements.txt)
+  tools=.cache/dmgtools
+  if ! "$tools/bin/python" -c "import dmgbuild" 2>/dev/null; then
+    python3 -m venv "$tools"
+    "$tools/bin/pip" install --quiet --disable-pip-version-check --require-hashes -r dmg/requirements.txt
+  fi
   rm -f build/EchoFox.dmg
-  hdiutil create -quiet -volname "EchoFox" -srcfolder "$app" -ov -format UDZO build/EchoFox.dmg
+  "$tools/bin/dmgbuild" -s dmg/settings.py -D app="$app" -D icon="$app/Contents/Resources/EchoFox.icns" \
+    -D background=dmg/background.tiff EchoFox build/EchoFox.dmg >/dev/null
   # A Developer ID signs the dmg too, so that Gatekeeper checks the file that was downloaded
   case $identity in "Developer ID"*) codesign --force --sign "$identity" --timestamp build/EchoFox.dmg ;; esac
   echo build/EchoFox.dmg
