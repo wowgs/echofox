@@ -1,4 +1,4 @@
-// Where the text goes when it comes back, and in which ways it is tried (Alex's rule, 2026-10-15). The rule decides;
+// Where the text goes when it comes back, and in which ways it is tried (the rule of 2026-10-15). The rule decides;
 // an InsertionDesk does: the app's Inserter through Accessibility, the checks through a fake one.
 //   1. if an input box had the focus at the tap: into that box, wherever the speaker went meanwhile;
 //   2. otherwise the input box that has the focus now (the speaker clicked into it while talking);

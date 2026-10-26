@@ -18,7 +18,6 @@ Choose a guide for the task you want to complete. For a visual introduction and 
 | Follow audio through the server and model | [Speech processing](reference/1-server.md) |
 | Build a client or inspect messages | [WebSocket protocol](reference/6-protocol.md) |
 | Build from source, run checks, or test recognition | [Development guide](reference/7-development.md) |
-| Deploy the Worker that finishes releases after Apple's check | [Notary relay](../ci/notary-relay/README.md) |
 
 The reference pages describe the current implementation. The pages below explain why it is built this way and what comes next.
 

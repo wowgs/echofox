@@ -1,4 +1,4 @@
-<h1><img src="img/echofox-icon.png" alt="EchoFox fox wearing a headset" width="72" align="absmiddle">&nbsp;EchoFox</h1>
+<h1><img src="macos/art/echofox-master.png" alt="EchoFox fox wearing a headset" width="72" align="absmiddle">&nbsp;EchoFox</h1>
 
 **Speak your language. Keep your English terms.**
 
