@@ -32,6 +32,28 @@ do {
     check(false, "info does not decode: \(error)")
 }
 
+// The labels' stats, and a language's lists as the settings window shows and reads them.
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-stats-\(getpid())")
+    try? FileManager.default.removeItem(at: dir)
+    for (i, (status, seconds)) in [("verified", 2.5), ("verified", 4.0), ("unusable", 9.0)].enumerated() {
+        let folder = dir.appendingPathComponent("2026-10-26/r\(i)/piece-1")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data(["status": status, "audioSeconds": seconds]).write(to: folder.appendingPathComponent("label.json"))
+    }
+    let stats = Labeling.stats(labeled: dir)
+    check(stats.count == 2 && stats.seconds == 6.5, "labels: only the verified ones count, \(stats)")
+    check(Labeling.stats(labeled: dir.appendingPathComponent("none")) == (0, 0), "labels: no folder, none")
+    try? FileManager.default.removeItem(at: dir)
+    let fillers = SettingStore.LanguageList.fillers, notes = SettingStore.LanguageList.notes
+    check(fillers.items(" э, мм ,, а-а ") == ["э", "мм", "а-а"] && fillers.text(["э", "мм"]) == "э, мм", "lists: the sounds")
+    check(notes.items("one\n\n two ") == ["one", "two"] && notes.text(["a", "b"]) == "a\nb", "lists: the notes")
+    check(fillers.path(of: "ru") == ["languages", "ru", "fillers"] && SettingStore.variantPath(of: "m") == ["models", "m", "variant"],
+          "paths: a language's list and a model's variant")
+} catch {
+    check(false, "labels: \(error)")
+}
+
 // The config's "microphone" among the inputs: the built-in one by its kind, a device by its UID, macOS's input.
 do {
     typealias D = MicrophoneChoice.Device

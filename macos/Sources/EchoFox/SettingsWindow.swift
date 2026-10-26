@@ -146,7 +146,11 @@ final class SettingsModel: ObservableObject {
         config = actions?.config ?? Config()
         serverChanged()
         microphoneChanged()
-        labels = Self.labelStats(config.labeled)
+        let labeled = config.labeled  // the label files are read off the main thread
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let stats = Labeling.stats(labeled: labeled)
+            DispatchQueue.main.async { self?.labels = stats }
+        }
     }
 
     func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
@@ -205,19 +209,6 @@ final class SettingsModel: ObservableObject {
     func remove(_ path: [String]) {
         actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
         config = actions?.config ?? config
-    }
-
-    /// The labeled pieces and their seconds of audio, from the label files.
-    static func labelStats(_ labeled: URL) -> (count: Int, seconds: Double) {
-        guard let e = FileManager.default.enumerator(at: labeled, includingPropertiesForKeys: nil) else { return (0, 0) }
-        var count = 0, seconds = 0.0
-        for case let url as URL in e where url.lastPathComponent == "label.json" {
-            guard let d = (try? JSONSerialization.jsonObject(with: Data(contentsOf: url))) as? [String: Any],
-                  d["status"] as? String == "verified" else { continue }
-            count += 1
-            seconds += d["audioSeconds"] as? Double ?? 0
-        }
-        return (count, seconds)
     }
 }
 
@@ -590,7 +581,7 @@ struct VariantPicker: View {
                         note: "A smaller one uses less memory and is faster. The model starts again after the recording.") {
                 Picker("Quantization", selection: Binding(get: { info?.variant ?? "" }, set: { v in
                     guard variants.first(where: { $0.id == v })?.downloaded == true else { return }  // its files first
-                    model.write(["models", name, "variant"], v)
+                    model.write(SettingStore.variantPath(of: name), v)
                     model.actions?.refreshServer()
                 })) {
                     ForEach(variants, id: \.id) { v in
@@ -647,7 +638,7 @@ struct PromptEditor: View {
     @ObservedObject var model: SettingsModel
     private var id: String { "prompt." + (model.config.model ?? "") }
 
-    private var path: [String]? { model.config.model.map { ["models", $0, "prompt"] } }
+    private var path: [String]? { model.config.model.map(SettingStore.promptPath) }
     private var own: String? { path.flatMap { model.config.value($0) as? String } }
     private var catalog: String { model.info?.model?.prompt ?? "" }
     private var shown: String { own ?? catalog }
@@ -684,14 +675,14 @@ struct LanguageList: View {
 
     private var code: String { String(model.config.language.prefix(while: { $0 != "-" })) }
     private var id: String { "language.\(code).\(field)" }
-    private var path: [String] { ["languages", code, field] }
+    private var list: SettingStore.LanguageList { field == "notes" ? .notes : .fillers }
+    private var path: [String] { list.path(of: code) }
     private var own: [String]? { model.config.value(path) as? [String] }
     private var defaults: [String] {
         let l = model.info?.languages.first { $0.code == code }
         return (field == "notes" ? l?.notes : l?.fillers) ?? []
     }
-    private var separator: String { field == "notes" ? "\n" : ", " }
-    private var shown: String { (own ?? defaults).joined(separator: separator) }
+    private var shown: String { list.text(own ?? defaults) }
 
     var body: some View {
         if code.isEmpty {
@@ -722,10 +713,8 @@ struct LanguageList: View {
 
     private func save() {
         guard let text = model.drafts[id] else { return }
-        let items = text.components(separatedBy: field == "notes" ? "\n" : ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         model.done(id)
-        model.write(path, items)
+        model.write(path, list.items(text))
     }
 }
 

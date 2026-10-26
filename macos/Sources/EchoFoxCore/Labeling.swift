@@ -39,6 +39,19 @@ public enum Labeling {
     /// a model trained on the labels learns to leave them out; the words said on purpose stay.
     public static let convention = "clean"
 
+    /// The pieces labeled as verified, and their seconds of audio, from the label files under `labeled`.
+    public static func stats(labeled: URL) -> (count: Int, seconds: Double) {
+        guard let e = FileManager.default.enumerator(at: labeled, includingPropertiesForKeys: nil) else { return (0, 0) }
+        var count = 0, seconds = 0.0
+        for case let url as URL in e where url.lastPathComponent == "label.json" {
+            guard let d = (try? JSONSerialization.jsonObject(with: Data(contentsOf: url))) as? [String: Any],
+                  d["status"] as? String == LabelStatus.verified.rawValue else { continue }
+            count += 1
+            seconds += d["audioSeconds"] as? Double ?? 0
+        }
+        return (count, seconds)
+    }
+
     /// The pieces not labeled yet, the newest recording first, its pieces in order.
     public static func pending(recordings: URL, labeled: URL) -> [LabelItem] {
         let fm = FileManager.default

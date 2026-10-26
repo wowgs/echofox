@@ -48,6 +48,23 @@ public enum SettingEdit: Equatable {
 }
 
 public enum SettingStore {
+    /// Where the config keeps a model's chosen variant, and its own prompt.
+    public static func variantPath(of model: String) -> [String] { ["models", model, "variant"] }
+    public static func promptPath(of model: String) -> [String] { ["models", model, "prompt"] }
+
+    /// A language's list in the config: its prompt notes, one a line, or its hesitation sounds, separated by commas.
+    public enum LanguageList: String {
+        case notes, fillers
+        public func path(of code: String) -> [String] { ["languages", code, rawValue] }
+        /// The list as the settings window shows it.
+        public func text(_ items: [String]) -> String { items.joined(separator: self == .notes ? "\n" : ", ") }
+        /// The list from what is typed: trimmed, the empty items out.
+        public func items(_ text: String) -> [String] {
+            text.components(separatedBy: self == .notes ? "\n" : ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+    }
+
     public static func path(of s: SettingInfo, model: String?, scope: SettingScope = .owner) -> [String]? {
         switch scope {
         case let .adapter(a): return ["adapters", a.name, s.key]
