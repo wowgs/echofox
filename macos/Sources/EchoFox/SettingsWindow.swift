@@ -334,8 +334,12 @@ struct PageView: View {
                                     changed: model.changed(section.ids.flatMap(model.shown))) {
                         ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
                     }
+                } else if let header = SettingsLayout.header(section.section, on: page) {
+                    Section(header) {
+                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
+                    }
                 } else {
-                    Section(section.section) {
+                    Section {
                         ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
                     }
                 }

@@ -93,6 +93,11 @@ public enum SettingsLayout {
     /// The section of a page that opens on a click: the settings for those who tune the model and the context.
     public static let advanced = "Advanced"
 
+    /// The header a section shows on its page: none when it is the page's own title, which the window shows already.
+    public static func header(_ section: String, on page: SettingsPage) -> String? {
+        section == page.title ? nil : section
+    }
+
     /// Where a server setting goes when `places` has no line for it: "owner.group" → its page and section. An
     /// adapter's settings show under each adapter (the page Adapters), not here.
     public static let groups: [String: (SettingsPage, String)] = [

@@ -440,6 +440,10 @@ do {
     check(false, "variants: \(error)")
 }
 
+// A section named as its page shows no header: the window's title says it already.
+check(SettingsLayout.header("Model", on: .model) == nil && SettingsLayout.header("Prompt", on: .model) == "Prompt"
+      && SettingsLayout.header("Language", on: .language) == nil, "settings: no header that repeats the page's title")
+
 // The values both sides use (shared/constants.json); the server's tests check the same file.
 do {
     let c = try JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent(
