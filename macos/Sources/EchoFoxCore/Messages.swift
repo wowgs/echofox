@@ -87,6 +87,12 @@ public struct ServerInfo: Decodable, Equatable {
         Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("outline") }.flatMap(\.apps))
     }
 
+    /// What the focus snapshot takes of the app `bundleId` at the start of a dictation, as the enabled adapters ask.
+    public func snapshotPlan(for bundleId: String) -> SnapshotPlan {
+        SnapshotPlan(full: snapshotApps.contains(bundleId), tree: treeApps.contains(bundleId),
+                     lists: listApps.contains(bundleId), outline: outlineApps.contains(bundleId))
+    }
+
     public static func decode(_ data: Data) throws -> ServerInfo {
         let info = try JSONDecoder().decode(ServerInfo.self, from: data)
         guard info.interface == protocolInterface else {
@@ -231,5 +237,16 @@ public struct SettingInfo: Decodable, Equatable {
         if let lo = min, minExclusive == true ? v <= lo : v < lo { return false }
         if let hi = max, maxExclusive == true ? v >= hi : v > hi { return false }
         return kind != "integer" || v == v.rounded()
+    }
+}
+
+/// What the focus snapshot takes of an app (ServerInfo.snapshotPlan): `full`, its window, ancestors and processes, for
+/// an enabled adapter's app; `tree`, its Electron accessibility tree turned on; `lists`, the rows of its window's lists;
+/// `outline`, the tree of its page or window. An app that no enabled adapter reads gets none of these.
+public struct SnapshotPlan: Equatable {
+    public let full, tree, lists, outline: Bool
+    public static let none = SnapshotPlan(full: false, tree: false, lists: false, outline: false)
+    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool) {
+        (self.full, self.tree, self.lists, self.outline) = (full, tree, lists, outline)
     }
 }

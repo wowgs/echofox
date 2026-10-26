@@ -24,7 +24,7 @@
                          {"code": "uk", "name": "Ukrainian", "notes": [], "fillers": []}],
            "adapters": [{"name": "claude", "enabled": true, "builtin": true, "version": "1.0", "author": "echofox",
                          "source": "https://github.com/wowgs/echofox", "description": "…",
-                         "apps": ["com.anthropic.claudefordesktop"], "electronTree": true, "reads": [], "screen": [], "context": {}, "error": null},
+                         "apps": ["com.anthropic.claudefordesktop"], "electronTree": true, "reads": [], "screen": ["outline"], "context": {}, "error": null},
                         {"name": "telegram", "enabled": true, "builtin": true, "version": "1.0", "author": "echofox",
                          "source": "https://github.com/wowgs/echofox", "description": "…",
                          "apps": ["com.tdesktop.Telegram"], "electronTree": false, "reads": [], "screen": ["lists"], "context": {}, "error": null}],

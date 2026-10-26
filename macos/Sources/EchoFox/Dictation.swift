@@ -21,7 +21,7 @@ final class Dictation {
     private let config: Config
     private let sampleRate: Int
     private let textWait: TimeInterval
-    private let full: Bool, tree: Bool, lists: Bool, outline: Bool
+    private let plan: SnapshotPlan
     /// A private dictation (the private dictation's hotkey): the screen is not read. The capture keeps only the
     /// focused element, for the insertion; the server gets no snapshot, no adapter runs, nothing is saved.
     let isPrivate: Bool
@@ -34,20 +34,14 @@ final class Dictation {
     private var textTimer: Timer?
     private var sendFailed = false
 
-    /// `server`: what the server said of itself (nil: not known yet; the defaults then). `full`: an enabled adapter
-    /// reads the frontmost app, so the snapshot has its window, ancestors and processes. `tree`: the app is an
-    /// Electron app whose tree an enabled adapter needs. `lists`, `outline`: an enabled adapter reads the rows of the
-    /// app's window lists, or the tree of its page or window (its manifest's "screen").
-    init(config: Config, server: ServerInfo?, full: Bool, tree: Bool, lists: Bool = false, outline: Bool = false,
-         isPrivate: Bool = false) {
+    /// `server`: what the server said of itself (nil: not known yet; the defaults then). `plan`: what the focus
+    /// snapshot takes of the frontmost app (ServerInfo.snapshotPlan).
+    init(config: Config, server: ServerInfo?, plan: SnapshotPlan, isPrivate: Bool = false) {
         self.isPrivate = isPrivate
         self.config = config
         self.sampleRate = server?.sampleRate ?? Tuning.defaultSampleRate
         self.textWait = server?.textWaitSeconds ?? Tuning.defaultTextWaitSeconds
-        self.full = full
-        self.tree = tree
-        self.lists = lists
-        self.outline = outline
+        self.plan = plan
         let (input, why) = AudioInputs.chosen(config.microphone)
         self.recorder = Recorder(sampleRate: Double(sampleRate), device: input?.id)
         self.microphone = "\(input?.name ?? "macOS's input") (\(why))"
@@ -59,10 +53,9 @@ final class Dictation {
         task.resume()
         receive()
         let config = self.config, rate = self.sampleRate, isPrivate = self.isPrivate
-        let full = self.full && !isPrivate, tree = self.tree && !isPrivate, lists = self.lists && !isPrivate
-        let outline = self.outline && !isPrivate
+        let plan = isPrivate ? SnapshotPlan.none : self.plan  // a private dictation reads nothing of the screen
         queue.async { [weak self] in
-            let capture = FocusSnapshot.capture(full: full, enableElectron: tree, lists: lists, outline: outline)
+            let capture = FocusSnapshot.capture(full: plan.full, enableElectron: plan.tree, lists: plan.lists, outline: plan.outline)
             DispatchQueue.main.async { self?.capture = capture }
             Log.write("snapshot: app \(capture.snapshot["app"].flatMap { ($0 as? [String: Any])?["bundleId"] } ?? "none"), "
                       + "focused \(capture.focused != nil), web area \(capture.snapshot["webArea"] != nil), "
@@ -191,4 +184,3 @@ final class Dictation {
             break
         }
     }
-}

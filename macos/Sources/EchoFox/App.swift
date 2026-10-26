@@ -123,9 +123,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let info = server.info
         if info == nil { server.refresh(config.serverURL) }
-        let d = Dictation(config: config, server: info, full: info?.snapshotApps.contains(front) == true,
-                          tree: info?.treeApps.contains(front) == true, lists: info?.listApps.contains(front) == true,
-                          outline: info?.outlineApps.contains(front) == true, isPrivate: isPrivate)
+        let d = Dictation(config: config, server: info, plan: info?.snapshotPlan(for: front) ?? .none, isPrivate: isPrivate)
         if isPrivate { Log.write("a private dictation: the screen is not read, nothing is saved") }
         d.onPhase = { [weak self] d in self?.changed(d) }
         current = d
