@@ -1,10 +1,29 @@
-websockets==17.1
-markdown-it-py==4.2.0
-mdurl==0.1.2
-linkify-it-py==2.2.0
-uc-micro-py==2.0.0
-onnxruntime==1.31.0
-numpy==2.5.4
-flatbuffers==25.12.19
-packaging==26.3
-protobuf==7.36.2
+# The server's packages, pinned by version and by the SHA-256 of their wheels for macOS and Python 3.14 (PyPI,
+# 2026-10-26). Install with pip --require-hashes --only-binary :all: (README, build-app.sh, tests.yml).
+websockets==17.1 \
+    --hash=sha256:0c9982938980e086da59f70d05f9418cd143401a601a0faac10fa48f7bb1cd3e \
+    --hash=sha256:57b39dc8541cf7ed3f639da82bf7451060483967f9e733da1f8173e4095f0642 \
+    --hash=sha256:96abdecbaae746851b87c3a36cb4a661df93ca3d92f114270f79228bf1d00de6 \
+    --hash=sha256:f221081107b8c48184d99f7019604486376e7ef826037e70aad6b02540732c23
+markdown-it-py==4.2.0 \
+    --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+linkify-it-py==2.2.0 \
+    --hash=sha256:3adc40eb5af300b2605fcfdb968c24e1d780a90f1f2221af7c15e5111e94d443
+uc-micro-py==2.0.0 \
+    --hash=sha256:3603a3859af53e5a39bc7677713c78ea6589ff188d70f4fee165db88e22b242c
+onnxruntime==1.31.0 \
+    --hash=sha256:278e0dc922ec69b05a28f59110d5421e2ec8b1d0dd46c6b10c063069a4051e72
+numpy==2.5.4 \
+    --hash=sha256:c668b2f0d651605b58892644b0e302c7157f7159544227758c896982ef384b18 \
+    --hash=sha256:ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076 \
+    --hash=sha256:956555e0603a4d38019ae6925711cb9dc43195c076a928accf7ea5d50bddfe53 \
+    --hash=sha256:2c2c4afffdeb7920e445028dd71eb932cac3e704792e964bc2a232426d4f1255
+flatbuffers==25.12.19 \
+    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+protobuf==7.36.2 \
+    --hash=sha256:cbc70b17ee27e28894c7fee8bb04be1abead49e936bc70eb60052531eee2079e \
+    --hash=sha256:bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e

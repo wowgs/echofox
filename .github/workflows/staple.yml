@@ -3,7 +3,8 @@
 # starts it too, with the submission's id from release.yml's log or notarytool history. It takes the signed dmg of the
 # submission (the artifact EchoFox-notarizing-<id>), asks Apple for the verdict, and on Accepted staples Apple's
 # ticket to the dmg and publishes it: a GitHub Release for a tag v*, else the artifact EchoFox-dmg. It needs no
-# Developer ID key, only the notary key.
+# Developer ID key, only the notary key. Three jobs: the artifact is looked up on Linux first, so that a call with an
+# id that has no artifact costs no macOS start; only macOS staples; only the last job, on Linux, may write a release.
 #
 # Secrets: NOTARY_KEY_P8 (the App Store Connect API key, the .p8 file in base64), NOTARY_KEY_ID, NOTARY_ISSUER_ID
 name: Staple
@@ -13,26 +14,45 @@ on:
       submission:
         description: The notary submission's id
         required: true
-permissions:
-  contents: write
-  actions: read
+permissions: {}
 concurrency:
   group: staple-${{ inputs.submission }}
 jobs:
-  staple:
-    runs-on: macos-26
-    env:
-      SUBMISSION: ${{ inputs.submission }}
+  find:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.find.outputs.run }}
     steps:
-      - name: The signed dmg of the submission, from the run that sent it
+      - name: The run that sent the submission and kept its signed dmg
+        id: find
         env:
           GH_TOKEN: ${{ github.token }}
+          SUBMISSION: ${{ inputs.submission }}
         run: |
           [[ $SUBMISSION =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "not a submission id: $SUBMISSION"; exit 1; }
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=EchoFox-notarizing-$SUBMISSION" \
             --jq '.artifacts[0].workflow_run.id // empty')
           [ -n "$run" ] || { echo "no artifact EchoFox-notarizing-$SUBMISSION"; exit 1; }
-          gh run download "$run" -R "$GITHUB_REPOSITORY" -n "EchoFox-notarizing-$SUBMISSION" -D notarizing
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+  staple:
+    needs: find
+    runs-on: macos-26
+    permissions:
+      actions: read
+    outputs:
+      refType: ${{ steps.where.outputs.refType }}
+      ref: ${{ steps.where.outputs.ref }}
+    env:
+      SUBMISSION: ${{ inputs.submission }}
+    steps:
+      - name: The signed dmg of the submission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ needs.find.outputs.run }}
+        run: |
+          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "EchoFox-notarizing-$SUBMISSION" -D notarizing
           jq . notarizing/release.json
       - name: Apple's verdict
         env:
@@ -54,19 +74,29 @@ jobs:
           spctl --assess --type open --context context:primary-signature -vv notarizing/EchoFox.dmg
       - name: Where the dmg goes
         id: where
-        run: echo "refType=$(jq -r .refType notarizing/release.json)" >> "$GITHUB_OUTPUT"
-      - name: Published as the release of the tag
-        if: steps.where.outputs.refType == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(jq -r .ref notarizing/release.json)
-          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "$tag is out already"; exit 0; fi
-          gh release create "$tag" notarizing/EchoFox.dmg -R "$GITHUB_REPOSITORY" --title "EchoFox $tag" --generate-notes
-      - name: Published as an artifact (a run by the button)
-        if: steps.where.outputs.refType != 'tag'
+          echo "refType=$(jq -r .refType notarizing/release.json)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(jq -r .ref notarizing/release.json)" >> "$GITHUB_OUTPUT"
+      - name: The stapled dmg (EchoFox-dmg; for a tag, the next job publishes it)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: EchoFox-dmg
           path: notarizing/EchoFox.dmg
           retention-days: 14
+  publish:
+    needs: staple
+    if: needs.staple.outputs.refType == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: EchoFox-dmg
+      - name: Published as the release of the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.staple.outputs.ref }}
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "$TAG is out already"; exit 0; fi
+          gh release create "$TAG" EchoFox.dmg -R "$GITHUB_REPOSITORY" --title "EchoFox $TAG" --generate-notes
