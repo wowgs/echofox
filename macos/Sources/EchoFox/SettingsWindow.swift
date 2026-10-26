@@ -248,7 +248,8 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        NavigationSplitView {
+        // A plain sidebar and page: no window toolbar, so no sidebar button and no band over the page
+        HStack(spacing: 0) {
             List(selection: $model.selection) {
                 ForEach(SettingsLayout.sidebar, id: \.self) { entry in
                     switch entry {
@@ -275,19 +276,22 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
-            .toolbar(removing: .sidebarToggle)  // the sidebar is always shown
-        } detail: {
-            switch model.selection {
-            case let .page(page)?: PageView(model: model, page: page)
-            case let .adapter(name)?:
-                if let a = model.info?.adapters.first(where: { $0.name == name }) {
-                    AdapterPage(model: model, adapter: a)
-                } else {
-                    Text("The server does not have this adapter any more.").foregroundStyle(.secondary)
+            .listStyle(.sidebar)
+            .frame(width: 210)
+            Divider()
+            Group {
+                switch model.selection {
+                case let .page(page)?: PageView(model: model, page: page)
+                case let .adapter(name)?:
+                    if let a = model.info?.adapters.first(where: { $0.name == name }) {
+                        AdapterPage(model: model, adapter: a)
+                    } else {
+                        Text("The server does not have this adapter any more.").foregroundStyle(.secondary)
+                    }
+                case nil: EmptyView()
                 }
-            case nil: EmptyView()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
