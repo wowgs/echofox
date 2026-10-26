@@ -1,8 +1,10 @@
 // The launchd agent of the dictation server when the app carries it (macos/build-app.sh --bundle): Python and the
 // server's code in the app's Contents/Resources. The app writes the agent at its start, if it is not what it must be,
 // and starts it again; on a Mac where the server runs from the repository (server/launchd.sh), the app has no server
-// of its own and leaves the agent alone. The label, the log and the exit timeout are the server's (server/constants.py
-// SERVER_LABEL, LOGS, LAUNCHD_EXIT_TIMEOUT_S).
+// of its own and leaves the agent alone. The agent carries the app's version, so a new version in the same place
+// starts the server again. An app that runs from a disk image or from App Translocation writes no agent: launchd would
+// keep a path that is gone after the image is ejected or the app quits. The label, the log and the exit timeout are
+// the server's (server/constants.py SERVER_LABEL, LOGS, LAUNCHD_EXIT_TIMEOUT_S).
 import Foundation
 
 public enum ServerAgent {
@@ -20,12 +22,22 @@ public enum ServerAgent {
         return (python, server)
     }
 
-    /// The agent's property list for the bundled server.
-    public static func plist(python: URL, server: URL, home: URL) -> [String: Any] {
+    /// Why the app at this path must not write the agent, or nil if it may: macOS runs a quarantined app from a random
+    /// read-only folder (App Translocation), and an app opened from a disk image is on a read-only volume.
+    public static func misplaced(app path: String, readOnlyVolume: Bool) -> String? {
+        if path.contains("/AppTranslocation/") { return "from a temporary folder of macOS (App Translocation)" }
+        if readOnlyVolume { return "from a read-only volume, such as the disk image" }
+        return nil
+    }
+
+    /// The agent's property list for the bundled server of this app version. Python writes no bytecode: the bundle
+    /// carries it (build-app.sh), and a new file would break the app's signature.
+    public static func plist(python: URL, server: URL, home: URL, version: String) -> [String: Any] {
         let log = home.appendingPathComponent("Library/Logs/EchoFox/gemma-voice.log").path
         return ["Label": label,
                 "ProgramArguments": [python.path, server.appendingPathComponent("gemma_voice.py").path],
                 "WorkingDirectory": server.path,
+                "EnvironmentVariables": ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": version],
                 "RunAtLoad": true, "KeepAlive": true, "ExitTimeOut": exitTimeoutSeconds,
                 "ProcessType": "Interactive", "StandardOutPath": log, "StandardErrorPath": log]
     }

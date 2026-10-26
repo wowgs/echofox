@@ -20,6 +20,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
               let name = m.name, let catalog = m.catalog else { return }
         shown = true
         let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant)
+        model.askServer = { [weak self] in self?.askServer() }
         model.done = { [weak self] in
             self?.askServer()
             self?.window?.close()
@@ -49,6 +50,9 @@ final class FirstRunModel: ObservableObject {
     @Published var choice: String
     @Published var job: ModelJob?
     var done: () -> Void = {}
+    /// Asked when the download runs and when it fails, so that the server's info (and the settings window) says
+    /// whether the variant downloads.
+    var askServer: () -> Void = {}
 
     init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?) {
         self.name = name
@@ -60,9 +64,15 @@ final class FirstRunModel: ObservableObject {
 
     func download() {
         let job = ModelJob(url: Config.load().serverURL, message: ClientMessage.download(catalog: catalog, variant: choice))
+        var running = false
         job.onChange = { [weak self] in
             guard let self else { return }
             self.objectWillChange.send()
+            if !job.finished, !running {
+                running = true
+                self.askServer()
+            }
+            if job.finished, job.error != nil { self.askServer() }
             guard job.finished, job.error == nil else { return }
             if self.choice != self.inForce {  // the catalog's default needs no line in the config
                 try? Config.set(["models", self.name, "variant"], to: self.choice)

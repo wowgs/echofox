@@ -290,19 +290,47 @@ do {
           "models: the download message is the example's")
 }
 
+// A variant that the server downloads for another window offers no second download.
+do {
+    func v(_ downloaded: Bool, _ downloading: Bool?) throws -> ServerInfo.Variant {
+        var o: [String: Any] = ["id": "q8_0", "name": "Q8_0", "bytes": 1e9, "downloaded": downloaded]
+        if let d = downloading { o["downloading"] = d }
+        return try JSONDecoder().decode(ServerInfo.Variant.self, from: data(o))
+    }
+    let missing = try v(false, nil), downloading = try v(false, true), there = try v(true, nil)
+    check(missing.canDownload && !downloading.canDownload && !there.canDownload,
+          "variants: Download only when the files are neither there nor downloading")
+} catch {
+    check(false, "variants: \(error)")
+}
+
 // The launchd agent of a bundled server.
 do {
     let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/EchoFox.app/Contents/Resources")
-    let p = ServerAgent.plist(python: r.appendingPathComponent("python/bin/python3"), server: r.appendingPathComponent("server"), home: home)
+    let agent = { (version: String) in
+        ServerAgent.plist(python: r.appendingPathComponent("python/bin/python3"), server: r.appendingPathComponent("server"),
+                          home: home, version: version)
+    }
+    let p = agent("0.2 (180)")
     check(p["Label"] as? String == "echofox.gemma-voice"
           && p["ProgramArguments"] as? [String] == ["/Applications/EchoFox.app/Contents/Resources/python/bin/python3",
                                                     "/Applications/EchoFox.app/Contents/Resources/server/gemma_voice.py"]
           && p["ExitTimeOut"] as? Int == 210 && p["KeepAlive"] as? Bool == true, "server agent: its plist")
+    check(p["EnvironmentVariables"] as? [String: String] == ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": "0.2 (180)"],
+          "server agent: no bytecode written, and the app's version")
+    check(ServerAgent.misplaced(app: "/Applications/EchoFox.app", readOnlyVolume: false) == nil
+          && ServerAgent.misplaced(app: "/Users/someone/Applications/EchoFox.app", readOnlyVolume: false) == nil,
+          "server agent: written from Applications")
+    check(ServerAgent.misplaced(app: "/Volumes/EchoFox/EchoFox.app", readOnlyVolume: true) != nil
+          && ServerAgent.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: true) != nil
+          && ServerAgent.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: false) != nil,
+          "server agent: not written from a disk image or App Translocation")
     check(ServerAgent.bundled(resources: URL(fileURLWithPath: "/nowhere")) == nil, "server agent: none without a bundled server")
     let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-agent-\(getpid()).plist")
     check(ServerAgent.differs(p, at: tmp), "server agent: a missing file differs")
     try PropertyListSerialization.data(fromPropertyList: p, format: .xml, options: 0).write(to: tmp)
     check(!ServerAgent.differs(p, at: tmp), "server agent: the same file does not")
+    check(ServerAgent.differs(agent("0.3 (190)"), at: tmp), "server agent: a new version of the app in the same place differs")
     try? FileManager.default.removeItem(at: tmp)
 } catch {
     check(false, "server agent: \(error)")

@@ -42,9 +42,15 @@ Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninst
 
 Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)).
 
-The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. The build rejects libraries linked from Homebrew. Models are downloaded separately.
+The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. Models are downloaded separately.
 
-`ECHOFOX_SIGN` selects the signing identity. Development builds use the self-signed “EchoFox Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../distribution.md#releases).
+The oldest supported macOS is `MACOS_MIN` in `macos/pins.sh`, now 14.0. The build passes it to cmake for `llama-server`, to pip for packages built from source, to `actool`, and to `LSMinimumSystemVersion`. `macos/Package.swift` must name the same version (`.macOS(.v14)`). After the build, the script checks every executable and library in the app. It stops if one loads a library from Homebrew, or if one needs a newer macOS (`minos` in `otool -l`).
+
+The build compiles the Python files of the server, the standard library and the packages to bytecode before it signs the app. The server's launchd agent sets `PYTHONDONTWRITEBYTECODE=1`. So Python writes no file into the signed app, and `codesign --verify --deep --strict` still passes after the server has run. The script runs that check after it signs.
+
+The app's version comes from git. `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`. `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag. The app writes its version into the server's launchd agent (`ECHOFOX_APP_VERSION`), and the server passes it to the agent of `llama-server`. So an app of another version starts both again. Two builds of the same commit have the same version. After a rebuild without a new commit, restart the server yourself.
+
+`ECHOFOX_SIGN` selects the signing identity. Without it, a build on your Mac uses the self-signed “EchoFox Dev” certificate. If that certificate is missing, the build signs ad hoc and prints a warning. Set `ECHOFOX_SIGN=-` to sign ad hoc on purpose. If `ECHOFOX_SIGN` is set, or `CI` is set, a missing or empty identity stops the build before it starts. A public release needs the separate signing and notarization setup described in [distribution](../distribution.md#releases).
 
 ## Run the tests
 
@@ -99,7 +105,7 @@ The ports are in `server/constants.py`.
 
 An ordinary branch push starts none of them.
 
-With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run staples Apple's ticket to the DMG and publishes it: to GitHub Releases for a tag, or as an artifact for 14 days for a manual run. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` signs ad hoc, for tests, and publishes the DMG itself. The secret names are listed at the top of each workflow.
+With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run staples Apple's ticket to the DMG and publishes it: to GitHub Releases for a tag, or as an artifact for 14 days for a manual run. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, a manual run of `release.yml` signs ad hoc, for tests, and keeps the DMG as an artifact. A tag without the secrets stops the run, so a release is never signed ad hoc. For a tag, the run also checks that the app's version is the tag's. The secret names are listed at the top of each workflow.
 
 ## Diagrams
 

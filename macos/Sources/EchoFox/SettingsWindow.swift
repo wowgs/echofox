@@ -36,6 +36,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let model = self.model ?? SettingsModel(actions: actions)
         self.model = model
         model.reload()
+        actions?.askServer()  // its info may be older than a download that the first start's window began
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -590,7 +591,8 @@ struct VariantPicker: View {
                     model.actions?.refreshServer()
                 })) {
                     ForEach(variants, id: \.id) { v in
-                        Text("\(v.name), \(gigabytes(v.bytes))" + (v.downloaded ? "" : " (not downloaded)")).tag(v.id)
+                        Text("\(v.name), \(gigabytes(v.bytes))"
+                             + (v.downloaded ? "" : v.downloading == true ? " (downloading)" : " (not downloaded)")).tag(v.id)
                     }
                 }
                 .labelsHidden()
@@ -605,7 +607,8 @@ struct VariantPicker: View {
 
 func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
 
-/// The files of a variant not in force: Download with its progress, or Remove.
+/// The files of a variant not in force: Download with its progress, or Remove. While another window (the first
+/// start's) downloads it, the server's info says so and there is no Download.
 struct VariantFiles: View {
     @ObservedObject var model: SettingsModel
     let catalog: String
@@ -620,8 +623,10 @@ struct VariantFiles: View {
                 Button("Cancel") { model.cancel(variant.id) }
             } else if variant.downloaded {
                 Button("Remove") { model.remove(catalog: catalog, variant: variant.id) }
-            } else {
+            } else if variant.canDownload {
                 Button("Download") { model.download(catalog: catalog, variant: variant.id) }
+            } else {
+                ProgressView().controlSize(.small)
             }
         }
     }
@@ -629,7 +634,8 @@ struct VariantFiles: View {
     private var note: String {
         if let e = job?.error { return e }
         if let job, !job.finished { return job.status }
-        return variant.downloaded ? "Downloaded, \(gigabytes(variant.bytes))." : "Not downloaded, \(gigabytes(variant.bytes))."
+        if variant.downloaded { return "Downloaded, \(gigabytes(variant.bytes))." }
+        return variant.canDownload ? "Not downloaded, \(gigabytes(variant.bytes))." : "Downloading in the EchoFox window."
     }
 }
 

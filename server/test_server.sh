@@ -28,6 +28,7 @@ CONFIG=${ECHOFOX_CONFIG:-$(c CONFIG)}
 EXIT_WAIT=$(c LAUNCHD_EXIT_TIMEOUT_S)
 # The Python and the server that run: this repository's, or a bundled app's
 if [[ -n ${BUNDLE:-} ]]; then PY=${BUNDLE:A}/Contents/Resources/python/bin/python3 SRV=${BUNDLE:A}/Contents/Resources/server
+  export PYTHONDONTWRITEBYTECODE=1  # as the app's agent: nothing new in the signed bundle
 else PY=$HERE/.venv/bin/python SRV=$HERE; fi
 pids() { pgrep -f "gemma_voice.py --config $STATE/config.json" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
 stop_tests() { for p in $(pids); do kill $p; done; for i in {1..50}; do [[ -z $(pids) ]] && break; sleep 0.1; done; }

@@ -22,7 +22,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private var lastError: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier)")
+        Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
+        if refuseMisplaced() { return }
         installServerAgent()
         menu.state = { [unowned self] in self.state() }
         settings.actions = self
@@ -177,31 +178,60 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     func askServer() { server.refresh(Config.load().serverURL) }
 
+    /// "0.2 (180)": CFBundleShortVersionString and CFBundleVersion, which build-app.sh takes from git.
+    static let version: String = {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+    }()
+
+    /// An app that carries the server but runs from a disk image or App Translocation asks to be moved to
+    /// Applications and quits (ServerAgent.misplaced); true then.
+    private func refuseMisplaced() -> Bool {
+        let app = Bundle.main.bundleURL
+        guard ServerAgent.bundled(resources: Bundle.main.resourceURL) != nil else { return false }
+        let readOnly = (try? app.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+        guard let why = ServerAgent.misplaced(app: app.path, readOnlyVolume: readOnly) else { return false }
+        Log.write("not started \(why), \(app.path): the server agent needs the app in one place")
+        let alert = NSAlert()
+        alert.messageText = "Move EchoFox to Applications"
+        alert.informativeText = "EchoFox is running \(why). Its dictation server needs EchoFox to stay in one place. "
+            + "Drag EchoFox to the Applications folder, then open it from there."
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+        NSApp.terminate(nil)
+        return true
+    }
+
     /// The app that carries the server writes its launchd agent and starts it again, if the agent is not the
-    /// bundled server's (ServerAgent). An app without a server of its own leaves the agent alone.
+    /// bundled server's of this version (ServerAgent). launchctl waits, so this runs off the main thread; the server's
+    /// info is asked again when it is done. An app without a server of its own leaves the agent alone.
     private func installServerAgent() {
         guard let (python, serverFolder) = ServerAgent.bundled(resources: Bundle.main.resourceURL) else { return }
         let home = FileManager.default.homeDirectoryForCurrentUser, url = ServerAgent.url(home: home)
-        let wanted = ServerAgent.plist(python: python, server: serverFolder, home: home)
-        guard ServerAgent.differs(wanted, at: url) else { return }
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/EchoFox"),
-                                                    withIntermediateDirectories: true)
-            let data = try PropertyListSerialization.data(fromPropertyList: wanted, format: .xml, options: 0)
-            try data.write(to: url, options: .atomic)
-            let domain = "gui/\(getuid())"
-            launchctl(["bootout", "\(domain)/\(ServerAgent.label)"])
-            for _ in 0..<50 where launchctl(["print", "\(domain)/\(ServerAgent.label)"]) == 0 { usleep(200_000) }
-            let code = launchctl(["bootstrap", domain, url.path])
-            Log.write("server agent: the bundled server, \(url.path); bootstrap exit \(code)")
-        } catch {
-            Log.write("server agent: cannot write \(url.path): \(error)")
+        let wanted = ServerAgent.plist(python: python, server: serverFolder, home: home, version: App.version)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard ServerAgent.differs(wanted, at: url) else { return }
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/EchoFox"),
+                                                        withIntermediateDirectories: true)
+                let data = try PropertyListSerialization.data(fromPropertyList: wanted, format: .xml, options: 0)
+                try data.write(to: url, options: .atomic)
+                let domain = "gui/\(getuid())"
+                App.launchctl(["bootout", "\(domain)/\(ServerAgent.label)"])
+                for _ in 0..<50 where App.launchctl(["print", "\(domain)/\(ServerAgent.label)"]) == 0 { usleep(200_000) }
+                let code = App.launchctl(["bootstrap", domain, url.path])
+                Log.write("server agent: the bundled server \(App.version), \(url.path); bootstrap exit \(code)")
+            } catch {
+                Log.write("server agent: cannot write \(url.path): \(error)")
+            }
+            DispatchQueue.main.async { self?.askServer() }
         }
     }
 
     @discardableResult
-    private func launchctl(_ args: [String]) -> Int32 {
+    private static func launchctl(_ args: [String]) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = args

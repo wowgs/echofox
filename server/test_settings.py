@@ -8,6 +8,7 @@ import tempfile
 import time
 import types
 import unittest
+from unittest import mock
 
 import catalog
 import constants
@@ -92,6 +93,10 @@ class VariantTest(unittest.TestCase):
         self.assertTrue(llama.write_agent({**entry, "variant": "q4_0"}, self.folder))
         with open(constants.path(f"{constants.LAUNCH_AGENTS}/x.test.plist"), "rb") as f:
             self.assertIn("gemma-4-E4B-it-Q4_0.gguf", plistlib.load(f)["ProgramArguments"][2])
+        self.assertNotIn("EnvironmentVariables", llama.agent(entry, self.folder))  # from the repository: no version
+        with mock.patch.dict(os.environ, {"ECHOFOX_APP_VERSION": "0.2 (180)"}):
+            self.assertEqual(llama.agent(entry, self.folder)["EnvironmentVariables"], {"ECHOFOX_APP_VERSION": "0.2 (180)"})
+            self.assertTrue(llama.write_agent({**entry, "variant": "q4_0"}, self.folder))  # a new app: written again
 
     def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
         f = os.path.join(self.folder, "config.json")

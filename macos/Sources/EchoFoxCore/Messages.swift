@@ -49,6 +49,10 @@ public struct ServerInfo: Decodable, Equatable {
         public let downloaded: Bool
         public let downloading: Bool?
 
+        /// Whether a window may offer to download it: not while the server downloads it for another window (a second
+        /// request would only follow the same download, and a cancel there would stop both).
+        public var canDownload: Bool { !downloaded && downloading != true }
+
         /// The variant to offer for a Mac with this much memory: the biggest that takes at most half of it, so that
         /// macOS and the other apps keep the rest; else the smallest.
         public static func recommended(_ variants: [Variant], memory: UInt64) -> String {

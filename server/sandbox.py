@@ -23,6 +23,8 @@ for var, path in {"ECHOFOX_CONFIG": ".echofox/config.json",
     os.environ[var] = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(os.environ[var]) if var == "ECHOFOX_CONFIG" else os.environ[var], exist_ok=True)
 
+os.environ.pop("ECHOFOX_APP_VERSION", None)  # the agent of a bundled app sets it; the tests set it themselves
+
 LAUNCHCTL_LOG = os.path.join(ROOT, "launchctl.log")
 _fake = os.path.join(ROOT, "launchctl")
 with open(_fake, "w") as f:  # `print` (is the agent loaded?) says no; everything else succeeds

@@ -31,7 +31,7 @@ After recording stops, the app waits up to 180 seconds for each next piece of te
 
 ## Requirements and model choices
 
-Use an Apple Silicon Mac with at least 16 GB of memory and macOS 13 or later. The app has been tested on an Apple M5 with 24 GB running macOS 27; older macOS versions have not been verified.
+Use an Apple Silicon Mac with at least 16 GB of memory and macOS 14 or later. The build checks that every program and library in the app is made for macOS 14. The app has been tested only on an Apple M5 with 24 GB running macOS 27. It has not been run on an older macOS.
 
 The two downloads are differently compressed variants of Gemma 4 E4B:
 
@@ -46,11 +46,27 @@ Memory figures are approximate. A systematic comparison of recognition quality a
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications.
 
+If you open EchoFox from the disk image, it asks you to move it to Applications and quits. It does the same if macOS runs it from a temporary folder. This happens to a downloaded app that was not moved (App Translocation). The dictation server is a launchd agent that starts EchoFox's own copy of Python, so EchoFox must stay in one place.
+
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.
 
 The download goes on if you close the window.
+
+## Update and remove
+
+To update, quit EchoFox, drag the new version to Applications, and replace the old one. Then open EchoFox. The app writes its version into the server's launchd agent. So a new version starts the dictation server again, and the server then starts `llama-server` again. Model files stay.
+
+To remove EchoFox, quit it and run these commands. They stop the server and the model and delete their launchd agents. Then delete EchoFox from Applications.
+
+```
+launchctl bootout gui/$(id -u)/echofox.gemma-voice
+launchctl bootout gui/$(id -u)/echofox.llama-server
+rm ~/Library/LaunchAgents/echofox.gemma-voice.plist ~/Library/LaunchAgents/echofox.llama-server.plist
+```
+
+If you delete only the app, the agents stay. On macOS 27, launchd tries once to start the deleted program and then waits for it to come back ([observations](../observations.md#distribution)). To delete the rest, also remove the models in `~/Library/Application Support/EchoFox`, the config in `~/.echofox`, and the logs in `~/Library/Logs/EchoFox`.
 
 ## The menu and the settings window
 
@@ -86,6 +102,8 @@ This prepares data for future model training. It does not train the model automa
 See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
 ## Logs
+
+A bundled app installs its own launchd agent off the main thread, so the menu bar icon appears at once. It does not install the agent from a disk image or App Translocation.
 
 The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not transcript contents. To build the app, see the [development guide](7-development.md).
 

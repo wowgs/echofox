@@ -1,6 +1,10 @@
 # The versions that a bundled EchoFox.app carries (build-app.sh --bundle), each pinned with its checksum or commit,
 # so that a build is the same everywhere (docs/design/7-distribution.md).
 
+# The oldest macOS that the app runs on. build-app.sh builds llama-server and the app's Info.plist for it and refuses a
+# bundle with any executable or library that needs a newer one; Package.swift says the same (.macOS(.v14)).
+MACOS_MIN=14.0
+
 # CPython from python-build-standalone (Astral): relocatable, for Apple Silicon. The SHA-256 is the release's own
 # (SHA256SUMS and the asset's digest agree, 2026-10-25).
 PYTHON_RELEASE=20261021

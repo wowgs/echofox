@@ -3,7 +3,9 @@
 # goes to Apple's notary service without waiting for it: the run keeps the signed dmg as the artifact
 # EchoFox-notarizing-<submission id>, and when Apple has checked it, the notary relay (ci/notary-relay) starts
 # staple.yml, which staples Apple's ticket and publishes the dmg (a GitHub Release for a tag v*, else an artifact).
-# Without the secrets, the app is signed ad hoc, for tests only, and this run publishes it itself.
+# Without the secrets, a run by the button signs the app ad hoc, for tests only, and keeps it as an artifact; a tag
+# without them stops, so a release is never signed ad hoc. The version is the tag's (build-app.sh), so the checkout
+# takes the whole history.
 #
 # Secrets:
 #   DEVELOPER_ID_P12           the Developer ID Application certificate with its key, as a .p12 file in base64
@@ -29,7 +31,12 @@ jobs:
       # Apple calls it when the check is over; it starts staple.yml
       NOTARY_WEBHOOK: https://notary-webhook.invalid
     steps:
+      - name: A release needs the Developer ID
+        if: env.HAS_DEVELOPER_ID != 'true' && github.ref_type == 'tag'
+        run: echo "the tag $GITHUB_REF_NAME needs the Developer ID secrets; an ad hoc release would not open on other Macs"; exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
       - name: The cache of the pinned Python and llama-server
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -56,8 +63,15 @@ jobs:
           rm "$RUNNER_TEMP/developer-id.p12"
       - name: The bundled app and its dmg
         env:
-          ECHOFOX_SIGN: ${{ secrets.DEVELOPER_ID_NAME }}
-        run: macos/build-app.sh --dmg
+          DEVELOPER_ID_NAME: ${{ secrets.DEVELOPER_ID_NAME }}
+        run: |
+          # build-app.sh stops if the named identity is missing or empty; "-" asks for ad hoc
+          if [ "$HAS_DEVELOPER_ID" = true ]; then export ECHOFOX_SIGN=$DEVELOPER_ID_NAME; else export ECHOFOX_SIGN=-; fi
+          macos/build-app.sh --dmg
+          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" macos/build/bundle/EchoFox.app/Contents/Info.plist)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "the app says version $version, the tag is $GITHUB_REF_NAME"; exit 1
+          fi
       - name: The dmg to Apple's notary service, without waiting
         id: notary
         if: env.HAS_DEVELOPER_ID == 'true'
@@ -84,13 +98,8 @@ jobs:
           name: EchoFox-notarizing-${{ steps.notary.outputs.id }}
           path: notarizing/
           retention-days: 30
-      - name: The GitHub Release of the tag, signed ad hoc
-        if: env.HAS_DEVELOPER_ID != 'true' && github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" macos/build/EchoFox.dmg --title "EchoFox $GITHUB_REF_NAME" --generate-notes
       - name: The dmg as an artifact of a run by the button, signed ad hoc
-        if: env.HAS_DEVELOPER_ID != 'true' && github.ref_type != 'tag'
+        if: env.HAS_DEVELOPER_ID != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: EchoFox-dmg

@@ -89,7 +89,7 @@ struct InputField: View {
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: refused ? 1.5 : 0))
             .focused($focused)
             .onSubmit(onSubmit)
-            .onChange(of: focused) { now in if !now { onSubmit() } }
+            .onChange(of: focused) { _, now in if !now { onSubmit() } }
     }
 }
 

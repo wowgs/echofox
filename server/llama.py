@@ -228,6 +228,7 @@ def agent_running(label):
     return launchd("print", f"{domain()}/{label}")[0] == 0
 
 
+APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the agent that the bundled app writes (macos ServerAgent)
 BUNDLED_LLAMA_SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "llama", "llama-server")
 
 
@@ -242,8 +243,9 @@ def llama_server():
 
 def agent(entry, models_folder):
     """The launchd agent of a registry entry, as a plist's contents: llama-server with the files of the entry's
-    variant, on the address of its llamaServer, with its catalog entry's arguments. Raises RuntimeError if a file of
-    the variant or llama-server is missing."""
+    variant, on the address of its llamaServer, with its catalog entry's arguments. The bundled app's version
+    ($ECHOFOX_APP_VERSION, from the server's own agent) is in it too, so that a new version of the app, with its own
+    llama-server, starts it again. Raises RuntimeError if a file of the variant or llama-server is missing."""
     vid, spec = catalog.variant(entry)
     if spec is None:
         raise RuntimeError(f"the catalog has no variant {vid!r} of {entry.get('catalog') or catalog.DEFAULT}")
@@ -256,10 +258,12 @@ def agent(entry, models_folder):
         raise RuntimeError("llama-server is not installed (brew install llama.cpp)")
     url = urllib.parse.urlparse(entry["llamaServer"])
     log_file = constants.path(f"{constants.LOGS}/llama-server.log")
+    version = os.environ.get(APP_VERSION)
     return {"Label": entry["launchd"],
             "ProgramArguments": [binary, "-m", files["model"], "--mmproj", files["mmproj"],
                                  "--host", url.hostname, "--port", str(url.port or 80),
                                  *catalog.of(entry)["llamaServer"]["args"]],
+            **({"EnvironmentVariables": {APP_VERSION: version}} if version else {}),
             "RunAtLoad": True, "KeepAlive": True, "ProcessType": "Interactive",
             "StandardOutPath": log_file, "StandardErrorPath": log_file}
 

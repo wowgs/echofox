@@ -47,6 +47,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 
 from websockets.asyncio.server import serve
@@ -54,6 +55,7 @@ from websockets.asyncio.server import serve
 import constants
 import protocol
 import settings
+import llama
 from llama import Models
 
 log = logging.getLogger("gemma_voice")
@@ -77,6 +79,8 @@ async def main():
     if cli.ignore_selection:
         await models.get(next(iter(current["models"])))  # the default model answers before the first recording
     log.info("settings: %s", json.dumps(current, ensure_ascii=False))
+    if os.environ.get(llama.APP_VERSION):
+        log.info("the bundled app's version: %s", os.environ[llama.APP_VERSION])
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
     for sig in (signal.SIGTERM, signal.SIGINT):
