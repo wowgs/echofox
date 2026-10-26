@@ -2,11 +2,13 @@
 # Apple has checked a dmg that release.yml sent; the button (Actions, Run workflow)
 # starts it too, with the submission's id from release.yml's log or notarytool history. It takes the signed dmg of the
 # submission (the artifact EchoFox-notarizing-<id>), asks Apple for the verdict, and on Accepted staples Apple's
-# ticket to the dmg and publishes it: a GitHub Release for a tag v*, else the artifact EchoFox-dmg. It needs no
-# Developer ID key, only the notary key. Three jobs: the artifact is looked up on Linux first, so that a call with an
+# ticket to the dmg and publishes it: a GitHub Release for a tag v*, else the artifact EchoFox-dmg. For a tag it also
+# writes the update feed, appcast.xml (macos/make-appcast.sh, docs/distribution.md "Updates"), which the release
+# carries beside the dmg. It needs no Developer ID key, only the notary key and the updates' EdDSA key. Three jobs: the artifact is looked up on Linux first, so that a call with an
 # id that has no artifact costs no macOS start; only macOS staples; only the last job, on Linux, may write a release.
 #
-# Secrets: NOTARY_KEY_P8 (the App Store Connect API key, the .p8 file in base64), NOTARY_KEY_ID, NOTARY_ISSUER_ID
+# Secrets: NOTARY_KEY_P8 (the App Store Connect API key, the .p8 file in base64), NOTARY_KEY_ID, NOTARY_ISSUER_ID;
+# SPARKLE_ED_KEY (the private EdDSA key of the updates, as Sparkle's generate_keys -x writes it)
 name: Staple
 on:
   workflow_dispatch:
@@ -41,6 +43,7 @@ jobs:
     runs-on: macos-26
     permissions:
       actions: read
+      contents: read
     outputs:
       refType: ${{ steps.where.outputs.refType }}
       ref: ${{ steps.where.outputs.ref }}
@@ -75,13 +78,38 @@ jobs:
       - name: Where the dmg goes
         id: where
         run: |
-          echo "refType=$(jq -r .refType notarizing/release.json)" >> "$GITHUB_OUTPUT"
-          echo "ref=$(jq -r .ref notarizing/release.json)" >> "$GITHUB_OUTPUT"
-      - name: The stapled dmg (EchoFox-dmg; for a tag, the next job publishes it)
+          {
+            echo "refType=$(jq -r .refType notarizing/release.json)"
+            echo "ref=$(jq -r .ref notarizing/release.json)"
+            echo "sha=$(jq -r .sha notarizing/release.json)"
+          } >> "$GITHUB_OUTPUT"
+      - name: The scripts of the release's commit
+        if: steps.where.outputs.refType == 'tag'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ steps.where.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - name: The update feed, signed, for the release's dmg
+        if: steps.where.outputs.refType == 'tag'
+        env:
+          ED_KEY: ${{ secrets.SPARKLE_ED_KEY }}
+          TAG: ${{ steps.where.outputs.ref }}
+        run: |
+          [ -n "$ED_KEY" ] || { echo "no secret SPARKLE_ED_KEY: no update feed"; exit 1; }
+          trap 'rm -f "$RUNNER_TEMP/sparkle.key"' EXIT
+          (umask 077 && printf '%s' "$ED_KEY" > "$RUNNER_TEMP/sparkle.key")
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/EchoFox.dmg"
+          source/macos/make-appcast.sh notarizing/EchoFox.dmg "$url" "$RUNNER_TEMP/sparkle.key" > notarizing/appcast.xml
+          cat notarizing/appcast.xml
+      - name: The stapled dmg and its feed (EchoFox-dmg; for a tag, the next job publishes them)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: EchoFox-dmg
-          path: notarizing/EchoFox.dmg
+          path: |
+            notarizing/EchoFox.dmg
+            notarizing/appcast.xml
+          if-no-files-found: error
           retention-days: 14
   publish:
     needs: staple
@@ -99,4 +127,4 @@ jobs:
           TAG: ${{ needs.staple.outputs.ref }}
         run: |
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "$TAG is out already"; exit 0; fi
-          gh release create "$TAG" EchoFox.dmg -R "$GITHUB_REPOSITORY" --title "EchoFox $TAG" --generate-notes
+          gh release create "$TAG" EchoFox.dmg appcast.xml -R "$GITHUB_REPOSITORY" --title "EchoFox $TAG" --generate-notes

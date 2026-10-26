@@ -14,6 +14,8 @@ struct MenuState {
     var server: ServerInfo?, serverProblem: String?
     /// The recorded microphone's name and input volume (0…1; nil: the device has none to set).
     var microphoneName = "", inputVolume: Float?
+    /// The version of an update that a scheduled check found, until the user turns to it (Updater).
+    var update: String?
 }
 
 protocol MenuActions: AnyObject {
@@ -23,6 +25,7 @@ protocol MenuActions: AnyObject {
     func setInputVolume(_ value: Float)
     func openLabeling()
     func openSettings()
+    func checkForUpdates()
 }
 
 final class MenuBar: NSObject, NSMenuDelegate {
@@ -125,6 +128,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         handlers.removeAll()
         let inputs = AudioInputs.all()
+        if let v = s.update {
+            menu.addItem(action("Update to EchoFox \(v)…") { $0.checkForUpdates() })
+            menu.addItem(.separator())
+        }
         for id in SettingsLayout.menu {
             switch id {
             case "permissions":  // only while one is missing
@@ -136,6 +143,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
             }
         }
         menu.addItem(.separator())
+        menu.addItem(action("Check for Updates…") { $0.checkForUpdates() })
         let settings = action("Settings…") { $0.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)

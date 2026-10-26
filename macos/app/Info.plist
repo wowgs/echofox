@@ -20,6 +20,14 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>EchoFox records your voice while you dictate. The recording goes to the dictation model on this Mac.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/wowgs/echofox/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>fQqOUCUcN1GnRc7Tovcj4qH5mB/AUFYVpJJ5N5+fDEU=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

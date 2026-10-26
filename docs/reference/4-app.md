@@ -54,7 +54,7 @@ The download goes on if you close the window. While it runs, Settings shows the 
 
 ## The menu and the settings window
 
-The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Settings…** (⌘,), and Quit. Input volume is the same control as in macOS Sound settings.
+The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Check for Updates…**, **Settings…** (⌘,), and Quit. When a new version is out, the first line says **Update to EchoFox …**. Input volume is the same control as in macOS Sound settings.
 
 The menu bar icon is a fox face. While you dictate, the fox wears a white headset: the earpiece is red for a recording, a shield with a keyhole for private dictation, and a turning ring while the text is written. If a permission is missing or something fails, the icon is a crossed-out microphone.
 
@@ -87,7 +87,7 @@ See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
 ## Update
 
-Quit EchoFox, replace it in Applications with the new version, and open it again. The downloaded models stay. A new version restarts the dictation server and `llama-server` by itself.
+When a new version is out, the menu's first line says so; it opens the update window, and **Install and Relaunch** installs it. **Check for Updates…** looks at once. At its second start the app asks whether to check automatically, about once a day. A restart that would cut a running dictation waits until it ends. The downloaded models stay, and the new version restarts the dictation server and `llama-server` by itself. By hand: quit EchoFox, replace it in Applications with the new version, and open it again.
 
 ## Uninstall
 

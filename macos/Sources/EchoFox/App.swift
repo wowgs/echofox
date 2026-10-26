@@ -18,6 +18,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let labeling = LabelWindow()
     private let settings = SettingsWindow()
     private let firstRun = FirstRunWindow()
+    private let updater = Updater()
     private let prepareQueue = DispatchQueue(label: "echofox.prepare")
     private var current: Dictation?
     private var waiting: [Dictation] = []
@@ -50,6 +51,9 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
             self?.firstRun.showIfNeeded(self?.server.info)
         }
         firstRun.askServer = { [weak self] in self?.askServer() }
+        updater.busy = { [unowned self] in self.current != nil || !self.waiting.isEmpty }
+        updater.onChange = { [weak self] in self?.menu.update() }
+        updater.start()
         permissions.start()
         server.refresh(store.config.serverURL)
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
@@ -78,7 +82,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
                          accessibility: permissions.accessibility,
                          microphone: permissions.microphone, lastError: lastError, config: config, server: server.info,
                          serverProblem: server.problem, microphoneName: input?.name ?? "macOS's input",
-                         inputVolume: device.flatMap(AudioInputs.volume))
+                         inputVolume: device.flatMap(AudioInputs.volume), update: updater.ready)
     }
 
     private func permissionsChanged() {
@@ -139,6 +143,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         if d.phase == .finished {
             waiting.removeAll { $0 === d }
             finished(d)
+            updater.idle()
         }
         menu.update()
     }
@@ -157,6 +162,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }
 
     // MARK: MenuActions
+
+    func checkForUpdates() { updater.check() }
 
     func allowAccessibility() {
         permissions.askAccessibility()

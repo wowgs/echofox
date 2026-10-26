@@ -37,7 +37,7 @@ Tap <kbd>⌥</kbd> **right Option** to speak; tap again to insert the text.
 
 Use <kbd>⌘</kbd> **right Command** for **Ultra Private Dictation**: the same local recognition, without conversation context or saved recordings.
 
-Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
+Nothing of your dictations leaves your Mac. EchoFox goes online only to download models and to check for and download its own updates. Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
 
 Why keep them? We plan to introduce automatic on-device fine-tuning (LoRA) based on your own labels in **Label Recordings…**. [Training plan →](docs/research/training.md)
 

@@ -35,11 +35,18 @@ tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0) || { echo "no tag v* in 
 version=${tag#v} build=$(git rev-list --count HEAD)
 echo "$version" | grep -Eq '^[0-9]+(\.[0-9]+){1,2}$' || { echo "the tag $tag is not v<major>.<minor>[.<patch>]" >&2; exit 1; }
 
+# The Sparkle that Package.swift links is the one of pins.sh, whose tools sign the release's feed
+grep -q "\"version\" : \"$SPARKLE_VERSION\"" Package.resolved || { echo "Package.resolved's Sparkle is not pins.sh's $SPARKLE_VERSION" >&2; exit 1; }
 swift build -c release --product EchoFox
 app=build/EchoFox.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/EchoFox "$app/Contents/MacOS/"
+# Sparkle, the updater (docs/distribution.md, "Updates"), where the app's rpath finds it. The app is not sandboxed, so
+# Sparkle's XPC services are left out (Sparkle's documentation).
+mkdir -p "$app/Contents/Frameworks"
+ditto .build/release/Sparkle.framework "$app/Contents/Frameworks/Sparkle.framework"
+rm -rf "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$app/Contents/Frameworks/Sparkle.framework/XPCServices"
 cp app/Info.plist "$app/Contents/"
 # The version and the oldest macOS, which app/Info.plist leaves out. The app writes the version into the server's
 # agent, so that a new version starts the server again (ServerAgent).
@@ -114,7 +121,11 @@ problems=$(find "$app/Contents" -type f \( -perm -u+x -o -name '*.so' -o -name '
 done)
 if [ -n "$problems" ]; then echo "$problems" >&2; exit 1; fi
 
-# Inside out: every executable and library in the bundle, then the app
+# Inside out: Sparkle's helpers, then the framework; every executable and library in the bundle; then the app
+sparkle=$app/Contents/Frameworks/Sparkle.framework/Versions/B
+for f in "$sparkle/Autoupdate" "$sparkle/Updater.app" "$app/Contents/Frameworks/Sparkle.framework"; do
+  codesign --force --sign "$identity" --options runtime --timestamp "$f"
+done
 find "$app/Contents/Resources" -type f \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) |
   while IFS= read -r f; do
     if file -b "$f" | grep -q Mach-O; then codesign --force --sign "$identity" --options runtime --timestamp "$f"; fi

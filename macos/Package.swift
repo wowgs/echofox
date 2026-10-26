@@ -15,11 +15,18 @@ let package = Package(
         .executable(name: "EchoFox", targets: ["EchoFox"]),
         .executable(name: "echofox-tests", targets: ["echofox-tests"]),
     ],
+    dependencies: [
+        // The updater (docs/distribution.md, "Updates"); its tools for the release are pinned in pins.sh
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         .target(name: "FocusSnapshot"),
         .target(name: "EchoFoxCore"),
         .executableTarget(name: "echofox-snapshot", dependencies: ["FocusSnapshot"]),
-        .executableTarget(name: "EchoFox", dependencies: ["FocusSnapshot", "EchoFoxCore"]),
+        .executableTarget(name: "EchoFox", dependencies: ["FocusSnapshot", "EchoFoxCore",
+                                                         .product(name: "Sparkle", package: "Sparkle")],
+                          // Sparkle.framework is in the app's Contents/Frameworks (build-app.sh)
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .executableTarget(name: "echofox-tests", dependencies: ["EchoFoxCore"]),
     ]
 )

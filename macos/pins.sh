@@ -16,3 +16,9 @@ PYTHON_SHA256=9f8c3480b8f0db553c270db548e8a21ae8e39df412e5661d66e8050c5c6ed2a8
 # Metal into one binary without shared libraries.
 LLAMA_REPO=https://github.com/ggml-org/llama.cpp
 LLAMA_COMMIT=d81235049384534c167caea52b85a694f6103d14
+
+# Sparkle, the updater (docs/distribution.md, "Updates"): Package.swift links this version, and the release signs the
+# dmg and the feed with the tools of its tarball. The SHA-256 is the release asset's digest (GitHub, 2026-10-26).
+SPARKLE_VERSION=2.10.1
+SPARKLE_URL=https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz
+SPARKLE_SHA256=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
