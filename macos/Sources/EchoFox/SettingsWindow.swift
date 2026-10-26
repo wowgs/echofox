@@ -15,11 +15,12 @@ protocol SettingsActions: AnyObject {
     func refreshServer()
     /// Asks the server for its info now.
     func askServer()
+    /// The config as the app last read it (ConfigStore).
+    var config: Config { get }
     @discardableResult func write(_ path: [String], _ value: Any, _ done: String) -> Bool
     @discardableResult func remove(_ path: [String], _ done: String) -> Bool
     func choose(microphone: String)
     func setInputVolume(_ value: Float)
-    func keysChanged()
     func openLabeling()
     func openLog()
 }
@@ -57,6 +58,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// The server's info changed: the window shows it.
     func refresh() { model?.serverChanged() }
 
+    /// The config changed: the window shows it.
+    func configChanged(_ config: Config) { model?.config = config }
+
     func windowWillClose(_ notification: Notification) {
         model?.watchServer(false)
         window = nil
@@ -65,7 +69,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 }
 
 final class SettingsModel: ObservableObject {
-    @Published var config = Config.load()
+    @Published var config = Config()
     @Published var info: ServerInfo?
     @Published var problem: String?
     @Published var inputs: [AudioInput] = []
@@ -130,7 +134,7 @@ final class SettingsModel: ObservableObject {
 
     /// Everything the window shows, read again: when it opens.
     func reload() {
-        config = Config.load()
+        config = actions?.config ?? Config()
         serverChanged()
         microphoneChanged()
         labels = Self.labelStats(config.labeled)
@@ -177,7 +181,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func microphoneChanged() {
-        config = Config.load()
+        config = actions?.config ?? config
         inputs = AudioInputs.all()
         let device = AudioInputs.chosen(config.microphone).input?.id ?? AudioInputs.defaultInput()
         volume = device.flatMap(AudioInputs.volume)
@@ -193,15 +197,15 @@ final class SettingsModel: ObservableObject {
         return SettingsLayout.sections(of: page, serverKeys: keys)
     }
 
-    /// A value into the config; the window then reads the config again, and only it.
+    /// A value into the config, through the app's ConfigStore; the window shows the config it then has.
     func write(_ path: [String], _ value: Any) {
         actions?.write(path, value, "settings: \(path.joined(separator: ".")) = \(value)")
-        config = Config.load()
+        config = actions?.config ?? config
     }
 
     func remove(_ path: [String]) {
         actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
-        config = Config.load()
+        config = actions?.config ?? config
     }
 
     /// The labeled pieces and their seconds of audio, from the label files.
@@ -495,7 +499,6 @@ struct KeyPicker: View {
                     refused: clash) {
             Picker(title, selection: Binding(get: { current?.rawValue ?? "none" }, set: { v in
                 model.write([path], v)
-                model.actions?.keysChanged()
             })) {
                 ForEach(TapKeyChoice.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 Text("None").tag("none")

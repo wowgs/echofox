@@ -18,6 +18,9 @@ public enum Tuning {
     /// the server looks at the file every 2 s (server/settings.py CONFIG_CHECK_S). If a recording runs, the server
     /// applies the change after it, and the next app switch older than serverInfoMaxAgeSeconds picks it up.
     public static let serverConfigApplySeconds: TimeInterval = 3
+    /// How often the app looks at the config file for a change from elsewhere (ConfigStore); the server looks as often
+    /// (server/settings.py, CONFIG_CHECK_S).
+    public static let configCheckSeconds: TimeInterval = 2
     /// The silence stop when the config does not set one.
     public static let silenceStopSeconds: TimeInterval = 60
     /// How often the recording looks for silence.

@@ -11,13 +11,12 @@ final class LabelWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var model: LabelModel?
 
-    func show() {
+    func show(config: Config) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let config = Config.load()
         let model = LabelModel(recordings: config.recordings, labeled: config.labeled)
         model.onStop = { [weak self] in self?.window?.close() }
         let w = NSWindow(contentRect: Self.corner(), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],

@@ -2,13 +2,14 @@
 // key: the screen is not read, nothing is saved), and the next tap of either stops it; the text goes where the
 // Inserter's rule says. The model runs in the dictation server; the app takes the focus snapshot, records, sends and
 // inserts. It holds the parts and connects them: Permissions, Server (what the server offers), TapKey, MenuBar,
-// SettingsWindow, Dictation, Inserter.
+// SettingsWindow, Dictation, Inserter, and ConfigStore, the one owner of the config file.
 import AppKit
 import AVFoundation
 import FocusSnapshot
 import EchoFoxCore
 
 final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
+    private let store = ConfigStore()
     private let permissions = Permissions()
     private let server = Server()
     private let key = TapKey()
@@ -25,6 +26,14 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
         if refuseMisplaced() { return }
         installServerAgent()
+        store.onError = { [weak self] e in
+            self?.lastError = e
+            self?.menu.update()
+        }
+        store.log = { Log.write($0) }
+        store.observe { [weak self] old, new in self?.configChanged(from: old, to: new) }
+        store.start()
+        firstRun.store = store
         menu.state = { [unowned self] in self.state() }
         settings.actions = self
         key.onTap = { [weak self] action in self?.toggle(isPrivate: action == .privateDictation) }
@@ -38,19 +47,27 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         }
         firstRun.askServer = { [weak self] in self?.askServer() }
         permissions.start()
-        server.refresh(Config.load().serverURL)
+        server.refresh(store.config.serverURL)
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
                 guard let self, let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self.server.refresh(Config.load().serverURL, ifOlderThan: Tuning.serverInfoMaxAgeSeconds)
+                self.server.refresh(self.store.config.serverURL, ifOlderThan: Tuning.serverInfoMaxAgeSeconds)
                 self.prepare(app)
             }
         }
         menu.update()
     }
 
+    /// The config changed (a write here, or the file from elsewhere): the hotkeys, the server and the windows follow.
+    private func configChanged(from old: Config, to new: Config) {
+        if old.dictationKey != new.dictationKey || old.privateDictationKey != new.privateDictationKey { keysChanged() }
+        refreshServer()  // the server applies the change at its next look at the file; then its info is asked
+        settings.configChanged(new)
+        menu.update()
+    }
+
     private func state() -> MenuState {
-        let config = Config.load()
+        let config = store.config
         let input = AudioInputs.chosen(config.microphone).input
         let device = input?.id ?? AudioInputs.defaultInput()
         return MenuState(recording: current != nil, privateRecording: current?.isPrivate == true, waiting: !waiting.isEmpty,
@@ -98,8 +115,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
             menu.update()
             return
         }
-        let config = Config.load()
-        if let e = config.error { Log.write("config: \(e)") }
+        let config = store.config
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let info = server.info
         if info == nil { server.refresh(config.serverURL) }
@@ -155,7 +171,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     /// The recorded microphone's input volume: the device's own control, the same as in macOS's Sound settings.
     func setInputVolume(_ value: Float) {
-        let input = AudioInputs.chosen(Config.load().microphone).input
+        let input = AudioInputs.chosen(store.config.microphone).input
         guard let device = input?.id ?? AudioInputs.defaultInput() else { return }
         if !AudioInputs.setVolume(value, of: device) { Log.write("the microphone's input volume cannot be set") }
     }
@@ -168,15 +184,18 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     func serverState() -> (info: ServerInfo?, problem: String?) { (server.info, server.problem) }
 
+    var config: Config { store.config }
+
     /// The server applies a change of the config at its next look at the file; then its info is asked again, so the
     /// snapshots, the trees and the settings window follow it.
     func refreshServer() {
         DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.serverConfigApplySeconds) { [weak self] in
-            self?.server.refresh(Config.load().serverURL)
+            guard let self else { return }
+            self.server.refresh(self.store.config.serverURL)
         }
     }
 
-    func askServer() { server.refresh(Config.load().serverURL) }
+    func askServer() { server.refresh(store.config.serverURL) }
 
     /// "0.2 (180)": CFBundleShortVersionString and CFBundleVersion, which build-app.sh takes from git.
     static let version: String = {
@@ -243,41 +262,19 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }
 
     /// The hotkeys from the config: the dictation's key and the private dictation's.
-    func keysChanged() {
-        let config = Config.load()
+    private func keysChanged() {
+        let config = store.config
         key.set([(.dictation, config.dictationKey), (.privateDictation, config.privateDictationKey)])
     }
 
     @discardableResult
-    func remove(_ path: [String], _ done: String) -> Bool {
-        do {
-            try Config.remove(path)
-            Log.write(done)
-            refreshServer()
-            return true
-        } catch {
-            lastError = "cannot write the config: \(error)"
-            menu.update()
-            return false
-        }
-    }
+    func remove(_ path: [String], _ done: String) -> Bool { store.remove(path, done) }
 
     @discardableResult
-    func write(_ path: [String], _ value: Any, _ done: String) -> Bool {
-        do {
-            try Config.set(path, to: value)
-            Log.write(done)
-            refreshServer()
-            return true
-        } catch {
-            lastError = "cannot write the config: \(error)"
-            menu.update()
-            return false
-        }
-    }
+    func write(_ path: [String], _ value: Any, _ done: String) -> Bool { store.set(path, to: value, done) }
 
     func openLabeling() {
-        labeling.show()
+        labeling.show(config: store.config)
     }
 
     func openSettings() {

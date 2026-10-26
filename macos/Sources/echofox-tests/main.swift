@@ -348,6 +348,36 @@ do {
     check(false, "first start: \(error)")
 }
 
+// The config's one owner in the app: its writes and the file's changes from elsewhere reach the observers.
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-store-\(getpid())")
+    let file = dir.appendingPathComponent("config.json")
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try Data("{\n  \"version\": \(Config.version)\n}\n".utf8).write(to: file)
+    let store = ConfigStore(url: file)
+    var seen: [(TapKeyChoice?, TapKeyChoice?)] = [], errors: [String] = [], logged: [String] = []
+    store.observe { old, new in seen.append((old.dictationKey, new.dictationKey)) }
+    store.onError = { errors.append($0) }
+    store.log = { logged.append($0) }
+    check(store.set(["dictationKey"], to: "rightShift", "keys: right Shift"), "store: a write")
+    check(seen.count == 1 && seen[0].1 == .rightShift && logged == ["keys: right Shift"], "store: the write reaches the observer, \(seen)")
+    store.check()
+    check(seen.count == 1, "store: no change, no call")
+    var text = try String(contentsOf: file, encoding: .utf8)
+    text = text.replacingOccurrences(of: "rightShift", with: "rightControl")  // an editor's change
+    try text.write(to: file, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: file.path)
+    store.check()
+    check(seen.count == 2 && seen[1] == (.rightShift, .rightControl) && store.config.dictationKey == .rightControl,
+          "store: a change from elsewhere reaches the observer, \(seen)")
+    try Data("not json".utf8).write(to: file)
+    check(!store.remove(["dictationKey"], "keys: default") && errors.count == 1, "store: a failed write is reported, \(errors)")
+    try? FileManager.default.removeItem(at: dir)
+} catch {
+    check(false, "store: \(error)")
+}
+
 // A download's speed and time left: from the progress every 0.5 s, over the last 5 s.
 do {
     var r = TransferRate()

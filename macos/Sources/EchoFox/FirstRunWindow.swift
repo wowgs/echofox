@@ -11,6 +11,8 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     private var model: FirstRunModel?
     private var shown = false
     var askServer: () -> Void = {}
+    /// The app's config, which the chosen variant is written to.
+    var store: ConfigStore?
 
     /// Opens the window once in a run of the app, when the server's info says that no variant of the menu's model is
     /// downloaded or downloading.
@@ -19,7 +21,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
               !variants.contains(where: { $0.downloaded || $0.downloading == true }),
               let name = m.name, let catalog = m.catalog else { return }
         shown = true
-        let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant)
+        let model = FirstRunModel(name: name, catalog: catalog, variants: variants, inForce: m.variant, store: store)
         model.askServer = { [weak self] in self?.askServer() }
         model.done = { [weak self] in
             self?.askServer()
@@ -54,7 +56,10 @@ final class FirstRunModel: ObservableObject {
     /// whether the variant downloads.
     var askServer: () -> Void = {}
 
-    init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?) {
+    private let store: ConfigStore?
+
+    init(name: String, catalog: String, variants: [ServerInfo.Variant], inForce: String?, store: ConfigStore?) {
+        self.store = store
         self.name = name
         self.catalog = catalog
         self.variants = variants
@@ -63,7 +68,7 @@ final class FirstRunModel: ObservableObject {
     }
 
     func download() {
-        let job = ModelJob(url: Config.load().serverURL, message: ClientMessage.download(catalog: catalog, variant: choice))
+        let job = ModelJob(url: (store?.config ?? Config()).serverURL, message: ClientMessage.download(catalog: catalog, variant: choice))
         var running = false
         job.onChange = { [weak self] in
             guard let self else { return }
@@ -75,8 +80,8 @@ final class FirstRunModel: ObservableObject {
             if job.finished, job.error != nil { self.askServer() }
             guard job.finished, job.error == nil else { return }
             if self.choice != self.inForce {  // the catalog's default needs no line in the config
-                try? Config.set(["models", self.name, "variant"], to: self.choice)
-                Log.write("first start: \(self.name) variant \(self.choice)")
+                self.store?.set(["models", self.name, "variant"], to: self.choice,
+                                "first start: \(self.name) variant \(self.choice)")
             }
             self.done()
         }
