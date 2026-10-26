@@ -307,14 +307,14 @@ class MigrateTest(unittest.TestCase):
     def test_version_2_becomes_3_with_the_built_in_plugins_that_read_no_screen_enabled_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            with open(f, "w", encoding="utf-8") as fh:
-                json.dump({"model": "m", "language": "ru", "models": {}, "version": 2}, fh, indent=2)
-            s.migrate_2(f)
-            c = json.load(open(f, encoding="utf-8"))
+            c, _ = s.from_2({"model": "m", "language": "ru", "models": {}, "version": 2}, f)
             self.assertEqual(list(c), ["model", "language", "adapters", "models", "version"])
             self.assertEqual((c["version"], c["adapters"]), (3, {}))  # claude and telegram read the screen
-            s.migrate_2(f)  # a version-3 file stays as it is
-            self.assertEqual(json.load(open(f, encoding="utf-8")), c)
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump({"model": "m", "models": {}, "version": constants.CONFIG_VERSION}, fh, indent=2)
+            mtime = os.stat(f).st_mtime_ns
+            s.migrate(f)  # a file of this version is not written
+            self.assertEqual(os.stat(f).st_mtime_ns, mtime)
 
     def test_version_3_becomes_7_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:

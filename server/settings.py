@@ -131,12 +131,13 @@ def schema(st, model_entry=None):
             out.append(k.schema(d, own.get(k.name, d)))
         else:  # an adapter's: the fallback (each adapter's own defaults are in info's adapters, "context")
             out.append(k.schema(k.default, k.default))
-    for key, kind in (("saveRecordings", "boolean"), ("recordings", "string"), ("labeled", "string"),
-                      ("modelsFolder", "string")):
-        s = BY_KEY[key]
+    for s in SETTINGS:  # the storage settings: the ones with a title, which are not knobs
+        if not s.title:
+            continue
+        kind = "boolean" if s.kind is bool else "string"
         now = getattr(st, s.name, s.default)
         shown = constants.path(s.default) if kind == "string" else s.default
-        out.append({"key": key, "owner": "server", "group": "storage", "kind": kind, "title": s.title,
+        out.append({"key": s.key, "owner": "server", "group": "storage", "kind": kind, "title": s.title,
                     "default": s.default, **({"value": now} if now not in (s.default, shown) else {}),
                     "help": s.help})
     return out
@@ -245,143 +246,52 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
-    """The config brought to this version, step by step (migrate_2 to migrate_6)."""
-    migrate_2(path)
-    migrate_3(path)
-    migrate_4(path)
-    migrate_5(path)
-    migrate_6(path)
-
-
-def migrate_6(path):
-    """Version 6 → 7: "adapterDefaults", the adapters' values for every adapter, is gone: an adapter's defaults are
-    its manifest's, and the user's change is in its entry. Each of its values goes to every adapter's entry that has
-    none of its own, so nothing changes. The file keeps its order."""
+    """The config file brought to this version (constants.CONFIG_VERSION): read once, taken through each step from
+    its version on (MIGRATIONS, each one on the dict in memory), and written once, in the file's order. A file that
+    cannot be read, or is of this version already, is left as it is."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
     except (OSError, ValueError):
         return
-    if not isinstance(c, dict) or c.get("version") != 6:
+    if not isinstance(c, dict):
         return
-    shared = c.pop("adapterDefaults", None)
-    moved = []
-    if isinstance(shared, dict):
-        for name, entry in (c.get("adapters") or {}).items():
-            if isinstance(entry, dict):
-                for k, v in shared.items():
-                    if k not in entry:
-                        entry[k] = v
-                        moved.append(f"adapters.{name}.{k}={v!r}")
-    c["version"] = 7
+    done = []
+    while isinstance(c.get("version"), int) and c["version"] in MIGRATIONS:
+        before = c["version"]
+        c, what = MIGRATIONS[before](c, path)
+        log.info("config %s: version %d → %d; %s", path, before, c["version"], what)
+        done.append(before)
+    if not done:
+        return
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
     os.replace(tmp, path)
-    log.info("config %s: version 6 → 7; adapterDefaults %s", path,
-             f"moved to the adapters: {', '.join(moved)}" if moved else "was empty" if shared is not None else "none")
 
 
-# Version 5 → 6: the knobs that became constants (tuning.py) leave the file; contextAsSystem is gone; the
-# recording's limit is in minutes.
-GONE_IN_6 = ("pieceSeconds", "cutSearchSeconds", "cutWhileSpeaking", "minLastPieceSeconds", "minSpeechSeconds",
-             "warmText", "maxTokensPerSpeechSecond", "contextAsSystem")
+def from_2(c, path):
+    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
+    working, so the upgrade enables the built-in plugins; a new config has none (the base mode). A plugin that asks
+    for the screen's content (its manifest's "screen") is never enabled for the user: they turn it on themselves."""
+    import adapters  # here, not at the top: only this old step needs the plugins
+    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items()
+               if p.builtin and not p.manifest.get("screen")}
+    out = {}
+    for k, v in c.items():
+        out[k] = 3 if k == "version" else v
+        if k == "language" or (k == "model" and "language" not in c):
+            out["adapters"] = builtin
+    out.setdefault("adapters", builtin)
+    return out, f"the built-in adapters are enabled: {', '.join(builtin) or 'none'}"
 
 
-def migrate_5(path):
-    """Version 5 → 6 (GONE_IN_6): the constants leave the section "server" and the models' options;
-    maxRecordingSeconds becomes maxRecordingMinutes. The file keeps its order."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            c = json.load(f)
-    except (OSError, ValueError):
-        return
-    if not isinstance(c, dict) or c.get("version") != 5:
-        return
-    gone = []
-    server = c.get("server") if isinstance(c.get("server"), dict) else {}
-    for k in GONE_IN_6:
-        if k in server:
-            gone.append(f"server.{k}={server.pop(k)!r}")
-    if "maxRecordingSeconds" in server:
-        s = server.pop("maxRecordingSeconds")
-        if isinstance(s, (int, float)) and not isinstance(s, bool) and s > 0:
-            server["maxRecordingMinutes"] = round(s / 60, 2)
-        gone.append(f"server.maxRecordingSeconds={s!r} (now maxRecordingMinutes)")
-    for name, entry in (c.get("models") or {}).items():
-        options = entry.get("options") if isinstance(entry, dict) else None
-        if isinstance(options, dict):
-            for k in GONE_IN_6:
-                if k in options:
-                    gone.append(f"models.{name}.options.{k}={options.pop(k)!r}")
-            if not options:
-                del entry["options"]
-    c["version"] = 6
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
-    os.replace(tmp, path)
-    log.info("config %s: version 5 → 6; gone: %s", path, ", ".join(gone) or "nothing")
-
-
-# Version 4 → 5: the settings that were a second way to set the same thing. The length of the text and the drop of
-# the model's own text are one knob (maxTokensPerSpeechSecond); speech is only Silero VAD's (the loudness threshold
-# is gone); a context budget of 0 is not the adapter's switch.
-GONE_IN_5 = ("thresholdDb", "speechAboveNoiseDb", "maxCharsPerSpeechSecond", "outputTokensPerSecond",
-             "outputTokensBase", "maxOutputTokens")
-
-
-def migrate_4(path):
-    """Version 4 → 5 (GONE_IN_5): the gone settings leave the file; an adapter whose chatHistoryTokenBudget is 0 is
-    turned off instead, and a 0 in adapterDefaults leaves the file. The file keeps its order."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            c = json.load(f)
-    except (OSError, ValueError):
-        return
-    if not isinstance(c, dict) or c.get("version") != 4:
-        return
-    gone = []
-
-    def drop(d, keys, where):
-        for k in keys:
-            if isinstance(d, dict) and k in d:
-                gone.append(f"{where}.{k}={d.pop(k)!r}")
-
-    drop(c.get("server"), GONE_IN_5, "server")
-    for name, entry in (c.get("models") or {}).items():
-        if isinstance(entry, dict):
-            drop(entry.get("options"), GONE_IN_5, f"models.{name}.options")
-            if isinstance(entry.get("options"), dict) and not entry["options"]:
-                del entry["options"]
-    for name, entry in (c.get("adapters") or {}).items():
-        if isinstance(entry, dict) and entry.get("chatHistoryTokenBudget") == 0:
-            del entry["chatHistoryTokenBudget"]
-            entry["enabled"] = False
-            gone.append(f"adapters.{name}.chatHistoryTokenBudget=0 (the adapter is turned off instead)")
-    if isinstance(c.get("adapterDefaults"), dict) and c["adapterDefaults"].get("chatHistoryTokenBudget") == 0:
-        drop(c["adapterDefaults"], ("chatHistoryTokenBudget",), "adapterDefaults")
-    c["version"] = 5
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
-    os.replace(tmp, path)
-    log.info("config %s: version 4 → 5; gone: %s", path, ", ".join(gone) or "nothing")
-
-
-def migrate_3(path):
+def from_3(c, path):
     """Version 3 → 4: each setting has its owner (docs/design.md, "Settings"). "fillers" go to the languages;
     "saveRecordings" and "labeled" to the section "server"; a model's knob in the section "server" (the length of
     the text) goes to each model's options; a model's options keep only the model's knobs: an adapter's knob goes to
     each adapter's entry that has no value of its own (the model's value was every adapter's), a server's knob to the
-    section "server" if it has none; a model gets its catalog entry. The file keeps its order."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            c = json.load(f)
-    except (OSError, ValueError):
-        return
-    if not isinstance(c, dict) or c.get("version") != 3:
-        return
+    section "server" if it has none; a model gets its catalog entry."""
     server = dict(c.get("server") or {})
     adapters_ = {k: dict(v) for k, v in (c.get("adapters") or {}).items() if isinstance(v, dict)}
     langs = {k: dict(v) for k, v in (c.get("languages") or {}).items() if isinstance(v, dict)}
@@ -421,39 +331,93 @@ def migrate_3(path):
     if langs:
         out["languages"] = langs
     out.setdefault("server", server)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
-    os.replace(tmp, path)
-    log.info("config %s: version 3 → 4: each setting at its owner", path)
+    return out, "each setting at its owner"
 
 
-def migrate_2(path):
-    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
-    working, so the upgrade enables the built-in plugins; a new config has none (the base mode). A plugin that asks
-    for the screen's content (its manifest's "screen": a messenger's messages) is never enabled for the user: they
-    turn it on themselves. The file keeps its order."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            c = json.load(f)
-    except (OSError, ValueError):
-        return
-    if not isinstance(c, dict) or c.get("version") != 2:
-        return
-    import adapters  # here, not at the top: adapters does not need the settings
-    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items()
-               if p.builtin and not p.manifest.get("screen")}
-    out = {}
-    for k, v in c.items():
-        out[k] = 3 if k == "version" else v
-        if k == "language" or (k == "model" and "language" not in c):
-            out["adapters"] = builtin
-    out.setdefault("adapters", builtin)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
-    os.replace(tmp, path)
-    log.info("config %s: version 2 → 3; the built-in adapters are enabled: %s", path, ", ".join(builtin) or "none")
+# Version 4 → 5: the settings that were a second way to set the same thing. The length of the text and the drop of
+# the model's own text are one knob (maxTokensPerSpeechSecond); speech is only Silero VAD's (the loudness threshold
+# is gone); a context budget of 0 is not the adapter's switch.
+GONE_IN_5 = ("thresholdDb", "speechAboveNoiseDb", "maxCharsPerSpeechSecond", "outputTokensPerSecond",
+             "outputTokensBase", "maxOutputTokens")
+
+
+def from_4(c, path):
+    """Version 4 → 5 (GONE_IN_5): the gone settings leave the file; an adapter whose chatHistoryTokenBudget is 0 is
+    turned off instead, and a 0 in adapterDefaults leaves the file."""
+    gone = []
+
+    def drop(d, keys, where):
+        for k in keys:
+            if isinstance(d, dict) and k in d:
+                gone.append(f"{where}.{k}={d.pop(k)!r}")
+
+    drop(c.get("server"), GONE_IN_5, "server")
+    for name, entry in (c.get("models") or {}).items():
+        if isinstance(entry, dict):
+            drop(entry.get("options"), GONE_IN_5, f"models.{name}.options")
+            if isinstance(entry.get("options"), dict) and not entry["options"]:
+                del entry["options"]
+    for name, entry in (c.get("adapters") or {}).items():
+        if isinstance(entry, dict) and entry.get("chatHistoryTokenBudget") == 0:
+            del entry["chatHistoryTokenBudget"]
+            entry["enabled"] = False
+            gone.append(f"adapters.{name}.chatHistoryTokenBudget=0 (the adapter is turned off instead)")
+    if isinstance(c.get("adapterDefaults"), dict) and c["adapterDefaults"].get("chatHistoryTokenBudget") == 0:
+        drop(c["adapterDefaults"], ("chatHistoryTokenBudget",), "adapterDefaults")
+    c["version"] = 5
+    return c, f"gone: {', '.join(gone) or 'nothing'}"
+
+
+# Version 5 → 6: the knobs that became constants (tuning.py) leave the file; contextAsSystem is gone; the
+# recording's limit is in minutes.
+GONE_IN_6 = ("pieceSeconds", "cutSearchSeconds", "cutWhileSpeaking", "minLastPieceSeconds", "minSpeechSeconds",
+             "warmText", "maxTokensPerSpeechSecond", "contextAsSystem")
+
+
+def from_5(c, path):
+    """Version 5 → 6 (GONE_IN_6): the constants leave the section "server" and the models' options;
+    maxRecordingSeconds becomes maxRecordingMinutes."""
+    gone = []
+    server = c.get("server") if isinstance(c.get("server"), dict) else {}
+    for k in GONE_IN_6:
+        if k in server:
+            gone.append(f"server.{k}={server.pop(k)!r}")
+    if "maxRecordingSeconds" in server:
+        s = server.pop("maxRecordingSeconds")
+        if isinstance(s, (int, float)) and not isinstance(s, bool) and s > 0:
+            server["maxRecordingMinutes"] = round(s / 60, 2)
+        gone.append(f"server.maxRecordingSeconds={s!r} (now maxRecordingMinutes)")
+    for name, entry in (c.get("models") or {}).items():
+        options = entry.get("options") if isinstance(entry, dict) else None
+        if isinstance(options, dict):
+            for k in GONE_IN_6:
+                if k in options:
+                    gone.append(f"models.{name}.options.{k}={options.pop(k)!r}")
+            if not options:
+                del entry["options"]
+    c["version"] = 6
+    return c, f"gone: {', '.join(gone) or 'nothing'}"
+
+
+def from_6(c, path):
+    """Version 6 → 7: "adapterDefaults", the adapters' values for every adapter, is gone: an adapter's defaults are
+    its manifest's, and the user's change is in its entry. Each of its values goes to every adapter's entry that has
+    none of its own, so nothing changes."""
+    shared = c.pop("adapterDefaults", None)
+    moved = []
+    if isinstance(shared, dict):
+        for name, entry in (c.get("adapters") or {}).items():
+            if isinstance(entry, dict):
+                for k, v in shared.items():
+                    if k not in entry:
+                        entry[k] = v
+                        moved.append(f"adapters.{name}.{k}={v!r}")
+    c["version"] = 7
+    return c, ("adapterDefaults " + (f"moved to the adapters: {', '.join(moved)}" if moved
+                                     else "was empty" if shared is not None else "none"))
+
+
+MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6}  # a file's version → its next step
 
 
 class ConfigWatcher:
