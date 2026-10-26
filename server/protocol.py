@@ -25,7 +25,7 @@ import recordings
 import settings
 import tuning
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
-from dictation import MAX_PROMPT, Dictation, prompt
+from dictation import Dictation, prompt
 from vad import Stream  # tests put a fake here
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
@@ -160,7 +160,7 @@ def parse_start(m, models, args=None):
     client = tuning.parse_options(m.get("options"))
     options = {**settings.model_defaults(entry), **tuning.parse(entry.get("options"), "model"), **client}
     language = str(m.get("language") or "")
-    own = (m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or "").strip()[:MAX_PROMPT]
+    own = (m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or "").strip()[:constants.MAX_PROMPT]
     return Start(model=name, entry=entry, options=options, language=language, own_prompt=own,
                  text_prompt=prompt(language, own, entry, getattr(args, "languages", None)),
                  client=str(m.get("client") or "")[:CLIENT_NAME_CHARS], client_options=client,

@@ -38,6 +38,7 @@ REQUEST_TIMEOUT_S = TEXT_WAIT_S         # one request to llama-server
 STOP_WAIT_S = TEXT_WAIT_S + 20          # a stopping server waits for its running recordings
 LAUNCHD_EXIT_TIMEOUT_S = STOP_WAIT_S + 10  # launchd waits for the server to stop
 MODEL_START_S = 180                     # a llama-server agent has this long to answer /health
+MAX_PROMPT = 4000                      # characters of a prompt, the model's or a client's
 MAX_RECORDING_MIN = 30                 # the longest recording the server takes; the config can change it
 
 

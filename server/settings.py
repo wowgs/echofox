@@ -32,7 +32,6 @@ import catalog
 import constants
 import metrics
 import tuning
-from dictation import MAX_PROMPT
 
 log = logging.getLogger("gemma_voice")
 CONFIG_CHECK_S = 2  # how often the file is looked at
@@ -59,7 +58,7 @@ def good_model(m):
     launchd, prompt and options (the model's knobs only)."""
     if not isinstance(m, dict) or not str(m.get("llamaServer", "")).startswith("http") \
             or not isinstance(m.get("launchd", ""), str) or not isinstance(m.get("prompt", ""), str) \
-            or len(m.get("prompt", "")) > MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
+            or len(m.get("prompt", "")) > constants.MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
         return False
     if "variant" in m and catalog.variant(m)[1] is None:
         return False

@@ -15,7 +15,6 @@ import metrics
 import tuning
 from audio import seconds, wav
 
-MAX_PROMPT = 4000  # characters of a prompt, the model's or a client's
 NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
 log = logging.getLogger("gemma_voice")
 
