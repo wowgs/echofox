@@ -39,7 +39,7 @@ Three processes run:
 - **The dictation server.** A launchd agent. It receives the audio, chooses an adapter, sends requests to the model and saves the results. The protocol is in the [protocol reference](reference/6-protocol.md).
 - **llama-server.** A launchd agent for the chosen model, which the server writes and starts. Only the chosen model is in memory.
 
-In the distributed app, the server, Python and llama-server are inside `EchoFox.app`; see [distribution](distribution.md).
+In the distributed app, the server, Python and llama-server are inside `EchoFox.app`; see [the package](reference/7-development.md#the-package).
 
 Inside the app, the decisions live in `EchoFoxCore`, which needs no screen and has checks: the config's one owner (`ConfigStore`, which also notices edits made elsewhere), where the text goes (`InsertionRule`), which snapshot an app gets, which microphone the config means. The `EchoFox` target does what macOS must do for them, for example `Inserter` carries out `InsertionRule` through Accessibility. The app and the server agree through two files that the tests of both sides read: the protocol's examples (`shared/protocol-examples.json`) and the values both use before they can talk (`shared/constants.json`). Everything else the app learns from the server's info.
 
@@ -51,7 +51,7 @@ Inside the app, the decisions live in `EchoFoxCore`, which needs no screen and h
 | Dictation server | Speech detection, cutting, the prompt, model requests | [Server](reference/1-server.md) |
 | Adapters | Find the current conversation and its context | [Context](reference/3-context.md) |
 | Insertion | The current text box, the box of the start, or the clipboard | [App](reference/4-app.md#where-the-text-goes) |
-| Models | Catalog, download, removal, launchd agents | [Distribution](distribution.md) |
+| Models | Catalog, download, removal, launchd agents | [Server](reference/1-server.md#the-catalog-and-the-downloads) |
 | Storage | Config, recordings, labels, logs, metrics | [Recordings](reference/5-recordings.md) |
 
 ### Why the audio is cut into pieces
@@ -103,6 +103,12 @@ An adapter adds the context of the app: recent messages, names and terms. Withou
 The help of context on recognition is not measured on a labeled set yet, so the product does not promise that an adapter improves accuracy.
 
 Proposed, not built: installation from a GitHub link and a catalog of plugins, a hint to enable an adapter for a detected app, the source of the last context in the menu, plugins in other languages through a separate process.
+
+## Privacy
+
+onnxruntime sends Microsoft telemetry on macOS by default. `server/vad.py` turns it off before the library loads (`ORT_DISABLE_TELEMETRY=1`, then `disable_telemetry_events()`); only `vad.py` imports onnxruntime. llama-server is built without OpenSSL and curl and runs with `--offline --no-webui`. The app opens only the WebSocket to the dictation server. The internet is used for the model downloads and, for the update check and its download ([updates](reference/7-development.md#updates)); nothing of a dictation leaves the Mac ([NFR-14](requirements.md)).
+
+Proposed: a release check that runs the package on a test recording and fails on an unexpected connection.
 
 ## Open questions
 

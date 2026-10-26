@@ -15,7 +15,7 @@ server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requ
 
 ## Build the app
 
-`macos/build-app.sh` builds `macos/build/EchoFox.app`; `--dmg` also builds `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)). Releases are built by CI ([below](#ci)); a local build is for a check before a tag.
+`macos/build-app.sh` builds `macos/build/EchoFox.app`; `--dmg` also builds `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([below](#the-installer)). Releases are built by CI ([below](#ci)); a local build is for a check before a tag.
 
 The build needs Xcode, because `actool` compiles the icon, and a Developer ID Application identity in the keychain. `ECHOFOX_SIGN` names the identity; without it, the build takes the one Developer ID Application identity it finds. Without one, the build stops. It signs with the hardened runtime.
 
@@ -24,6 +24,25 @@ The app includes the server, Python 3.14 and its packages, and a Metal build of 
 The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag.
 
 An app writes the server's launchd agent for itself when it starts, so opening a local build takes the dictation server over from the installed app. Open the installed app again to go back.
+
+### The package
+
+| Path in `EchoFox.app/Contents` | What it is |
+|---|---|
+| `MacOS/EchoFox` | The Mac app. |
+| `Resources/server/` | The dictation server, the built-in adapters and Silero VAD. |
+| `Resources/python/` | Python 3.14 with the server's packages. |
+| `Resources/llama/llama-server` | llama-server, built with Metal into one binary. |
+| `Frameworks/Sparkle.framework` | Sparkle, the updater ([updates](#updates)), without its XPC services. |
+| `Resources/Assets.car`, `EchoFox.icns` | The app icon ([art](../../macos/art/README.md)). |
+
+`macos/pins.sh` pins the versions with their checksums or commits, and the oldest macOS, 14: the onnxruntime and numpy wheels from PyPI are built for 14. Everything in the bundle is built for it, and the build fails if a binary needs a newer macOS or links a library from Homebrew. Python's bytecode is compiled before signing, and the server's agent sets `PYTHONDONTWRITEBYTECODE`, so that nothing is written into the signed bundle. At launch, off the main thread, the app writes the launchd agent of its own server. It does not do that when it runs from the dmg or from an App Translocation path: it asks the user to move it to Applications and quits, because the agent would keep a path that goes away. The agent carries the app's version (`ECHOFOX_APP_VERSION`), which the server passes on to the agent of llama-server, so a new version in the same place restarts both. The model is not in the package: it is several gigabytes, it does not change with each app update, and Q4_0 and Q8_0 are variants of one model in the app, not separate builds.
+
+### The installer
+
+The dmg opens a window like those of Ghostty, Chrome and Telegram: the app, a link to `/Applications`, and a background with an arrow and "Drag EchoFox to Applications". The volume's icon is the app's. dmgbuild builds it (`macos/dmg/settings.py`); it writes the window's `.DS_Store` itself, without Finder, so it runs on a runner without a screen. dmgbuild and its dependencies are pinned by version and SHA-256 in `macos/dmg/requirements.txt` and live in their own environment, `macos/.cache/dmgtools`. The background is drawn in `macos/dmg/background.svg` and made into `background.tiff` at 1x and 2x.
+
+The image is compressed with lzma (ULMO, macOS 10.15 or later): of the formats measured, it made the smallest dmg, and it opens about 1.5 seconds slower than the fastest one.
 
 ## Run the tests
 
@@ -82,6 +101,12 @@ No checkout keeps the token. Only one job can write to the repository: the last 
 An ordinary branch push starts none of them.
 
 With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the webhook named in `release.yml`, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the webhook does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` stops. The secret names are listed at the top of each workflow.
+
+## Updates
+
+The app updates itself through Sparkle 2 (what the user sees: [the Mac app](4-app.md#update)). Its `Info.plist` names the feed, `https://github.com/wowgs/echofox/releases/latest/download/appcast.xml`, and the public EdDSA key; Sparkle installs only an archive signed with the matching private key and a newer `CFBundleVersion`, and it requires the feed to be signed too (`SURequireSignedFeed`). For a tag, `staple.yml` runs `macos/make-appcast.sh` on the stapled dmg: it reads the versions from the app in it, signs the dmg and the feed with the secret `SPARKLE_ED_KEY`, and the release carries `appcast.xml` beside `EchoFox.dmg`. Sparkle's tools are those of the version that `Package.swift` links, pinned in `macos/pins.sh`; `build-app.sh` stops if `Package.resolved` names another one.
+
+To try an update without the real feed, serve a release's dmg and a feed for it (`macos/make-appcast.sh EchoFox.dmg http://127.0.0.1:<port>/EchoFox.dmg`, signed with the key of the login keychain) with `python3 -m http.server`, and point the installed older app at it: `defaults write uk.wowgs.echofox updateFeedURL http://127.0.0.1:<port>/appcast.xml`. `defaults delete uk.wowgs.echofox updateFeedURL` goes back to the real feed.
 
 ## Diagrams
 

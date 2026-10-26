@@ -39,7 +39,7 @@ The target behavior of EchoFox. It is not a list of shipped features: the [refer
 ## System
 
 - **FR-20. Diagnostics.** The server's state, the chosen model and the errors.
-- **FR-21. Updates, planned.** Update the app, the server and the catalog without a terminal: the app shows that a new version is out, and one button installs it and starts the app again. Through Sparkle 2 ([distribution](distribution.md#updates)).
+- **FR-21. Updates, planned.** Update the app, the server and the catalog without a terminal: the app shows that a new version is out, and one button installs it and starts the app again. Through Sparkle 2 ([updates](reference/7-development.md#updates)).
 
 ## Non-functional
 

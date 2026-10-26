@@ -14,7 +14,18 @@ The work that is left, without promised dates; reviewed on 2026-10-26. The [refe
 
 ## Releases
 
-v0.1 and v0.2 are out; v0.3 carries the structural fixes of 2026-10-26 and is the first release that runs the author's own dictation. Not tried yet on the live app: the start from the dmg, the agent's background install and the restart on update. Before a public release, the checks in [distribution](distribution.md#check-before-a-public-release). Updates through Sparkle 2 are decided ([distribution](distribution.md#updates)); open: where the public files live, and opening the repository.
+v0.4.0 (2026-10-26) is the first release with updates through Sparkle; v0.3.x carried the structural fixes and the clean install, and the author's own dictation runs on the release since v0.3. Next:
+
+- Try an update from v0.4.0 to the next release on the author's Mac, with a local feed while the repository is private ([updates](reference/7-development.md#updates)). Not tried yet on the live app: the update window, the install, the restart of the app and the server.
+- Open the repository. Its releases and its update feed are not public before that: GitHub answers 404 to a download without a login.
+
+Before the repository opens:
+
+- Installation, permissions, the launchd agents and a restart on a clean Mac.
+- A full model download from the source, and its recovery after a break.
+- The oldest supported macOS: everything is built for 14, but the app has run only on 27.
+- The terms of use and distribution of the Gemma model.
+- Quality, speed and memory of Q4_0 against Q8_0 on one labeled set.
 
 ## Next features
 
@@ -26,6 +37,7 @@ v0.1 and v0.2 are out; v0.3 carries the structural fixes of 2026-10-26 and is th
 | Automatic fine-tuning (LoRA) on the user's labels | Planned; needs a checked set and a first short experiment. See [training](research/training.md). |
 | Faster labeling | Proposals: short series and choosing doubtful pieces, in [training](research/training.md#easier-labeling). |
 | A plugin catalog and install from GitHub | Install from a folder works. Plugins in other languages only on a real need. |
+| Update reminders | The menu's first line says that an update is ready. Proposed: a mark on the menu bar fox (approved art, needs a drawing) and release notes in the update window (a signed feed needs them signed too). |
 | Claude Code sessions named by the client | The Claude plugin takes the sessions a client names in `hints`. No client sends them now; only `try_wav.py --hint` reaches this path. Open: keep it for a future client, or remove it. |
 
 ## Experiments without a chosen answer

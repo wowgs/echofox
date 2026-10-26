@@ -2,7 +2,7 @@
 # on the left, a link to /Applications on the right, an arrow and "Drag EchoFox to Applications" between them on the
 # background (background.svg, made into background.tiff at 1x and 2x). The image is compressed with lzma (ULMO): of
 # the formats, it made the smallest dmg, 53 MB against 79 MB for zlib, and opened in 2.8 s (2026-10-26, M5,
-# docs/distribution.md). dmgbuild reads this file as Python, with `defines` set.
+# docs/reference/7-development.md, "The installer"). dmgbuild reads this file as Python, with `defines` set.
 import os.path
 
 app = defines["app"]  # noqa: F821

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Writes the update feed (appcast, docs/distribution.md "Updates") of one release's dmg to stdout: one item with the
+# Writes the update feed (appcast, docs/reference/7-development.md "Updates") of one release's dmg to stdout: one item with the
 # app's version and build, the oldest macOS, and the dmg at URL with its EdDSA signature; then the feed is signed too
 # (the app requires a signed feed). Sparkle's tools come from pins.sh, checked against their SHA-256.
 # Usage: macos/make-appcast.sh DMG URL [KEY_FILE] > appcast.xml

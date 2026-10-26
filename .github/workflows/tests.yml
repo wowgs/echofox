@@ -1,4 +1,4 @@
-# The tests of the server and the checks of the app (docs/distribution.md), on a clean Mac: by the button
+# The tests of the server and the checks of the app (docs/reference/7-development.md, "CI"), on a clean Mac: by the button
 # (Actions, Run workflow), and before every release (release.yml calls this workflow). Not on a push: the tests run
 # on the author's Mac before each commit, and a push should not spend macOS minutes. They need no model and no
 # llama-server.

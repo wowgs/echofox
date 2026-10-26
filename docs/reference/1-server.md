@@ -39,7 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described in [distribution](../distribution.md#models).
+The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 
@@ -50,7 +50,20 @@ Gemma runs at `http://127.0.0.1:8092` with:
 | `--swa-full` | Let later pieces reuse the shared prompt text. |
 | `--cache-ram 0` | Disable the separate RAM prompt cache, which caused memory growth and swapping in a local run. |
 
-Recognition makes only local connections; see [no telemetry](../distribution.md#no-telemetry). Each setting has an owner ([design](../design.md#settings)); the cutting, the minimum speech and the output limit are constants in `server/tuning.py` and `server/catalog.json`, not settings.
+Recognition makes only local connections; see [privacy](../design.md#privacy). Each setting has an owner ([design](../design.md#settings)); the cutting, the minimum speech and the output limit are constants in `server/tuning.py` and `server/catalog.json`, not settings.
+
+### The catalog and the downloads
+
+`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. The source of the current model is `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face; it needs no account. The files go to `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-GGUF/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments and the launchd agent of llama-server; a change of the active variant applies after the current recording.
+
+The server, not the app's window, runs a download:
+
+- it goes on when the window closes, and every connected client sees its progress;
+- it resumes a part with an HTTP Range request;
+- it checks the size and the SHA-256 before it renames the part;
+- it keeps the files that another downloaded variant uses, and refuses to remove the active variant.
+
+A download uses one connection per file: more connections were not faster on the measured link. The windows show the speed over the last 5 seconds and the time left (`TransferRate`), from the progress that the server sends every 0.5 seconds. The messages are in the [protocol](6-protocol.md#download-a-model). At the first start, the app recommends Q4_0 for a 16 GB Mac and Q8_0 for 24 GB or more.
 
 ## Code map
 

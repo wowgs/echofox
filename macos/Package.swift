@@ -16,7 +16,7 @@ let package = Package(
         .executable(name: "echofox-tests", targets: ["echofox-tests"]),
     ],
     dependencies: [
-        // The updater (docs/distribution.md, "Updates"); its tools for the release are pinned in pins.sh
+        // The updater (docs/reference/7-development.md, "Updates"); its tools for the release are pinned in pins.sh
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
     ],
     targets: [

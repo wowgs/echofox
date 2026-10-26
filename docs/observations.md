@@ -1,6 +1,6 @@
 # Observations
 
-Measurements and observations that shaped EchoFox, with their date and conditions. A number here holds only on its machine and versions; it is not a promise for other Macs. Newer entries go at the end of their section. Related: [design](design.md), [distribution](distribution.md).
+Measurements and observations that shaped EchoFox, with their date and conditions. A number here holds only on its machine and versions; it is not a promise for other Macs. Newer entries go at the end of their section. Related: [design](design.md), [development](reference/7-development.md).
 
 The development Mac: Apple M5 with a 10-core GPU, 24 GB of memory, macOS 27.0.1. llama-server 0.6.0, build 11429 (`d81235049`), with Metal.
 

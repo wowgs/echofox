@@ -1,4 +1,4 @@
-// The app's updates (docs/distribution.md, "Updates"): Sparkle 2 reads the feed of Info.plist (SUFeedURL), or the
+// The app's updates (docs/reference/7-development.md, "Updates"): Sparkle 2 reads the feed of Info.plist (SUFeedURL), or the
 // test feed of the user default updateFeedURL, and installs only an archive signed with the app's key (SUPublicEDKey).
 // A scheduled check that finds an update shows no window: the menu says so (Sparkle's gentle reminders, for an app of
 // the menu bar), and that line opens Sparkle's window. The restart that installs an update waits while a dictation
@@ -7,8 +7,8 @@ import AppKit
 import Sparkle
 
 final class Updater: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
-    /// The user default that points the app at a test feed (docs/distribution.md, "Testing while the repository is
-    /// private"); unset, the feed is Info.plist's.
+    /// The user default that points the app at a test feed (docs/reference/7-development.md,
+    /// "Updates"); unset, the feed is Info.plist's.
     static let testFeedKey = "updateFeedURL"
 
     /// The version of a found update that the menu shows, until the user turns to it.

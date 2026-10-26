@@ -25,7 +25,6 @@ The reference pages describe the current implementation. The pages below explain
 
 - [Design](design.md): who EchoFox is for, the decisions, the architecture, who owns each setting, the interface and the adapters.
 - [Requirements](requirements.md): the target behavior, with stable FR and NFR numbers.
-- [Distribution](distribution.md): the package, the installer, models and downloads, releases and notarization.
 - [Observations](observations.md): dated measurements and observations behind the decisions.
 - [Plan](plan.md): the work that is left.
 

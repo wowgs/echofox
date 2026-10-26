@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds macos/build/EchoFox.app, the app with everything it runs (docs/distribution.md): the server's code in
+# Builds macos/build/EchoFox.app, the app with everything it runs (docs/reference/7-development.md, "The package"): the server's code in
 # Contents/Resources/server, Python with the server's packages in Contents/Resources/python, and llama-server in
 # Contents/Resources/llama, at the versions of pins.sh. The app installs the server's launchd agent itself.
 # Usage: macos/build-app.sh [--dmg]
@@ -42,7 +42,7 @@ app=build/EchoFox.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/EchoFox "$app/Contents/MacOS/"
-# Sparkle, the updater (docs/distribution.md, "Updates"), where the app's rpath finds it. The app is not sandboxed, so
+# Sparkle, the updater (docs/reference/7-development.md, "Updates"), where the app's rpath finds it. The app is not sandboxed, so
 # Sparkle's XPC services are left out (Sparkle's documentation).
 mkdir -p "$app/Contents/Frameworks"
 ditto .build/release/Sparkle.framework "$app/Contents/Frameworks/Sparkle.framework"
