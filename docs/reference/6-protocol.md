@@ -43,7 +43,7 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
 
 ```text
 {"type": "info", "interface": 2, "adapterInterface": 2, "sampleRate": 16000, "encoding": "pcm_s16le",
- "textWaitSeconds": 180, "maxRecordingSeconds": 1800,
+ "textWaitSeconds": 180, "maxRecordingSeconds": 1800.0,
  "languages": [{"code", "name", "notes", "fillers"}],
  "adapters": [{"name", "enabled", "builtin", "version", "author", "source", "description", "apps",
                "electronTree", "reads", "screen", "context", "error"}],
@@ -65,7 +65,7 @@ The response describes audio format, timeouts, languages, adapters, the selected
 | `title`, `help` | The name and the description in the window, in plain English for the user. `help` is empty when the title says it all. |
 | `advanced` | Present for a setting of the Advanced section. |
 | `default` | The component’s default. For an adapter setting, the default of each adapter is in its `context`. |
-| `value` | Present only when the effective value is not the default. |
+| `value` | For server and model settings, present only when the effective value is not the default. Adapter settings never have it: the app reads the user's value from the config. |
 | `min`, `max` | The range of a number. `minExclusive` and `maxExclusive` mean that the value cannot be equal to the bound. |
 
 Runtime constants are excluded.

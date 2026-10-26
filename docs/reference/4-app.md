@@ -8,7 +8,7 @@ See also: [configuration](2-config.md), [saved recordings](5-recordings.md), and
 
 1. Click a text field.
 2. Tap and release **right Option** to start recording.
-3. Speak, then tap the same key to stop.
+3. Speak, then tap either dictation key to stop.
 
 Use **right Command** for private dictation. It skips conversation context and saves no audio or transcript. The app still identifies the input field so it can insert your text. While it records, the earpiece of the fox in the menu bar is a shield with a keyhole.
 
@@ -18,13 +18,14 @@ Recording stops automatically after 60 seconds without speech by default. The se
 
 ## Where the text goes
 
-The app chooses the destination when the result arrives:
+The app chooses the destination when the text arrives:
 
-1. Use the currently focused text field. You can move to another field while speaking.
-2. Otherwise, use the field focused when recording began, bringing its app to the front.
-3. If neither works, copy the text to the clipboard and show a message in the menu.
+1. The text field that had the focus when you tapped the key, wherever you are now. If its app is in the background, EchoFox first tries ways that keep it there; only if they fail does it bring that app to the front, paste, and take you back to where you were.
+2. Otherwise, the text field that has the focus now, for example one you clicked into while speaking.
+3. Otherwise, if the app of the tap is still in front but shows no focused element (an Electron app whose accessibility tree is off), a paste at its cursor.
+4. If none works, the text goes to the clipboard and the menu shows a message.
 
-EchoFox first tries Accessibility insertion, replacing selected text. If the target app refuses it or the text does not appear, EchoFox tries Cmd+V and restores the previous clipboard afterward.
+In a field, EchoFox tries Accessibility insertion (it replaces the selected text), then Cmd+V, and checks after each way that the text arrived, so it never goes in twice. Cmd+V restores the previous clipboard afterward.
 
 After recording stops, the app waits up to 180 seconds for each next piece of text.
 
@@ -41,19 +42,15 @@ The two downloads are differently compressed variants of Gemma 4 E4B:
 
 Memory figures are approximate. A systematic comparison of recognition quality and speed is still pending. Change the variant later in **Settings → Model**.
 
-Model files are separate from the app, so updating the app does not require downloading them again. The server handles downloading, verification, and setup.
-
 ## The first start
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications.
-
-The packaged app includes llama.cpp, Python, and the dictation server. You only choose a model variant and start its download in the app; no separate runtime or manual model installation is needed.
 
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.
 
-The server handles downloads, so they continue if you close the settings window.
+The download goes on if you close the window.
 
 ## The menu and the settings window
 
@@ -88,11 +85,9 @@ This prepares data for future model training. It does not train the model automa
 
 See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
-## Build and start
+## Logs
 
-Follow the [development guide](7-development.md) for prerequisites and commands. A development app uses the server in the checkout. A bundled app includes Python, server dependencies, and `llama-server`; it installs its own launchd agent.
-
-The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not transcript contents.
+The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not transcript contents. To build the app, see the [development guide](7-development.md).
 
 ## Code map
 

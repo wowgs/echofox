@@ -13,7 +13,7 @@ Each saved recording has a folder at `~/speech/recordings/<YYYY-MM-DD>/<HHMMSS>-
 | File | Contents |
 |---|---|
 | `mic.wav` | The original recording: 16 kHz, 16-bit, mono. |
-| `piece-N.wav` | The audio sent in each model request. |
+| `piece-N.wav` | The audio of each piece, also of a piece that was not sent to the model because it had too little speech (`"skipped": "no speech"` in `pieces.jsonl`). |
 | `pieces.jsonl` | The text of each piece, token counts, detected speech duration, and the raw text before hesitation removal (`raw`). |
 | `text-before-audio.txt` | The conversation context and recognition prompt. |
 | `adapter.json` | Model, client, stop reason, errors, transcripts, context source, and microphone settings. |
@@ -31,7 +31,7 @@ The recordings take about 231 MB for each hour of speech (365 recordings, 2026-1
 | `text-before-audio.txt` | A copy of the context and prompt used for recognition. |
 | `label.json` | Corrected and original text, raw model output, status (`verified` or `unusable`), model, language, and timestamp. |
 
-`"convention": "clean"` means the reference text omits hesitation sounds and repeated words. Labels prepare data for future training; they do not change the running model.
+`"convention": "clean"` means the reference text omits hesitation sounds and repeated words and, after a slip of the tongue, keeps only the corrected words. Labels prepare data for future training; they do not change the running model.
 
 The proposed training process uses audio, a recognition prompt, and the corrected text. Saved conversation context is retained for analysis but is not intended as training input.
 

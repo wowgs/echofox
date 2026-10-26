@@ -39,13 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. Each model has its own launchd agent, but only the selected model runs. Switching models starts the selected agent and stops the others.
-
-`server/catalog.json` defines supported models: audio limits, languages, prompt templates, sampling defaults, runtime arguments, and downloadable variants. Gemma 4 E4B has two variants, Q4_0 and Q8_0; Q8_0 is the catalog default.
-
-Both variants come from a pinned revision of `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face. They share the audio encoder file. Downloads support resuming and SHA-256 verification. See [the download protocol](6-protocol.md#download-a-model).
-
-The server writes the selected model's launchd agent. Changes to the variant or model folder wait until the current recording finishes before restarting `llama-server`.
+The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described in [distribution](../distribution.md#models).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 
@@ -56,19 +50,7 @@ Gemma runs at `http://127.0.0.1:8092` with:
 | `--swa-full` | Let later pieces reuse the shared prompt text. |
 | `--cache-ram 0` | Disable the separate RAM prompt cache, which caused memory growth and swapping in a local run. |
 
-## Privacy and telemetry
-
-Recognition uses local connections. Model downloads are the only external connections made by the current app and server, and require a user request.
-
-`server/vad.py` disables onnxruntime telemetry before loading the runtime. `llama-server` runs with `--offline` and `--no-webui`.
-
-Regular recordings may include audio, transcripts, and conversation context. See [what is saved](5-recordings.md); private dictation skips this storage.
-
-## Settings and constants
-
-Each setting belongs to the server, a model, an adapter, a language, or the app. Its component supplies the default; the config file stores user overrides.
-
-Safety limits and values chosen through measurements are constants rather than user settings. Audio cutting, the minimum speech duration, and output limits are defined in `server/tuning.py` and `server/catalog.json`.
+Recognition makes only local connections; see [no telemetry](../distribution.md#no-telemetry). Each setting has an owner ([design](../design.md#settings)); the cutting, the minimum speech and the output limit are constants in `server/tuning.py` and `server/catalog.json`, not settings.
 
 ## Code map
 

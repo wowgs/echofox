@@ -25,7 +25,7 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 }
 ```
 
-This example enables both adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults; invalid settings are logged and replaced with defaults.
+This example enables both adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON or has another `version`, the server ignores the whole file and keeps its current settings; the app ignores an invalid value without a log.
 
 ## Settings reference
 
@@ -65,4 +65,4 @@ The server checks the file every 2 seconds.
 - Changes to `models`, `model`, or `modelsFolder` apply after the current recording.
 - Changing `host` or `port` stops the server after the current recording; launchd then restarts it.
 
-The server has no command-line flags for settings. `--config` only names the file.
+The server has no command-line flags for settings. `--config` only names the file; `--ignore-selection`, for the test server, makes it ignore the menu's choice of model.

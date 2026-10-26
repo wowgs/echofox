@@ -80,23 +80,12 @@ A setting has the owner's default and an optional change by the user. A reset re
 
 ## Interface
 
-The menu, in this order: the permissions while one is missing (a missing one opens System Settings, a granted one shows a gray check), the microphone and the input volume (the volume of macOS), **Label Recordings…**, **Settings… (⌘,)**, **Quit EchoFox**. `SettingsLayout.menu` sets the order, `MenuBar.swift` shows it.
+What the menu, the keys and the settings pages do is in the [app reference](reference/4-app.md). The decisions behind them:
 
-The menu bar icon is a fox face; the drawings and their states are in [the art](../macos/art/README.md). A problem, such as a missing permission, shows a crossed-out microphone.
-
-The right Option key toggles a regular dictation, the right Command key a private one. A single press and release of the key counts. Both keys can be changed on the General page. A private dictation starts no adapter and sends no snapshot; the app still finds the text box for the insertion. Conflicts with other apps' keys are possible, and no way to detect them is chosen yet.
-
-| Settings page | What it has |
-|---|---|
-| General | The keys, the stop on silence, the longest recording. |
-| Microphone | The microphone and its volume. |
-| Language | The language, the prompt notes, the hesitation sounds to remove. |
-| Model | The model, its variant, the prompt, the models folder, download and removal; sampling under Advanced. |
-| Adapters | A group with a page for each adapter: its state, its sources and its context settings. |
-| Recordings & Labels | Saving and the data folders, the labeling. |
-| Diagnostics | The server, the chosen model, diagnostics; refreshed every 2 seconds while open. |
-
-The window remembers the last page and the open sections. A value applies on Return or when the field loses focus.
+- The menu holds only what is touched often: the missing permissions, the microphone and its volume, labeling, settings, quit. `SettingsLayout.menu` sets its order, `MenuBar.swift` shows it.
+- The menu bar icon shows the state with a fox face ([the art](../macos/art/README.md)); a problem keeps the crossed-out microphone until a fox for it is drawn.
+- Two keys, the right Option for regular and the right Command for private dictation, each a single tap. Conflicts with other apps' keys are possible, and no way to detect them is chosen yet.
+- A value applies on Return or when the field loses focus; the window remembers the last page and the open sections.
 
 ## Adapters
 

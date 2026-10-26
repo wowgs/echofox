@@ -8,7 +8,7 @@ See also: [configuration](2-config.md), [saved context](5-recordings.md), and [a
 
 ## How the server finds the conversation
 
-1. At the start of a regular dictation, the app captures the focused app, window, input element, nearby accessibility metadata, web page information, and child-process working folders. Input-field values are excluded.
+1. At the start of a regular dictation, the app captures the focused app and input element. For an app that an enabled adapter supports, it also captures the window, the accessibility metadata above the input element, the web page, and the working folders of the app's child processes. Input-field values are excluded.
 2. Enabled adapters inspect the snapshot and report whether they can handle it, with a confidence score.
 3. The server asks the most confident adapter to retrieve the conversation.
 4. If no adapter claims the snapshot or the conversation is ambiguous, recognition uses only the normal prompt.
@@ -20,7 +20,7 @@ The app collects additional screen content only for enabled adapters that reques
 Context is placed before the recognition prompt, between `<context>` and `</context>`:
 
 - A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
-- Likely terms: Latin-script words and names in other alphabets, ranked by frequency.
+- Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency.
 - The newest messages that fit the adapter's budget, arranged from oldest to newest.
 
 Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.
@@ -32,17 +32,17 @@ Each adapter supplies defaults in its manifest. Override them in its config entr
 | Setting | What it sets | Claude | Telegram |
 |---|---|---|---|
 | `chatHistoryTokenBudget` | Total context budget in tokens; at least 1 | 1000 | 2000 |
-| `chatTermsTokenBudget` | Budget reserved for terms | 200 | 200 |
+| `chatTermsTokenBudget` | The largest part of the total budget that terms may use; the rest goes to messages | 200 | 200 |
 | `proseOnly` | Exclude lines made mostly of digits and symbols | on | on |
 
-Use `enabled` to turn an adapter on or off. Budgets use the selected model’s tokenizer.
+Use `enabled` to turn an adapter on or off; both built-in adapters are off in a new config. Budgets use the selected model’s tokenizer.
 
 ## The built-in adapters
 
 | Adapter | Supported app | Context source |
 |---|---|---|
 | `claude` | Claude Desktop: the Code tab and chats | In the Code tab, the local transcript of the open session. In a chat, the messages that the window shows, read from the accessibility tree. Only Claude's completed responses are used. |
-| `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. Enable this adapter yourself in Settings. |
+| `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. |
 
 ### Claude session matching
 
