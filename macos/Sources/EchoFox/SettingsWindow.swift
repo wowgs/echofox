@@ -254,7 +254,8 @@ struct SettingsView: View {
                 ForEach(SettingsLayout.sidebar, id: \.self) { entry in
                     switch entry {
                     case let .page(page):
-                        Label(page.title, systemImage: page.symbol).tag(SidebarItem.page(page))
+                        Label { Text(page.title) } icon: { SidebarIcon { Image(systemName: page.symbol).resizable().scaledToFit() } }
+                            .tag(SidebarItem.page(page))
                     case .adapters:
                         // A heading, not a page: a click anywhere on it opens or closes the adapters' rows.
                         DisclosureGroup(isExpanded: $model.adaptersOpen) {
@@ -266,7 +267,9 @@ struct SettingsView: View {
                                 withAnimation { model.adaptersOpen.toggle() }
                             } label: {
                                 HStack {
-                                    Label(SidebarEntry.adaptersTitle, systemImage: SidebarEntry.adaptersSymbol)
+                                    Label { Text(SidebarEntry.adaptersTitle) } icon: {
+                                        SidebarIcon { Image(systemName: SidebarEntry.adaptersSymbol).resizable().scaledToFit() }
+                                    }
                                     Spacer()
                                 }
                                 .contentShape(Rectangle())
@@ -296,6 +299,18 @@ struct SettingsView: View {
     }
 }
 
+/// A sidebar row's icon in a column of its own: fitted into a square of one size and centered, so that a wide symbol
+/// (the stethoscope) and a narrow one (the microphone) take the same room and every title starts at one line.
+struct SidebarIcon<Icon: View>: View {
+    static var size: CGFloat { 18 }
+    static var column: CGFloat { 24 }
+    @ViewBuilder let icon: () -> Icon
+
+    var body: some View {
+        icon().frame(width: Self.size, height: Self.size).frame(width: Self.column)
+    }
+}
+
 /// An adapter in the sidebar: the icon of the app it reads, its name (grey when it is off), and a dot for its state
 /// as on the page Diagnostics: green when it is on, red when it does not work, none when it is off.
 struct AdapterSidebarRow: View {
@@ -312,7 +327,7 @@ struct AdapterSidebarRow: View {
                 if adapter.error != nil { StatusDot(color: .red) } else if on { StatusDot(color: .green) }
             }
         } icon: {
-            AppIcon(bundleIds: adapter.apps)
+            SidebarIcon { AppIcon(bundleIds: adapter.apps) }
         }
         .help(adapter.error.map { "It does not work: \($0)" } ?? (on ? "On" : "Off"))
     }
