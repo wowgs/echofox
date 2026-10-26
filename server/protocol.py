@@ -44,8 +44,7 @@ def info(args, models=None):
     catalog entry, prompt template and variants), and the settings it may show and change (settings.schema)."""
     enabled = set(getattr(args, "adapters", None) or [])
     entries = getattr(models, "entries", None) or {}
-    name = settings.selected_model(settings.config_file(), models) if models else None
-    name = name or next(iter(entries), None)
+    name = getattr(models, "selected", None) or next(iter(entries), None)
     entry = entries.get(name) if name else None
     model = catalog.of(entry)
     codes = model.get("languages") or list(languages.table())
@@ -104,7 +103,7 @@ async def download(ws, send, m, models, args):
 async def remove(ws, send, m, models, args):
     """Deletes a variant's own files, unless it is the one in force of the menu's model."""
     entries = getattr(models, "entries", None) or {}
-    name = settings.selected_model(settings.config_file(), models) if models else None
+    name = getattr(models, "selected", None)
     entry = entries.get(name) if name else None
     cat = str(m.get("catalog") or catalog.DEFAULT)
     in_force = catalog.variant(entry)[0] if entry and entry.get("catalog", catalog.DEFAULT) == cat else None

@@ -332,6 +332,9 @@ class Models:
     def __init__(self, entries, make=LlamaModel, manage=True, models_folder=None):
         self.entries, self.make, self.models, self.manage = dict(entries), make, {}, manage
         self.models_folder = models_folder or constants.path(constants.MODELS_FOLDER)
+        # The model chosen in the menus ("model" in the server's config file), if this server has it: the config
+        # watcher keeps it (settings.ConfigWatcher), so that nothing else reads the file
+        self.selected = None
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()

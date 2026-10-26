@@ -226,6 +226,17 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SelectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_the_info_names_the_menus_model_of_the_servers_own_config_file(self):
+        # A server started with --config (the test server) reads its own file, not the default one
+        with FakeAgents(), tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "other-config.json")
+            json.dump({"version": constants.CONFIG_VERSION, "model": "big"}, open(f, "w"))
+            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
+                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            st = s.recording_settings(s.resolve({}))
+            s.ConfigWatcher(f, models, st, {}, None, follow=False)
+            self.assertEqual(protocol.info(st, models)["model"]["name"], "big")
+
     async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")

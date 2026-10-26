@@ -242,7 +242,7 @@ def selected_model(config_path, models):
             name = (json.load(f) or {}).get("model")
     except (OSError, ValueError, AttributeError):
         return None
-    return name if isinstance(name, str) and name in models.entries else None
+    return name if isinstance(name, str) and name in (getattr(models, "entries", None) or {}) else None
 
 
 def migrate(path):
@@ -465,6 +465,12 @@ class ConfigWatcher:
         self.path, self.models, self.st, self.current, self.stop = path, models, st, current, stop
         self.follow, self.chosen, self.chosen_known = follow, None, False
         self.seen = self._mtime()  # before the first model loads, so a change during that load is not lost
+        self._select()
+
+    def _select(self):
+        """The menu's model, from this server's config file, kept in `models.selected`."""
+        self.models.selected = selected_model(self.path, self.models)
+        return self.models.selected
 
     def _mtime(self):
         try:
@@ -474,7 +480,7 @@ class ConfigWatcher:
 
     async def follow_selection(self):
         """After the running recording, only the menu's model stays in memory."""
-        now = selected_model(self.path, self.models)
+        now = self._select()
         if self.chosen_known and now == self.chosen:
             return
         async with self.models.recording:
@@ -513,6 +519,8 @@ class ConfigWatcher:
                         self.current.update(now)
         if self.follow:
             await self.follow_selection()
+        else:
+            self._select()
         return True
 
     async def run(self):
