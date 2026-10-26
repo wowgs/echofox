@@ -18,7 +18,7 @@ Run these commands from the repository root on an Apple Silicon Mac. You need Ho
 
    ```
    python3 -m venv server/.venv
-   server/.venv/bin/pip install -r server/requirements.txt
+   server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requirements.txt
    server/launchd.sh install
    ```
 
@@ -36,13 +36,13 @@ Run these commands from the repository root on an Apple Silicon Mac. You need Ho
 
 5. Allow Microphone and Accessibility when macOS asks. If no model is downloaded, the app asks which one to download.
 
-Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninstall` to remove it. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
+Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninstall` to remove it. The agent has the same label as the agent that a bundled app writes (`echofox.gemma-voice`), so one Mac has one server on the working port. If you open a bundled app from `/Applications` on this Mac, it replaces the agent; run `server/launchd.sh install` again to go back to the checkout. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
 
 ## Build a distributable app
 
 Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)).
 
-The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, pip, `actool` and `LSMinimumSystemVersion`. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
+The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The bundle leaves out the server's tests and its development tools. The build keeps its downloads and the `llama-server` build in `macos/.cache`; it builds `llama-server` again when its cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
 
 The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag. Two builds of one commit have the same version, so after a rebuild without a new commit, restart the server yourself.
 
@@ -56,7 +56,7 @@ Server tests need neither a downloaded model nor a running `llama-server`:
 server/.venv/bin/python -m unittest discover -s server
 ```
 
-Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, a fake `launchctl`, and it refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, plugins or servers.
+Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the `launchctl` that `llama.py` calls with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, plugins or servers. The sandbox knows no plugin: a test of a plugin sets up what that plugin reads.
 
 Run app checks with:
 
@@ -64,7 +64,7 @@ Run app checks with:
 swift run --package-path macos echofox-tests
 ```
 
-`echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode.
+`echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode. Both suites read the protocol examples (`shared/protocol-examples.json`) and the values both sides use (`shared/constants.json`), so a change on one side that the other does not follow fails a test.
 
 ## Test recognition on a separate server
 
@@ -84,6 +84,7 @@ server/test_server.sh stop
 | `BUNDLE=macos/build/bundle/EchoFox.app server/test_server.sh start` | Test the bundled Python, server, and model runtime. |
 | `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
 | `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
+| `try_wav.py ... --hint KEY=VALUE` | Send a hint to the adapters in the start message; VALUE is JSON, or else text. For example `--hint 'sessions=["<id>"]'` names Claude Code sessions to the Claude plugin. |
 
 Input WAV files must be 16 kHz, mono, 16-bit. The client prints server messages and the delay after stopping. It reaches the working server only with `--working`.
 
@@ -96,12 +97,14 @@ The ports are in `server/constants.py`.
 | Workflow | Trigger | Result |
 |---|---|---|
 | `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac. |
-| `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, signed and sent to Apple's notary service. |
+| `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, the server's tests again with the bundled Python, and the DMG signed and sent to Apple's notary service. |
 | `staple.yml` | The notary relay, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
+
+No checkout keeps the token. Only one job can write to the repository: the last job of `staple.yml`, which creates the release on Linux.
 
 An ordinary branch push starts none of them.
 
-With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run staples Apple's ticket to the DMG and publishes it: to GitHub Releases for a tag, or as an artifact for 14 days for a manual run. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` signs ad hoc, for tests, and publishes the DMG itself. The secret names are listed at the top of each workflow.
+With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` signs ad hoc, for tests, and keeps the DMG as an artifact. The secret names are listed at the top of each workflow.
 
 ## Diagrams
 

@@ -109,8 +109,8 @@ The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not tr
 
 | Folder in `macos/Sources` | Purpose |
 |---|---|
-| `EchoFox/` | App lifecycle, permissions, menu, settings window, microphone, dictation, and insertion. |
-| `EchoFoxCore/` | Config, protocol, key handling, and settings logic that needs no screen access. |
+| `EchoFox/` | App lifecycle, permissions, menu, windows, microphone, dictation, model downloads (`ModelDownloads`), and the Mac side of insertion (`Inserter`, through Accessibility). |
+| `EchoFoxCore/` | The decisions that need no screen access, each with checks: the config and its one owner (`ConfigStore`), the protocol, the server agent, key handling, the settings logic (`SettingStore`), which snapshot an app gets (`ServerInfo.snapshotPlan`), which microphone the config means (`MicrophoneChoice`), and where the text goes (`InsertionRule`). |
 | `FocusSnapshot/` | Capture the focused app and input field. |
 | `echofox-snapshot/` | Command-line snapshot inspection tool. |
 | `echofox-tests/` | Checks for `EchoFoxCore`. |

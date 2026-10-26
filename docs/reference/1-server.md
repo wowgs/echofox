@@ -57,7 +57,10 @@ Recognition makes only local connections; see [no telemetry](../distribution.md#
 | File | Purpose |
 |---|---|
 | `gemma_voice.py` | Starts the server. |
-| `protocol.py` | One connection of a client: the start, the recording, the context. |
+| `protocol.py` | One connection of a client: reads its first message and hands it on. |
+| `info.py` | The server's info: the models, languages, adapters and settings. |
+| `variants.py` | The download and the removal of a model's variant. |
+| `session.py` | One recording: the start message, the audio, the pieces, the context and the stop. |
 | `audio.py` | The loudness of each 30 ms frame, the cuts, WAV files. |
 | `vad.py` | Silero VAD on the audio as it arrives. |
 | `dictation.py` | The prompt, the context and one request for each piece. |
@@ -69,7 +72,7 @@ Recognition makes only local connections; see [no telemetry](../distribution.md#
 | `adapters/`, `plugins/` | The adapters that give [the chat context](3-context.md). |
 | `recordings.py` | [The recordings](5-recordings.md). |
 | `metrics.py` | The metrics file and its summary. |
-| `constants.py` | Shared constants, paths and names that the server, its scripts and its tests share. |
+| `constants.py` | Shared constants, paths and names that the server, its scripts and its tests share. The ones the app also needs are in `shared/constants.json`, which the tests of both sides check. |
 
 ## Logs and metrics
 

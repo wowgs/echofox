@@ -29,7 +29,6 @@ The reference pages describe the current implementation. The pages below explain
 - [Distribution](distribution.md): the package, the installer, models and downloads, releases and notarization.
 - [Observations](observations.md): dated measurements and observations behind the decisions.
 - [Plan](plan.md): the work that is left.
-- [Refactoring](refactoring.md): structural problems in the code, with evidence and fixes.
 
 ## Research
 

@@ -41,6 +41,8 @@ Three processes run:
 
 In the distributed app, the server, Python and llama-server are inside `EchoFox.app`; see [distribution](distribution.md).
 
+Inside the app, the decisions live in `EchoFoxCore`, which needs no screen and has checks: the config's one owner (`ConfigStore`, which also notices edits made elsewhere), where the text goes (`InsertionRule`), which snapshot an app gets, which microphone the config means. The `EchoFox` target does what macOS must do for them, for example `Inserter` carries out `InsertionRule` through Accessibility. The app and the server agree through two files that the tests of both sides read: the protocol's examples (`shared/protocol-examples.json`) and the values both use before they can talk (`shared/constants.json`). Everything else the app learns from the server's info.
+
 | Component | Responsibility | Reference |
 |---|---|---|
 | Keys and menu | Start and stop, state, settings | [App](reference/4-app.md) |

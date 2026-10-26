@@ -1,6 +1,6 @@
 # Plan
 
-The work that is left, without promised dates; reviewed on 2026-10-26. The [reference](README.md) describes what works now. Structural fixes of the code are listed apart, in [refactoring](refactoring.md). Related: [requirements](requirements.md), [design](design.md).
+The work that is left, without promised dates; reviewed on 2026-10-26. The [reference](README.md) describes what works now. Related: [requirements](requirements.md), [design](design.md).
 
 ## Measurable quality first
 
@@ -26,6 +26,7 @@ v0.1 is out. The release blockers of the 2026-10-26 review are fixed on master f
 | Automatic fine-tuning (LoRA) on the user's labels | Planned; needs a checked set and a first short experiment. See [training](research/training.md). |
 | Faster labeling | Proposals: short series and choosing doubtful pieces, in [training](research/training.md#easier-labeling). |
 | A plugin catalog and install from GitHub | Install from a folder works. Plugins in other languages only on a real need. |
+| Claude Code sessions named by the client | The Claude plugin takes the sessions a client names in `hints`. No client sends them now; only `try_wav.py --hint` reaches this path. Open: keep it for a future client, or remove it. |
 
 ## Experiments without a chosen answer
 

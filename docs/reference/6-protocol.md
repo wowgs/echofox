@@ -51,7 +51,7 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
  "model": {"name", "catalog", "prompt", "maxAudioSeconds", "variant",
            "variants": [{"id", "name", "bytes", "memoryBytes", "downloaded", "downloading"}]},
  "settings": [{"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
-               "minExclusive", "maxExclusive", "help"}]}
+               "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
 The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `models` lists registry names. `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
@@ -61,12 +61,15 @@ The response describes audio format, timeouts, languages, adapters, the selected
 | Field | What it means |
 |---|---|
 | `owner` | Config destination: `server` (the section `server` of the config), `model` (the model's `options`) or `adapter` (the adapter's entry). |
-| `kind` | `number`, `integer`, `boolean` or `string`. |
+| `kind` | `number`, `integer`, `boolean`, `string`, or `folder` (a path that the window lets the user choose in Finder). |
 | `title`, `help` | The name and the description in the window, in plain English for the user. `help` is empty when the title says it all. |
 | `advanced` | Present for a setting of the Advanced section. |
 | `default` | The component’s default. For an adapter setting, the default of each adapter is in its `context`. |
 | `value` | For server and model settings, present only when the effective value is not the default. Adapter settings never have it: the app reads the user's value from the config. |
 | `min`, `max` | The range of a number. `minExclusive` and `maxExclusive` mean that the value cannot be equal to the bound. |
+| `unit` | The unit of a number, for example `s` or `min`; absent when the number has none. |
+
+The app takes the folders of the recordings and of the labeled pieces from the `value` of the settings `recordings` and `labeled`, and from the config only when the server does not answer.
 
 Runtime constants are excluded.
 
