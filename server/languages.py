@@ -8,9 +8,16 @@ import os
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "languages.json")
 
 
+_read = {}  # the table as last read, and its file's change time
+
+
 def table():
-    with open(PATH, encoding="utf-8") as f:
-        return json.load(f)
+    """The languages: read again only when the file changed. The callers do not change what it gives."""
+    mtime = os.stat(PATH).st_mtime_ns
+    if _read.get("mtime") != mtime:
+        with open(PATH, encoding="utf-8") as f:
+            _read.update(mtime=mtime, table=json.load(f))
+    return _read["table"]
 
 
 def base(language):

@@ -56,6 +56,7 @@ import constants
 import protocol
 import settings
 import llama
+import vad
 from llama import Models
 
 log = logging.getLogger("gemma_voice")
@@ -76,6 +77,7 @@ async def main():
     st = settings.apply(current)
     models = Models(current["models"], manage=not cli.ignore_selection,
                     models_folder=constants.path(current["modelsFolder"]))
+    await asyncio.to_thread(vad.shared)  # the speech detector loads now, not in the event loop at the first recording
     if cli.ignore_selection:
         await models.get(next(iter(current["models"])))  # the default model answers before the first recording
     log.info("settings: %s", json.dumps(current, ensure_ascii=False))

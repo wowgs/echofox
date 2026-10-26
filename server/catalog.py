@@ -34,9 +34,16 @@ PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
 DEFAULT = "gemma-4-e4b"  # a registry entry from before the catalog (config version 3) was this model
 
 
+_read = {}  # the catalog as last read, and its file's change time
+
+
 def entries():
-    with open(PATH, encoding="utf-8") as f:
-        return json.load(f)
+    """The catalog: read again only when its file changed. The callers do not change what it gives."""
+    mtime = os.stat(PATH).st_mtime_ns
+    if _read.get("mtime") != mtime:
+        with open(PATH, encoding="utf-8") as f:
+            _read.update(mtime=mtime, entries=json.load(f))
+    return _read["entries"]
 
 
 def of(model_entry):
