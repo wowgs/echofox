@@ -32,6 +32,22 @@ do {
     check(false, "info does not decode: \(error)")
 }
 
+// The config's "microphone" among the inputs: the built-in one by its kind, a device by its UID, macOS's input.
+do {
+    typealias D = MicrophoneChoice.Device
+    let mac = D(uid: "BuiltInMic", builtIn: true), headset = D(uid: "AirPods-1", builtIn: false)
+    check(MicrophoneChoice.value(for: mac) == "builtin" && MicrophoneChoice.value(for: headset) == "AirPods-1", "mic: the value written")
+    check(MicrophoneChoice.names("builtin", mac) && !MicrophoneChoice.names("builtin", headset)
+          && MicrophoneChoice.names("AirPods-1", headset) && !MicrophoneChoice.names("system", mac), "mic: the check mark")
+    check(MicrophoneChoice.isListed("system", among: []) && !MicrophoneChoice.isListed("Gone-2", among: [mac, headset]),
+          "mic: a gone device is not listed")
+    check(MicrophoneChoice.resolve("AirPods-1", among: [mac, headset]).index == 1, "mic: the chosen device")
+    check(MicrophoneChoice.resolve("Gone-2", among: [mac, headset]) == (0, "the chosen microphone is gone: the built-in one"),
+          "mic: a gone device falls back to the built-in one")
+    check(MicrophoneChoice.resolve("builtin", among: [headset]).index == nil && MicrophoneChoice.resolve("system", among: [mac]).index == nil,
+          "mic: no built-in one, or macOS's input: nil")
+}
+
 // What the focus snapshot takes of an app, as the example's enabled adapters ask.
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))

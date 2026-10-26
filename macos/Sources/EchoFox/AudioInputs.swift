@@ -1,6 +1,5 @@
-// The Mac's audio inputs, through Core Audio, and the one the config's "microphone" names: "builtin" (the default: the
-// Mac's own microphone, whatever macOS's input is), "system" (macOS's input, which follows headsets as they come and
-// go), or a device's UID (one microphone, kept when others connect).
+// The Mac's audio inputs, through Core Audio, and the one the config's "microphone" names (MicrophoneChoice decides
+// which).
 import CoreAudio
 import Foundation
 import EchoFoxCore
@@ -10,6 +9,7 @@ struct AudioInput: Equatable {
     let uid: String
     let name: String
     let builtIn: Bool
+    var device: MicrophoneChoice.Device { MicrophoneChoice.Device(uid: uid, builtIn: builtIn) }
 }
 
 enum AudioInputs {
@@ -43,17 +43,8 @@ enum AudioInputs {
     /// built-in microphone, then to macOS's input; `why` says which.
     static func chosen(_ choice: String) -> (input: AudioInput?, why: String) {
         let inputs = all()
-        let builtIn = inputs.first(where: \.builtIn)
-        switch choice {
-        case Config.systemMicrophone:
-            return (nil, "macOS's input")
-        case Config.builtInMicrophone:
-            return builtIn.map { ($0, "the built-in microphone") } ?? (nil, "no built-in microphone: macOS's input")
-        default:
-            if let device = inputs.first(where: { $0.uid == choice }) { return (device, "the chosen microphone") }
-            return builtIn.map { ($0, "the chosen microphone is gone: the built-in one") }
-                ?? (nil, "the chosen microphone is gone: macOS's input")
-        }
+        let (i, why) = MicrophoneChoice.resolve(choice, among: inputs.map(\.device))
+        return (i.map { inputs[$0] }, why)
     }
 
     /// The device's input volume, 0…1, as macOS's Sound settings show it: the device's own control (kAudioDevice

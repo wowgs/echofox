@@ -155,7 +155,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
 
     /// The config's microphone is this input: the built-in one for "builtin", the device for its UID.
     private func isChosen(_ input: AudioInput, _ s: MenuState) -> Bool {
-        s.config.microphone == Config.builtInMicrophone ? input.builtIn : s.config.microphone == input.uid
+        MicrophoneChoice.names(s.config.microphone, input.device)
     }
 
     /// The input volume of the microphone the app records: the same control as in macOS's Sound settings.
@@ -176,7 +176,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
     private func microphoneItems(_ s: MenuState, _ inputs: [AudioInput]) -> [NSMenuItem] {
         var items = inputs.map { input in
             checked(action(input.name + (input.builtIn ? " (built-in)" : "")) {
-                $0.choose(microphone: input.builtIn ? Config.builtInMicrophone : input.uid)
+                $0.choose(microphone: MicrophoneChoice.value(for: input.device))
             }, isChosen(input, s))
         }
         if inputs.isEmpty { items.append(disabled("No microphone found.")) }

@@ -525,8 +525,7 @@ struct MicrophonePicker: View {
 
     /// The config's microphone is one of the choices: a connected device, the built-in one, or macOS's input.
     private var chosenIsListed: Bool {
-        let m = model.config.microphone
-        return m == Config.builtInMicrophone || m == Config.systemMicrophone || model.inputs.contains { $0.uid == m }
+        MicrophoneChoice.isListed(model.config.microphone, among: model.inputs.map(\.device))
     }
 
     var body: some View {
@@ -535,7 +534,7 @@ struct MicrophonePicker: View {
             model.microphoneChanged()
         })) {
             ForEach(model.inputs, id: \.uid) { input in
-                Text(input.name + (input.builtIn ? " (built-in)" : "")).tag(input.builtIn ? Config.builtInMicrophone : input.uid)
+                Text(input.name + (input.builtIn ? " (built-in)" : "")).tag(MicrophoneChoice.value(for: input.device))
             }
             Text("Follow macOS's input").tag(Config.systemMicrophone)
             if !chosenIsListed { Text("Not connected").tag(model.config.microphone) }
