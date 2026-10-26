@@ -94,11 +94,12 @@ The ports are in `server/constants.py`.
 | Workflow | Trigger | Result |
 |---|---|---|
 | `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac. |
-| `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG. |
+| `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, signed and sent to Apple's notary service. |
+| `staple.yml` | The notary relay, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
 
-An ordinary branch push starts neither workflow. A tagged release publishes the DMG to GitHub Releases; a manual run keeps it as an artifact for 14 days.
+An ordinary branch push starts none of them.
 
-With the required Developer ID secrets, the release workflow signs and notarizes the package. Without them, it uses ad hoc signing for testing. The required secret names are listed in `.github/workflows/release.yml`.
+With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run staples Apple's ticket to the DMG and publishes it: to GitHub Releases for a tag, or as an artifact for 14 days for a manual run. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` signs ad hoc, for tests, and publishes the DMG itself. The secret names are listed at the top of each workflow.
 
 ## Diagrams
 

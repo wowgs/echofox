@@ -58,6 +58,17 @@ EchoFox собирается в один `.dmg` без модели. Внутр�
 
 При наличии секретов Developer ID и App Store Connect сборка подписывает приложение, отправляет DMG на нотаризацию и прикрепляет результат. Без секретов используется ad hoc подпись только для проверки. Список секретов находится в начале `.github/workflows/release.yml`.
 
+### Нотаризация без ожидания
+
+Apple проверяет заявку от минут до суток и дольше: у новых команд на форумах Apple в 2026 году сообщали о 17–24 часах и до 4 дней. Первая заявка EchoFox 25 октября провисела больше 40 минут, раннер ждал её и тратил квоту. Поэтому раннер Apple не ждёт: выпуск состоит из двух запусков, а второй запускает уведомление Apple.
+
+1. **`release.yml`** проверяет, собирает и подписывает DMG, отправляет его в Apple командой `notarytool submit --webhook <адрес ретранслятора>` и сохраняет артефакт `EchoFox-notarizing-<id заявки>`: подписанный DMG и `release.json` (`submission`, `ref`, `refType`, `sha`, `run`). Запуск на этом заканчивается.
+2. **Apple** по окончании проверки отправляет POST на адрес ретранслятора. Формат уведомления Apple не документирует. По стороннему описанию это `{"signature", "cert_chain", "payload"}`, где `payload` — JSON-строка с `submission_id`, `team_id` и `event: "processing-complete"`.
+3. **Ретранслятор** — Cloudflare Worker `echofox-notary` (`ci/notary-relay/`). Он берёт из уведомления `submission_id`, проверяет, что это UUID, а `team_id`, если он есть, совпадает с командой EchoFox. Затем запускает `staple.yml` через `POST /repos/wowgs/echofox/actions/workflows/staple.yml/dispatches` с `{"ref": "master", "inputs": {"submission": <id>}}`. Токен GitHub хранится секретом Worker: fine-grained, только репозиторий `wowgs/echofox`, право Actions: write. Право Contents: write, которое требует `repository_dispatch`, разрешало бы и пуш кода, поэтому он не используется.
+4. **`staple.yml`** запускается от ретранслятора или вручную с ID заявки. Он находит артефакт заявки, спрашивает статус у Apple (`notarytool info`) и при `Accepted` прикрепляет результат (`stapler staple`), проверяет его (`stapler validate`, `spctl`) и публикует: для тега — GitHub Release, иначе — артефакт `EchoFox-dmg` на 14 дней. При `In Progress` он завершается с ошибкой без публикации, при `Invalid` печатает журнал Apple (`notarytool log`). Ключ подписи Developer ID ему не нужен.
+
+Поддельный запрос на ретранслятор может только запустить `staple.yml`, а тот всё равно сверяет статус у Apple. Если уведомление не придёт, `staple.yml` запускается вручную. ID заявки виден в журнале `release.yml` и в `notarytool history`.
+
 Проверки на GitHub прошли 25 октября за 1 минуту 27 секунд. Это подтверждает запуск тестов, но не готовность подписанного выпуска. Автообновления через Sparkle остаются планом.
 
 ## Телеметрия

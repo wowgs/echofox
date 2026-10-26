@@ -1,0 +1,72 @@
+# The second half of a release (docs/design/7-distribution.md, "Нотаризация без ожидания"): the notary relay
+# (ci/notary-relay) starts it when Apple has checked a dmg that release.yml sent; the button (Actions, Run workflow)
+# starts it too, with the submission's id from release.yml's log or notarytool history. It takes the signed dmg of the
+# submission (the artifact EchoFox-notarizing-<id>), asks Apple for the verdict, and on Accepted staples Apple's
+# ticket to the dmg and publishes it: a GitHub Release for a tag v*, else the artifact EchoFox-dmg. It needs no
+# Developer ID key, only the notary key.
+#
+# Secrets: NOTARY_KEY_P8 (the App Store Connect API key, the .p8 file in base64), NOTARY_KEY_ID, NOTARY_ISSUER_ID
+name: Staple
+on:
+  workflow_dispatch:
+    inputs:
+      submission:
+        description: The notary submission's id
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: staple-${{ inputs.submission }}
+jobs:
+  staple:
+    runs-on: macos-26
+    env:
+      SUBMISSION: ${{ inputs.submission }}
+    steps:
+      - name: The signed dmg of the submission, from the run that sent it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ $SUBMISSION =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "not a submission id: $SUBMISSION"; exit 1; }
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=EchoFox-notarizing-$SUBMISSION" \
+            --jq '.artifacts[0].workflow_run.id // empty')
+          [ -n "$run" ] || { echo "no artifact EchoFox-notarizing-$SUBMISSION"; exit 1; }
+          gh run download "$run" -R "$GITHUB_REPOSITORY" -n "EchoFox-notarizing-$SUBMISSION" -D notarizing
+          jq . notarizing/release.json
+      - name: Apple's verdict
+        env:
+          KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
+          echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          auth=(--key "$RUNNER_TEMP/notary.p8" --key-id "$KEY_ID" --issuer "$ISSUER_ID")
+          status=$(xcrun notarytool info "$SUBMISSION" "${auth[@]}" --output-format json | jq -r .status)
+          echo "Apple: $status"
+          if [ "$status" = Invalid ]; then xcrun notarytool log "$SUBMISSION" "${auth[@]}"; fi
+          [ "$status" = Accepted ] || { echo "not accepted (yet): nothing is published"; exit 1; }
+      - name: The ticket stapled to the dmg, and Gatekeeper's verdict
+        run: |
+          xcrun stapler staple notarizing/EchoFox.dmg
+          xcrun stapler validate notarizing/EchoFox.dmg
+          spctl --assess --type open --context context:primary-signature -vv notarizing/EchoFox.dmg
+      - name: Where the dmg goes
+        id: where
+        run: echo "refType=$(jq -r .refType notarizing/release.json)" >> "$GITHUB_OUTPUT"
+      - name: Published as the release of the tag
+        if: steps.where.outputs.refType == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(jq -r .ref notarizing/release.json)
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "$tag is out already"; exit 0; fi
+          gh release create "$tag" notarizing/EchoFox.dmg -R "$GITHUB_REPOSITORY" --title "EchoFox $tag" --generate-notes
+      - name: Published as an artifact (a run by the button)
+        if: steps.where.outputs.refType != 'tag'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: EchoFox-dmg
+          path: notarizing/EchoFox.dmg
+          retention-days: 14

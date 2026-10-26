@@ -1,7 +1,9 @@
 # The bundled app (macos/build-app.sh --dmg) as EchoFox.dmg (docs/design/7-distribution.md), after the tests
-# (tests.yml). On a tag v*, the dmg goes into a GitHub Release of that tag; by the button (Actions, Run workflow), it
-# is kept as an artifact of the run. With the Developer ID secrets, the app is signed with Developer ID and the
-# hardened runtime, and the dmg is notarized and stapled; without them, the app is signed ad hoc, for tests only.
+# (tests.yml). With the Developer ID secrets, the app is signed with Developer ID and the hardened runtime, and the dmg
+# goes to Apple's notary service without waiting for it: the run keeps the signed dmg as the artifact
+# EchoFox-notarizing-<submission id>, and when Apple has checked it, the notary relay (ci/notary-relay) starts
+# staple.yml, which staples Apple's ticket and publishes the dmg (a GitHub Release for a tag v*, else an artifact).
+# Without the secrets, the app is signed ad hoc, for tests only, and this run publishes it itself.
 #
 # Secrets:
 #   DEVELOPER_ID_P12           the Developer ID Application certificate with its key, as a .p12 file in base64
@@ -24,6 +26,8 @@ jobs:
     runs-on: macos-26
     env:
       HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+      # Apple calls it when the check is over; it starts staple.yml
+      NOTARY_WEBHOOK: https://notary-webhook.invalid
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: The cache of the pinned Python and llama-server
@@ -47,31 +51,46 @@ jobs:
           # Apple's intermediate certificate, which codesign needs to build the chain to Apple Root CA
           security import macos/app/DeveloperIDG2CA.cer -k "$keychain"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          # shellcheck disable=SC2046  # the list of keychains, split into its paths on purpose
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm "$RUNNER_TEMP/developer-id.p12"
       - name: The bundled app and its dmg
         env:
           ECHOFOX_SIGN: ${{ secrets.DEVELOPER_ID_NAME }}
         run: macos/build-app.sh --dmg
-      - name: Notarize and staple the dmg
+      - name: The dmg to Apple's notary service, without waiting
+        id: notary
         if: env.HAS_DEVELOPER_ID == 'true'
         env:
           KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
+          trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
           echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
-          xcrun notarytool submit macos/build/EchoFox.dmg --key "$RUNNER_TEMP/notary.p8" \
-            --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait
-          xcrun stapler staple macos/build/EchoFox.dmg
-          rm "$RUNNER_TEMP/notary.p8"
-      - name: The GitHub Release of the tag
-        if: github.ref_type == 'tag'
+          id=$(xcrun notarytool submit macos/build/EchoFox.dmg --key "$RUNNER_TEMP/notary.p8" --key-id "$KEY_ID" \
+            --issuer "$ISSUER_ID" --webhook "$NOTARY_WEBHOOK" --no-wait --output-format json | jq -r .id)
+          [[ $id =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "notarytool gave no submission id"; exit 1; }
+          echo "submission $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          mkdir -p notarizing
+          mv macos/build/EchoFox.dmg notarizing/
+          jq -n --arg submission "$id" --arg ref "$GITHUB_REF_NAME" --arg refType "$GITHUB_REF_TYPE" \
+            --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" '$ARGS.named' > notarizing/release.json
+      - name: The signed dmg, until Apple has checked it (staple.yml takes it)
+        if: env.HAS_DEVELOPER_ID == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: EchoFox-notarizing-${{ steps.notary.outputs.id }}
+          path: notarizing/
+          retention-days: 30
+      - name: The GitHub Release of the tag, signed ad hoc
+        if: env.HAS_DEVELOPER_ID != 'true' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" macos/build/EchoFox.dmg --title "EchoFox $GITHUB_REF_NAME" --generate-notes
-      - name: The dmg as an artifact of a run by the button
-        if: github.ref_type != 'tag'
+      - name: The dmg as an artifact of a run by the button, signed ad hoc
+        if: env.HAS_DEVELOPER_ID != 'true' && github.ref_type != 'tag'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: EchoFox-dmg
