@@ -77,7 +77,7 @@ class Adapter(abc.ABC):
     @abc.abstractmethod
     def context(self, focus, hints):
         """What the speaker writes into, or None:
-        {"about": what it is, told to the model ("a Telegram chat with Anna"),
+        {"about": what it is, told to the model ("a chat with Anna in a messenger"),
          "messages": [{"from": who wrote it, told to the model, "text": …}], newest first,
          "terms": names and words of this place (contacts, project names), optional,
          "source": where it was read, for the record, optional,
@@ -133,7 +133,7 @@ def bundle(snapshot):
 from . import registry  # noqa: E402
 
 
-CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s with Claude Code's transcript (2026-10-15)
+CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s for a plugin that reads a local transcript (2026-10-15)
 
 # The plugins run on a thread of their own, not in the event loop's default pool, which the model's requests use:
 # a plugin that hangs past the timeout keeps its thread, and must not take one of theirs. While it hangs, the next

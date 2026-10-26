@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
@@ -129,9 +130,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = {k: os.environ[k] for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS")}
-            os.environ.update(ECHOFOX_PROJECTS=os.path.join(d, "projects"),
-                              ECHOFOX_DESKTOP_SESSIONS=os.path.join(d, "store"))
+            env = mock.patch.dict(os.environ, {"ECHOFOX_PROJECTS": os.path.join(d, "projects"),
+                                               "ECHOFOX_DESKTOP_SESSIONS": os.path.join(d, "store")})
+            env.start()
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
@@ -139,7 +140,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertLogs("gemma_voice", level="INFO") as logs:
                     stub, got = await self.run_stream({**START, "private": True, "snapshot": snapshot}, LOUD)
             finally:
-                os.environ.update(saved)
+                env.stop()
         self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["gemma-e4b piece 1"])
         self.assertEqual(set(glob.glob(os.path.join(self.args.recordings, "*", "*"))), before)  # no recording folder
         self.assertNotIn("Готово.", stub.calls[0][1])  # no context before the prompt
@@ -218,9 +219,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 f.write(json.dumps(reply) + "\n")
             with open(os.path.join(d, "store", "o", "a", "local_abc.json"), "w") as f:
                 json.dump({"cliSessionId": "s1"}, f)
-            saved = {k: os.environ[k] for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS")}
-            os.environ.update(ECHOFOX_PROJECTS=os.path.join(d, "projects"),
-                              ECHOFOX_DESKTOP_SESSIONS=os.path.join(d, "store"))
+            env = mock.patch.dict(os.environ, {"ECHOFOX_PROJECTS": os.path.join(d, "projects"),
+                                               "ECHOFOX_DESKTOP_SESSIONS": os.path.join(d, "store")})
+            env.start()
             snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
                         "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             try:
@@ -229,7 +230,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 stub2, got = await self.run_stream({**START, "hints": {"sessions": ["s1"]}}, LOUD)
                 a2 = self.latest()[1]
             finally:
-                os.environ.update(saved)
+                env.stop()
         self.assertIn("Claude: Готово.", stub.calls[0][1])
         self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
         self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],

@@ -1,8 +1,8 @@
 """The tests' sandbox. Every test module imports it before anything else (test_sandbox.py checks that), so that no
 test can touch the working setup:
-- HOME and every path the server reads from the environment ($ECHOFOX_CONFIG, _PLUGINS, _PROJECTS,
-  _DESKTOP_SESSIONS) point into a new temporary folder: the config, the recordings, the metrics, the adapter plugins,
-  ~/.claude and Claude Desktop's session records there are empty and the tests' own;
+- HOME and the paths the server reads from the environment ($ECHOFOX_CONFIG, $ECHOFOX_PLUGINS) point into a new
+  temporary folder: the config, the recordings, the metrics, the adapter plugins and every file a plugin reads under
+  HOME there are empty and the tests' own;
 - launchctl is a fake that only notes its arguments (llama.LAUNCHCTL), so no launchd agent starts or stops;
 - connections to the ports of the working and the test servers (constants.py) are refused, so a test never reaches a
   real dictation server or llama-server."""
@@ -17,9 +17,7 @@ ROOT = os.path.realpath(tempfile.mkdtemp(prefix="echofox-tests-"))
 REAL_HOME = os.path.expanduser("~")
 os.environ["HOME"] = ROOT
 for var, path in {"ECHOFOX_CONFIG": ".echofox/config.json",
-                  "ECHOFOX_PLUGINS": "Library/Application Support/EchoFox/adapters",
-                  "ECHOFOX_PROJECTS": ".claude/projects",
-                  "ECHOFOX_DESKTOP_SESSIONS": "Library/Application Support/Claude/claude-code-sessions"}.items():
+                  "ECHOFOX_PLUGINS": "Library/Application Support/EchoFox/adapters"}.items():
     os.environ[var] = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(os.environ[var]) if var == "ECHOFOX_CONFIG" else os.environ[var], exist_ok=True)
 
