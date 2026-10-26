@@ -1,4 +1,4 @@
-# The bundled app (macos/build-app.sh --dmg) as EchoFox.dmg (docs/design/7-distribution.md), after the tests
+# The bundled app (macos/build-app.sh --dmg) as EchoFox.dmg (docs/distribution.md), after the tests
 # (tests.yml). With the Developer ID secrets, the app is signed with Developer ID and the hardened runtime, and the dmg
 # goes to Apple's notary service without waiting for it: the run keeps the signed dmg as the artifact
 # EchoFox-notarizing-<submission id>, and when Apple has checked it, the notary relay (ci/notary-relay) starts

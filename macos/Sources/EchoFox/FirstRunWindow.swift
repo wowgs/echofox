@@ -1,4 +1,4 @@
-// The window of the first start (docs/design/7-distribution.md, "Скачивание"): when no variant of the menu's model is
+// The window of the first start (docs/distribution.md, "Models"): when no variant of the menu's model is
 // downloaded, it asks which one to download, shows the download, and then names the variant in the config. The
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
 // only place of the full character in the app (macos/art/README.md).

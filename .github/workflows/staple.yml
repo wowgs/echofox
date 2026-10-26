@@ -1,4 +1,4 @@
-# The second half of a release (docs/design/7-distribution.md, "Нотаризация без ожидания"): the notary relay
+# The second half of a release (docs/distribution.md, "Releases"): the notary relay
 # (ci/notary-relay) starts it when Apple has checked a dmg that release.yml sent; the button (Actions, Run workflow)
 # starts it too, with the submission's id from release.yml's log or notarytool history. It takes the signed dmg of the
 # submission (the artifact EchoFox-notarizing-<id>), asks Apple for the verdict, and on Accepted staples Apple's
