@@ -39,6 +39,8 @@ Use <kbd>⌘</kbd> **right Command** for **Ultra Private Dictation**: the same l
 
 Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
 
+EchoFox keeps them so that it can learn your voice and your words. We plan to fine-tune the model for each user with LoRA, on your Mac, from your own recordings. **Label Recordings…** in the menu prepares for it. You correct the transcripts, and the corrected ones become the training examples. [Training plan →](docs/lora-training/1-idea.md)
+
 Apple Silicon · macOS 13+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
 
 [How recognition works](docs/reference/1-server.md) · [Build and develop](docs/reference/7-development.md) · [All documentation](docs/README.md)
