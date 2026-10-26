@@ -1,4 +1,4 @@
-// Where each setting is shown: in the menu bar's menu, on a page of the settings window, or both (docs/design/5-ui.md,
+// Where each setting is shown: in the menu bar's menu, on a page of the settings window, or both (docs/design.md,
 // "Как устроены настройки"). What a setting is (its owner, kind, range, default, help) comes from the server's info
 // for the server's, the models' and the adapters' settings (SettingInfo), and from the app for its own. Where it is
 // shown is the app's alone, here: to move a setting between the menu and the window, change its line in `places`. A

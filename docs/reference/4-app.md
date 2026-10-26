@@ -31,7 +31,7 @@ After recording stops, the app waits up to 180 seconds for each next piece of te
 
 ## Requirements and model choices
 
-Use an Apple Silicon Mac with at least 16 GB of memory and macOS 13 or later. The app has been tested on an Apple M5 with 24 GB running macOS 27; older macOS versions have not been verified.
+Use an Apple Silicon Mac with at least 16 GB of memory and macOS 14 or later. Everything in the app is built for macOS 14, but it has run only on an Apple M5 with 24 GB and macOS 27; macOS 14–26 are not tested.
 
 The two downloads are differently compressed variants of Gemma 4 E4B:
 
@@ -44,13 +44,13 @@ Memory figures are approximate. A systematic comparison of recognition quality a
 
 ## The first start
 
-Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications.
+Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications. If you open it from the dmg, it asks you to move it to Applications and quits: its server must not depend on a disk image that goes away.
 
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.
 
-The download goes on if you close the window.
+The download goes on if you close the window. While it runs, Settings shows the variant as downloading, without a Download button.
 
 ## The menu and the settings window
 
@@ -84,6 +84,22 @@ This prepares data for future model training. It does not train the model automa
 | Esc | Close the window. |
 
 See [recordings and labels](5-recordings.md) for file formats and storage paths.
+
+## Update
+
+Quit EchoFox, replace it in Applications with the new version, and open it again. The downloaded models stay. A new version restarts the dictation server and `llama-server` by itself.
+
+## Uninstall
+
+Quit EchoFox, stop its two launchd agents, and remove them and the app:
+
+```sh
+launchctl bootout gui/$(id -u)/echofox.gemma-voice
+launchctl bootout gui/$(id -u)/echofox.llama-server
+rm ~/Library/LaunchAgents/echofox.gemma-voice.plist ~/Library/LaunchAgents/echofox.llama-server.plist
+```
+
+Your data is in `~/Library/Application Support/EchoFox` (models, plugins), `~/.echofox` (config) and `~/Library/Logs/EchoFox`; your recordings are in the folder set in Settings. If you delete only the app, launchd stops its server after one failed start (macOS 27).
 
 ## Logs
 

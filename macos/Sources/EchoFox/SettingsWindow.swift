@@ -1,4 +1,4 @@
-// The settings window (docs/design/5-ui.md): pages in a sidebar, each built from SettingsLayout. A setting described
+// The settings window (docs/design.md): pages in a sidebar, each built from SettingsLayout. A setting described
 // by a SettingInfo (the server's in its info, the app's in SettingsLayout.appSettings) is one SettingRow: a switch, a
 // number or a text, with what is in force and where it comes from (SettingStore.state), and a button that takes the
 // value out of the config. The app's other items (the hotkeys, the microphone, the model, the prompt, the adapters,

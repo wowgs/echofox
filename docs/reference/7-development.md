@@ -42,9 +42,11 @@ Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninst
 
 Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)).
 
-The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. The build rejects libraries linked from Homebrew. Models are downloaded separately.
+The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, pip, `actool` and `LSMinimumSystemVersion`. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
 
-`ECHOFOX_SIGN` selects the signing identity. Development builds use the self-signed “EchoFox Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../distribution.md#releases).
+The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag. Two builds of one commit have the same version, so after a rebuild without a new commit, restart the server yourself.
+
+`ECHOFOX_SIGN` selects the signing identity; `ECHOFOX_SIGN=-` signs ad hoc. Without it and outside CI, the build uses the self-signed “EchoFox Dev” certificate, or signs ad hoc with a warning when there is none. When `ECHOFOX_SIGN` or `CI` is set and the identity is missing, the build stops. A public release needs the signing and notarization setup described in [distribution](../distribution.md#releases).
 
 ## Run the tests
 

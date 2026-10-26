@@ -1,5 +1,5 @@
-"""The knobs of a recording: one table for their names, types, ranges, owners and defaults (docs/design/4-hld.md,
-"Настройки"). Each knob has one owner, which gives its default:
+"""The knobs of a recording: one table for their names, types, ranges, owners and defaults (docs/design.md,
+"Settings"). Each knob has one owner, which gives its default:
   server   the default is here; the user's change is in the config's section "server"
   model    the default is its catalog entry's "options" (catalog.json), else here; the user's change is in a model's
            "options" in the config

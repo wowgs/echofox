@@ -1,6 +1,6 @@
 """The model catalog (catalog.json): what each supported model brings, so that nothing about one model is written in
 the server's code. A model of the config's registry names its catalog entry ("catalog"); the entry gives the model's
-defaults (docs/design/4-hld.md, "Настройки"):
+defaults (docs/design.md, "Settings"):
   name               for people
   maxAudioSeconds    the audio a request takes: Gemma 4, 30 s (model card and processor_config.json: 25 tokens a
                      second, 750 tokens)

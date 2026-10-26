@@ -1,7 +1,7 @@
 """The server's settings and the config file it shares with its clients.
 
 The config, ~/.echofox/config.json ($ECHOFOX_CONFIG), version 7. Each setting has one owner
-(docs/design/4-hld.md, "Настройки"), and the user's change of it is at that owner, in this file only; the knobs
+(docs/design.md, "Settings"), and the user's change of it is at that owner, in this file only; the knobs
 that are constants (tuning.py) are not in it:
   {"version": 7,
    "model": "<name>", "language": "ru", "microphone": …, "dictationKey": …, "silenceStopSeconds": 60,   (the app's)
@@ -371,7 +371,7 @@ def migrate_4(path):
 
 
 def migrate_3(path):
-    """Version 3 → 4: each setting has its owner (docs/design/4-hld.md, "Настройки"). "fillers" go to the languages;
+    """Version 3 → 4: each setting has its owner (docs/design.md, "Settings"). "fillers" go to the languages;
     "saveRecordings" and "labeled" to the section "server"; a model's knob in the section "server" (the length of
     the text) goes to each model's options; a model's options keep only the model's knobs: an adapter's knob goes to
     each adapter's entry that has no value of its own (the model's value was every adapter's), a server's knob to the

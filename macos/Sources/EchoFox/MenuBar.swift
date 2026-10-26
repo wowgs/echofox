@@ -1,6 +1,6 @@
 // The menu bar item: the fox of the state (idle, recording, Ultra Private Dictation, writing the text; MenuBarIcon), or
 // the crossed-out microphone of a problem, and a short menu of what is touched often, built each time it opens from
-// SettingsLayout.menu (docs/design/5-ui.md); everything else is in the settings window. A dictation is the hotkeys',
+// SettingsLayout.menu (docs/design.md); everything else is in the settings window. A dictation is the hotkeys',
 // not the menu's. It shows; it never decides: the actions go back to the App.
 import AppKit
 import AVFoundation

@@ -1,6 +1,6 @@
 // Where a setting's value lives in the config, what is in force, and where that comes from: one rule for every
-// setting of the settings window, the server's, the models', the adapters' and the app's (docs/design/4-hld.md,
-// "Настройки"). The user's value is at the owner; without one, the value comes from the level under it:
+// setting of the settings window, the server's, the models', the adapters' and the app's (docs/design.md,
+// "Settings"). The user's value is at the owner; without one, the value comes from the level under it:
 //   an adapter's setting: the adapter's entry, then its manifest (its info's context), then the fallback (the
 //     setting's default);
 //   any other setting: the owner's default (SettingInfo.default).
