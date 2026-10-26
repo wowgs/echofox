@@ -254,27 +254,19 @@ struct SettingsView: View {
                 ForEach(SettingsLayout.sidebar, id: \.self) { entry in
                     switch entry {
                     case let .page(page):
-                        Label { Text(page.title) } icon: { SidebarIcon { Image(systemName: page.symbol).resizable().scaledToFit() } }
-                            .tag(SidebarItem.page(page))
+                        Label {
+                            Text(page.title)
+                        } icon: {
+                            SidebarIcon { Image(systemName: page.symbol).resizable().scaledToFit() }
+                        }
+                        .tag(SidebarItem.page(page))
                     case .adapters:
-                        // A heading, not a page: a click anywhere on it opens or closes the adapters' rows.
-                        DisclosureGroup(isExpanded: $model.adaptersOpen) {
+                        // A section, not a page: its heading opens and closes the adapters' rows; macOS shows its
+                        // chevron at the right of the heading when the pointer is over it.
+                        Section(SidebarEntry.adaptersTitle, isExpanded: $model.adaptersOpen) {
                             ForEach(model.info?.adapters ?? [], id: \.name) { a in
                                 AdapterSidebarRow(model: model, adapter: a).tag(SidebarItem.adapter(a.name))
                             }
-                        } label: {
-                            Button {
-                                withAnimation { model.adaptersOpen.toggle() }
-                            } label: {
-                                HStack {
-                                    Label { Text(SidebarEntry.adaptersTitle) } icon: {
-                                        SidebarIcon { Image(systemName: SidebarEntry.adaptersSymbol).resizable().scaledToFit() }
-                                    }
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
                 }

@@ -41,7 +41,7 @@ public enum SidebarEntry: Hashable {
     /// The heading "Adapters": no page of its own.
     case adapters
 
-    public static let adaptersTitle = "Adapters", adaptersSymbol = "puzzlepiece.extension"
+    public static let adaptersTitle = "Adapters"
 }
 
 public enum SettingPlace: Equatable {
@@ -78,10 +78,10 @@ public enum SettingsLayout {
         "labeled": [.page(.recordings, section: "Labels", order: 2)],
     ]
 
-    /// The sidebar, top to bottom: the pages, and the adapters' heading, which opens and closes the rows of the
-    /// adapters.
+    /// The sidebar, top to bottom: the pages, then the adapters' section, whose heading opens and closes its rows (as
+    /// Finder's sidebar groups do).
     public static let sidebar: [SidebarEntry] = [.page(.general), .page(.microphone), .page(.language), .page(.model),
-                                                 .adapters, .page(.recordings), .page(.diagnostics)]
+                                                 .page(.recordings), .page(.diagnostics), .adapters]
 
     /// The app's own settings that a SettingRow shows, described as the server describes its own.
     public static let appSettings = [
