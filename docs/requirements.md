@@ -39,7 +39,7 @@ The target behavior of EchoFox. It is not a list of shipped features: the [refer
 ## System
 
 - **FR-20. Diagnostics.** The server's state, the chosen model and the errors.
-- **FR-21. Updates, planned.** Update the app, the server and the catalog without a terminal, through Sparkle.
+- **FR-21. Updates, planned.** Update the app, the server and the catalog without a terminal: the app shows that a new version is out, and one button installs it and starts the app again. Through Sparkle 2 ([distribution](distribution.md#updates)).
 
 ## Non-functional
 
@@ -56,7 +56,7 @@ The target behavior of EchoFox. It is not a list of shipped features: the [refer
 - **NFR-11. Trust.** Readable source code, signing and notarization; network access only for features that say so.
 - **NFR-12. One way to set a value.** A switch is its own field, not a special value of a budget. `--config` chooses the file and adds no second set of settings.
 - **NFR-13. Clear labels.** A setting's title says what changes. Short help only when the title is not enough. The default shows in the field, the allowed range in the error. Natural English that needs no knowledge of the code.
-- **NFR-14. No telemetry.** The app and the bundled parts send no analytics, metrics or identifiers. The only network access is the requested model download. An update mechanism must be described and checked before it ships.
+- **NFR-14. Nothing leaves the Mac.** Nothing of a dictation or of its processing leaves the Mac: no audio, text, context, recordings, labels, settings or metrics. No telemetry: the app and the bundled parts send no analytics, metrics or identifiers. The internet is used for two things only: the model downloads and the updates (the check for a new version and its download).
 
 ## Open questions
 
