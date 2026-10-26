@@ -39,7 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. In a bundled app, the agent also carries the app's version (`ECHOFOX_APP_VERSION`, from the server's own agent), so a new version of the app restarts `llama-server`. The catalog, the variants and the downloads are described in [distribution](../distribution.md#models).
+The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described in [distribution](../distribution.md#models).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 

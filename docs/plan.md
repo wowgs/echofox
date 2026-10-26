@@ -14,7 +14,7 @@ The work that is left, without promised dates; reviewed on 2026-10-26. The [refe
 
 ## Releases
 
-v0.1 is out. The release blockers of the 2026-10-26 review are fixed for v0.2: macOS 14 for everything in the app, the server agent only from a fixed place and restarted by a new version, no wait on the main thread at the first launch, bytecode compiled before signing, no silent ad hoc signature, and no second download from Settings ([distribution](distribution.md)). Before a public release, the checks in [distribution](distribution.md#check-before-a-public-release). Open decisions: opening the repository, updates through Sparkle.
+v0.1 is out. Before v0.2, the release blockers of the 2026-10-26 review are being fixed: the oldest macOS the bundle runs on, the server agent's path and its restart on update, the first launch on the main thread, bytecode written into the signed bundle, a silent ad hoc signature in CI, and a double model download. Before a public release, the checks in [distribution](distribution.md#check-before-a-public-release). Open decisions: opening the repository, updates through Sparkle.
 
 ## Next features
 

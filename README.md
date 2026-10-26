@@ -41,6 +41,6 @@ Regular dictations save audio, text, and context locally by default; saving can 
 
 Why keep them? We plan to introduce automatic on-device fine-tuning (LoRA) based on your own labels in **Label Recordings…**. [Training plan →](docs/research/training.md)
 
-Apple Silicon · macOS 14+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
+Apple Silicon · macOS 13+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
 
 [How recognition works](docs/reference/1-server.md) · [Build and develop](docs/reference/7-development.md) · [All documentation](docs/README.md)
