@@ -1,5 +1,5 @@
 // One dictation: the focus snapshot, the microphone, and one WebSocket to the dictation server (the protocol is in
-// server/gemma_voice.py; the messages in EchoFoxCore/Messages.swift). Sending goes through one serial queue, so the
+// docs/reference/6-protocol.md; the messages in EchoFoxCore/Messages.swift). Sending goes through one serial queue, so the
 // start message (which waits for the snapshot) goes first and the audio and the stop follow in order. Everything else
 // runs on the main thread.
 import FocusSnapshot

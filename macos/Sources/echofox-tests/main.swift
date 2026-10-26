@@ -28,6 +28,9 @@ do {
     var other = examples["info"] as! [String: Any]
     other["interface"] = 99
     check((try? ServerInfo.decode(data(other))) == nil, "info: another interface is refused")
+    var flac = examples["info"] as! [String: Any]
+    flac["encoding"] = "flac"
+    check((try? ServerInfo.decode(data(flac))) == nil, "info: another encoding is refused")
 } catch {
     check(false, "info does not decode: \(error)")
 }
@@ -159,14 +162,14 @@ do {
     check(false, "plan: \(error)")
 }
 
-// The app's start and stop, as in the example: the same keys.
+// The app's start and stop, as in the example: the same keys, except the hints, which the app has none of.
 let start = try JSONSerialization.jsonObject(with: Data(ClientMessage.start(
     model: "gemma-e4b", language: "ru", sampleRate: 16000, client: "echofox-mac",
     snapshot: ["app": ["bundleId": "com.example.app"]]).utf8)) as! [String: Any]
-check(Set(start.keys) == Set((examples["start"] as! [String: Any]).keys), "start: the example's keys")
+check(Set(start.keys) == Set((examples["start"] as! [String: Any]).keys).subtracting(["hints"]), "start: the example's keys")
 let stop = try JSONSerialization.jsonObject(with: Data(ClientMessage.stop(.user).utf8)) as! [String: String]
 check(stop == examples["stop"] as! [String: String], "stop: as in the example")
-check(ClientMessage.StopReason.maxDuration.rawValue == "max_duration", "stop: the reasons' names")
+check(ClientMessage.StopReason.silence.rawValue == "silence", "stop: the reasons' names")
 
 // The server's messages.
 let parsed = (examples["server"] as! [[String: Any]]).map { ServerMessage.parse(String(decoding: data($0), as: UTF8.self)) }

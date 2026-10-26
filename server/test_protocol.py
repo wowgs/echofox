@@ -100,12 +100,12 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_pieces_are_cut_while_the_speaker_talks_and_the_rest_at_the_stop(self):
         self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
-        saved = metrics.path()
         with tempfile.TemporaryDirectory() as d:
-            metrics.configure(os.path.join(d, "metrics.jsonl"))
+            file = os.path.join(d, "metrics.jsonl")
+            saved = metrics.configure(file)
             try:
                 stub, got = await self.run_stream(START, LOUD * 22)
-                lines = [json.loads(l) for l in open(metrics.path(), encoding="utf-8")]
+                lines = [json.loads(l) for l in open(file, encoding="utf-8")]
             finally:
                 metrics.configure(saved)
         # Cuts once 10, 15 and 20 s are heard, at 5, 10 and 15 s; the 7 s left are one piece at the stop.
@@ -238,12 +238,12 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the plugin
 
     async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):
-        saved = metrics.path()
         with tempfile.TemporaryDirectory() as d:
-            metrics.configure(os.path.join(d, "metrics.jsonl"))
+            file = os.path.join(d, "metrics.jsonl")
+            saved = metrics.configure(file)
             try:
                 await self.run_stream({**START, "client": "menubar"}, LOUD + QUIET + LOUD)
-                lines = [json.loads(l) for l in open(metrics.path(), encoding="utf-8")]
+                lines = [json.loads(l) for l in open(file, encoding="utf-8")]
             finally:
                 metrics.configure(saved)
         by = {l["event"]: l for l in lines}

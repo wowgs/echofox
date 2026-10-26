@@ -20,7 +20,7 @@ class SandboxTest(unittest.TestCase):
             self.assertTrue(first.startswith("import sandbox"), f"{f}: the first import is {first!r}")
 
     def test_the_paths_are_the_sandboxs(self):
-        for path in (os.path.expanduser("~"), settings.config_file(), metrics.path(),
+        for path in (os.path.expanduser("~"), settings.config_file(), places.path(places.METRICS),
                      os.environ["ECHOFOX_PLUGINS"]):
             self.assertTrue(os.path.realpath(path).startswith(sandbox.ROOT), path)
         self.assertNotEqual(sandbox.ROOT, sandbox.REAL_HOME)

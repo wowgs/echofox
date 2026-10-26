@@ -175,7 +175,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             def reconfigure(self, entries, models_folder=None):
                 calls.append(("reconfigure", entries))
 
-        saved = metrics.path()
+        saved = metrics.configure(constants.METRICS)  # the watcher sets it from the file; restored below
         try:
             with tempfile.TemporaryDirectory() as d:
                 f = os.path.join(d, "config.json")

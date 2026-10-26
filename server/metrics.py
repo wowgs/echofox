@@ -21,13 +21,10 @@ _path = constants.path(constants.METRICS)
 
 
 def configure(path):
-    """Where metric() writes from now on (the server's setting "metrics")."""
+    """Where metric() writes from now on (the server's setting "metrics"); returns where it wrote before."""
     global _path
-    _path = constants.path(path)
-
-
-def path():
-    return _path
+    before, _path = _path, constants.path(path)
+    return before
 
 
 def metric(event, **fields):

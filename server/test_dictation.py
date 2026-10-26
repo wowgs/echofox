@@ -52,8 +52,8 @@ class PromptTest(unittest.TestCase):
 class DictationTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
-        self.saved = metrics.path()
-        metrics.configure(os.path.join(self.dir.name, "metrics.jsonl"))
+        self.file = os.path.join(self.dir.name, "metrics.jsonl")
+        self.saved = metrics.configure(self.file)
         self.fake = FakeLlamaServer()
 
     def tearDown(self):
@@ -62,7 +62,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.dir.cleanup()
 
     def metrics(self, event):
-        return [m for m in (json.loads(l) for l in open(metrics.path(), encoding="utf-8")) if m["event"] == event]
+        return [m for m in (json.loads(l) for l in open(self.file, encoding="utf-8")) if m["event"] == event]
 
     def dictation(self, options=None, model=None, recording=None):
         # the model's options as a start message gives them: its catalog entry's, then these

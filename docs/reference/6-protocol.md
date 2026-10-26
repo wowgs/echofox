@@ -20,7 +20,7 @@ The client streams audio while recording. The server returns recognized pieces i
     "client": "<name>", "snapshot": {}, "hints": {}}
    ```
 
-   - `snapshot` is the focus snapshot (see [the chat context](3-context.md)). `hints` carries client information and is passed unchanged to adapters.
+   - `snapshot` is the focus snapshot (see [the chat context](3-context.md)). `hints` (optional) carries what the client knows, for example the Claude Code sessions it has open, and is passed unchanged to adapters. The EchoFox app sends none.
    - If `model` is omitted, the server uses the first model in the registry.
    - `"private": true` makes a private dictation: the server saves nothing, runs no adapter and writes no text into its log. The app sends no snapshot with it.
    - An experiment can also send `prompt` and `options`. These override model settings. The app never sends them.

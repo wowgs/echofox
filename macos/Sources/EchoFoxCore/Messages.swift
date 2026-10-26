@@ -1,9 +1,11 @@
-// The messages between the app and the dictation server (server/gemma_voice.py has the protocol). The same examples
-// are checked here (echofox-tests) and in the server's tests.
+// The messages between the app and the dictation server (docs/reference/6-protocol.md; on the server, protocol.py and
+// the modules it hands each message to). The same examples are checked here (echofox-tests) and in the server's tests.
 import Foundation
 
-/// The server's interface this app speaks (protocol.INTERFACE on the server).
+/// The server's interface this app speaks (constants.PROTOCOL_INTERFACE on the server).
 public let protocolInterface = 2
+/// The audio this app sends; a server that takes another one is refused.
+public let audioEncoding = "pcm_s16le"
 
 /// What the server tells about itself ({"type": "info"}).
 public struct ServerInfo: Decodable, Equatable {
@@ -34,7 +36,6 @@ public struct ServerInfo: Decodable, Equatable {
         public let name: String?
         public let catalog: String?
         public let prompt: String?
-        public let maxAudioSeconds: Double?
         /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
         public let variant: String?
         public let variants: [Variant]?
@@ -65,7 +66,6 @@ public struct ServerInfo: Decodable, Equatable {
     public let sampleRate: Int
     public let encoding: String
     public let textWaitSeconds: Double
-    public let maxRecordingSeconds: Double
     public let languages: [Language]
     public let adapters: [Adapter]
     /// The settings the server describes; an older server sends none.
@@ -98,6 +98,9 @@ public struct ServerInfo: Decodable, Equatable {
         guard info.interface == protocolInterface else {
             throw MessageError("the server speaks interface \(info.interface); this app speaks \(protocolInterface)")
         }
+        guard info.encoding == audioEncoding else {
+            throw MessageError("the server takes \(info.encoding) audio; this app sends \(audioEncoding)")
+        }
         return info
     }
 }
@@ -122,15 +125,16 @@ public enum ClientMessage {
 
     /// The start of a recording. `isPrivate`: the server saves nothing of it, runs no adapter and logs no text.
     public static func start(model: String?, language: String, sampleRate: Int, client: String,
-                             snapshot: [String: Any], hints: [String: Any] = [:], isPrivate: Bool = false) -> String {
+                             snapshot: [String: Any], isPrivate: Bool = false) -> String {
         var m: [String: Any] = ["type": "start", "language": language, "sampleRate": sampleRate,
-                                "encoding": "pcm_s16le", "client": client, "snapshot": snapshot, "hints": hints]
+                                "encoding": audioEncoding, "client": client, "snapshot": snapshot]
         if let model { m["model"] = model }
         if isPrivate { m["private"] = true }
         return json(m)
     }
 
-    public enum StopReason: String { case user, silence, maxDuration = "max_duration", error }
+    /// Why the app stops a recording; the server stops it itself at its time limit ("max_duration").
+    public enum StopReason: String { case user, silence, error }
 
     public static func stop(_ reason: StopReason) -> String { json(["type": "stop", "reason": reason.rawValue]) }
 

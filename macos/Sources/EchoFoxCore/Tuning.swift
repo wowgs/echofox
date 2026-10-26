@@ -25,8 +25,6 @@ public enum Tuning {
     public static let silenceStopSeconds: TimeInterval = 60
     /// How often the recording looks for silence.
     public static let silenceCheckSeconds: TimeInterval = 1
-    /// The menu: how much of an adapter's error it shows.
-    public static let menuErrorChars = 100
     /// The microphone tap's buffer, in frames of the input format (about 85 ms at 48 kHz).
     public static let recorderBufferFrames: UInt32 = 4096
     /// The longest tap of the hotkey that counts as a tap, in seconds.

@@ -11,8 +11,6 @@ final class TapKey {
     private var logics: [(Action, TapLogic)] = [(.dictation, TapLogic())]
     private var monitors: [Any] = []
 
-    var running: Bool { !monitors.isEmpty }
-
     /// The keys of the actions, from the config; two actions never share a key (the first keeps it).
     func set(_ keys: [(Action, TapKeyChoice?)]) {
         var taken = Set<TapKeyChoice>()
@@ -21,8 +19,6 @@ final class TapKey {
             return (action, TapLogic(key: key))
         }
     }
-
-    func key(of action: Action) -> TapKeyChoice? { logics.first { $0.0 == action }?.1.key }
 
     func start() {
         guard monitors.isEmpty else { return }
