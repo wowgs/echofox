@@ -1,4 +1,4 @@
-# The versions that a bundled EchoFox.app carries (build-app.sh --bundle), each pinned with its checksum or commit,
+# The versions that a bundled EchoFox.app carries (build-app.sh), each pinned with its checksum or commit,
 # so that a build is the same everywhere (docs/distribution.md).
 
 # The oldest macOS that the app runs on. build-app.sh builds llama-server and the app's Info.plist for it and refuses a

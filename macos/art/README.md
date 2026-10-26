@@ -4,7 +4,7 @@ The approved look of the app. The sources are in this folder. The files that the
 
 | File | What it is | Where the app uses it |
 |---|---|---|
-| `echofox-master.png` | The app icon, 1254 × 1254 px: the fox with a headset on a navy tile. | The source of `macos/app/EchoFox.icon` and `macos/app/EchoFox.icns`. |
+| `echofox-master.png` | The app icon, 1254 × 1254 px: the fox with a headset on a navy tile. | The source of `macos/app/EchoFox.icon`. |
 | `echofox-welcome.png` | The full fox character, 1122 × 1402 px, transparent. | The source of `macos/app/echofox-welcome.png`. |
 | `approved-menu-bar.png` | The approved menu bar icons, large and at 26 × 24 pt, on a light and a blue-gray menu bar. | A reference only. |
 
@@ -14,8 +14,6 @@ The approved look of the app. The sources are in this folder. The files that the
 sips -z 1144 1144 macos/art/echofox-master.png --out /tmp/echofox-1144.png
 sips -c 1024 1024 /tmp/echofox-1144.png --out macos/app/EchoFox.icon/Assets/echofox.png
 ```
-
-`macos/app/EchoFox.icns` is the prebuilt icon for a build without Xcode, with the ten standard sizes from 16 × 16 to 512 × 512 pt at 1x and 2x. macOS 26 and later show such an icon small, on a gray tile (macOS 27.0.1, 2026-10-25).
 
 `macos/app/echofox-welcome.png` is the character at 360 × 450 px, which is 2x for the 160 pt that the first-start window shows:
 

@@ -9,8 +9,8 @@
 # copy in which every model's llamaServer is the test llama-server and no model has a launchd agent, and whose port,
 # metrics and recordings folder are the test server's own; its log is its own too.
 # Usage: [VARIANT=<id>] [BUNDLE=<EchoFox.app>] server/test_server.sh [start|stop|status]; VARIANT picks another
-# variant of the models (q4_0); BUNDLE runs the Python, the server and the llama-server of a bundled app (build-app.sh
-# --bundle) instead of this repository's.
+# variant of the models (q4_0); BUNDLE runs the Python and the server of that app (macos/build/EchoFox.app, for one)
+# instead of this repository's. The llama-server is the app's: BUNDLE's, else the installed one's.
 set -euo pipefail
 HERE=${0:A:h}  # before any cd (a relative $0 resolves from the current folder), and not in c(): inside a function $0 is the function's name
 cd "$HERE"
@@ -70,7 +70,7 @@ name = c.get("model") if c.get("model") in c["models"] else next(iter(c["models"
 entry = {**c["models"][name], "launchd": "test"}
 folder = constants.path((c.get("server") or {}).get("modelsFolder") or constants.MODELS_FOLDER)
 print("\n".join(llama.agent(entry, folder)["ProgramArguments"]))' $STATE/config.json)"})
-    # The working dictation server first: it ends after its running recording (ExitTimeOut in launchd.sh).
+    # The working dictation server first: it ends after its running recording (the agent's ExitTimeOut).
     launchctl bootout $DOMAIN/$SERVER_LABEL 2>/dev/null || true
     for i in {1..$EXIT_WAIT}; do launchctl print $DOMAIN/$SERVER_LABEL >/dev/null 2>&1 || break; sleep 1; done
     launchctl bootout $DOMAIN/$LABEL 2>/dev/null || true

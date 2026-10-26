@@ -56,7 +56,7 @@ async def main():
                  ", ".join(current["models"]), next(iter(current["models"])), path)
         await stop
         # A restart (launchd, a changed host or port) lets the running recordings end: no new connections, the open
-        # ones go on until their text is sent. launchd waits for it (ExitTimeOut in server/launchd.sh).
+        # ones go on until their text is sent. launchd waits for it (ExitTimeOut, LAUNCHD_EXIT_TIMEOUT_S).
         server.close(close_connections=False)
         try:
             await asyncio.wait_for(server.wait_closed(), constants.STOP_WAIT_S)

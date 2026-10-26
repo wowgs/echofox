@@ -1,11 +1,8 @@
-// The launchd agent of the dictation server when the app carries it (macos/build-app.sh --bundle): Python and the
-// server's code in the app's Contents/Resources. The app writes the agent at its start, if it is not what it must be,
-// and starts it again; on a Mac where the server runs from the repository (server/launchd.sh), the app has no server
-// of its own and leaves the agent alone. The agent carries the app's version, so a new version in the same place
-// starts the server again. An app that runs from a disk image or from App Translocation writes no agent: launchd would
+// The launchd agent of the dictation server that the app carries (macos/build-app.sh): Python and the server's code in
+// the app's Contents/Resources. The app writes the agent at its start, if it is not what it must be, and starts it
+// again. The agent carries the app's version, so a new version in the same place starts the server again. An app that runs from a disk image or from App Translocation writes no agent: launchd would
 // keep a path that is gone after the image is ejected or the app quits. The label, the log and the exit timeout are
-// the server's (shared/constants.json); server/launchd.sh writes the same agent for a server that runs from the
-// repository, so one Mac has one server on the working port, whichever wrote it last.
+// the server's (shared/constants.json).
 import Foundation
 
 public enum ServerAgent {

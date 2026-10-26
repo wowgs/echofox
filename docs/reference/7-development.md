@@ -2,51 +2,28 @@
 
 Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
 
-The packaged app already includes its runtime and dependencies. The Homebrew instructions below are for developing from a checkout, not for using a packaged app. To create the self-contained package, see [Build a distributable app](#build-a-distributable-app).
+You use EchoFox as everyone does: the release from GitHub, in `/Applications`. Its server, Python and `llama-server` are inside it. The repository is for changing the code: the tests, the test server and the build of a release.
 
-## Build from source
+## Set up the repository
 
-Run these commands from the repository root on an Apple Silicon Mac. You need Homebrew and Swift build tools. This development setup runs the dictation server from the checkout and uses Homebrew’s `llama-server`.
+Run these commands from the repository root on an Apple Silicon Mac with Xcode and Python 3.14. The environment is for the server's tests and the test server; it never runs your dictation.
 
-1. Install llama.cpp and Python:
+```
+python3 -m venv server/.venv
+server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requirements.txt
+```
 
-   ```
-   brew install llama.cpp python
-   ```
+## Build the app
 
-2. Set up the dictation server and start it as a launchd agent. It starts again at each login, and it starts the model itself.
+`macos/build-app.sh` builds `macos/build/EchoFox.app`; `--dmg` also builds `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)). Releases are built by CI ([below](#ci)); a local build is for a check before a tag.
 
-   ```
-   python3 -m venv server/.venv
-   server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requirements.txt
-   server/launchd.sh install
-   ```
+The build needs Xcode, because `actool` compiles the icon, and a Developer ID Application identity in the keychain. `ECHOFOX_SIGN` names the identity; without it, the build takes the one Developer ID Application identity it finds. Without one, the build stops. It signs with the hardened runtime.
 
-3. Create the self-signed code-signing certificate "EchoFox Dev" in your login keychain. Without it, macOS asks for the permissions again after each build.
+The app includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The app leaves out the server's tests and its development tools. The build keeps its downloads and the `llama-server` build in `macos/.cache`; it builds `llama-server` again when its cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
 
-   ```
-   macos/dev-cert.sh
-   ```
-4. Build the app and open it:
+The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag.
 
-   ```
-   macos/build-app.sh
-   open macos/build/EchoFox.app
-   ```
-
-5. Allow Microphone and Accessibility when macOS asks. If no model is downloaded, the app asks which one to download.
-
-Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninstall` to remove it. The agent has the same label as the agent that a bundled app writes (`echofox.gemma-voice`), so one Mac has one server on the working port. If you open a bundled app from `/Applications` on this Mac, it replaces the agent; run `server/launchd.sh install` again to go back to the checkout. To run the dictation server in the terminal instead: `server/.venv/bin/python server/gemma_voice.py`. The dictation server writes the agent of `llama-server` itself, when it starts the chosen model.
-
-## Build a distributable app
-
-Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)).
-
-The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The bundle leaves out the server's tests and its development tools. The build keeps its downloads and the `llama-server` build in `macos/.cache`; it builds `llama-server` again when its cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
-
-The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag. Two builds of one commit have the same version, so after a rebuild without a new commit, restart the server yourself.
-
-`ECHOFOX_SIGN` selects the signing identity; `ECHOFOX_SIGN=-` signs ad hoc. Without it and outside CI, the build uses the self-signed “EchoFox Dev” certificate, or signs ad hoc with a warning when there is none. When `ECHOFOX_SIGN` or `CI` is set and the identity is missing, the build stops. A public release needs the signing and notarization setup described in [distribution](../distribution.md#releases).
+An app writes the server's launchd agent for itself when it starts, so opening a local build takes the dictation server over from the installed app. Open the installed app again to go back.
 
 ## Run the tests
 
@@ -81,7 +58,7 @@ server/test_server.sh stop
 | Option | Purpose |
 |---|---|
 | `VARIANT=q4_0 server/test_server.sh start` | Test a different model variant. |
-| `BUNDLE=macos/build/bundle/EchoFox.app server/test_server.sh start` | Test the bundled Python, server, and model runtime. |
+| `BUNDLE=macos/build/EchoFox.app server/test_server.sh start` | Test the Python and the server of a built app instead of the repository's. |
 | `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
 | `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
 | `try_wav.py ... --hint KEY=VALUE` | Send a hint to the adapters in the start message; VALUE is JSON, or else text. For example `--hint 'sessions=["<id>"]'` names Claude Code sessions to the Claude plugin. |
@@ -104,7 +81,7 @@ No checkout keeps the token. Only one job can write to the repository: the last 
 
 An ordinary branch push starts none of them.
 
-With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` signs ad hoc, for tests, and keeps the DMG as an artifact. The secret names are listed at the top of each workflow.
+With the Developer ID secrets, `release.yml` signs the DMG and sends it to Apple's notary service without waiting. Apple's check can take minutes or days. When it is over, Apple calls the [notary relay](../../ci/notary-relay/README.md), a Cloudflare Worker, which starts `staple.yml`. That run finds the DMG's artifact on Linux first, so a call with an unknown id starts no Mac. It staples Apple's ticket on a Mac and keeps the DMG as an artifact for 14 days; for a tag, a last job publishes it to GitHub Releases. If the relay does not start it, start `staple.yml` by hand with the submission's id from the log of `release.yml` or from `xcrun notarytool history`. Without the secrets, `release.yml` stops. The secret names are listed at the top of each workflow.
 
 ## Diagrams
 

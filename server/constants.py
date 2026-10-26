@@ -25,7 +25,8 @@ METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
 MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model files, a folder for each model
-LLAMA_SERVER = "/opt/homebrew/bin/llama-server"  # llama.cpp's server (Homebrew); launchd's PATH does not have it
+# llama.cpp's server for a server that runs from the repository (its tests, test_server.sh): the installed app's
+LLAMA_SERVER = "/Applications/EchoFox.app/Contents/Resources/llama/llama-server"
 PLUGINS = "~/Library/Application Support/EchoFox/adapters"  # $ECHOFOX_PLUGINS sets another
 CONFIG_VERSION = 7
 PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it

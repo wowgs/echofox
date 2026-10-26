@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import plistlib
-import shutil
 import subprocess
 import threading
 import time
@@ -233,12 +232,12 @@ BUNDLED_LLAMA_SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.absp
 
 
 def llama_server():
-    """llama.cpp's server: the app bundle's (Contents/Resources/llama, next to the server's folder), else Homebrew's,
-    else the first on the PATH."""
+    """llama.cpp's server: the app bundle's (Contents/Resources/llama, next to the server's folder), else the installed
+    app's (constants.LLAMA_SERVER), for a server that runs from the repository; None if neither is there."""
     for path in (BUNDLED_LLAMA_SERVER, constants.LLAMA_SERVER):
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
-    return shutil.which("llama-server")
+    return None
 
 
 def agent(entry, models_folder):
@@ -255,7 +254,7 @@ def agent(entry, models_folder):
         raise RuntimeError(f"the files of variant {vid} are missing: {', '.join(missing)}")
     binary = llama_server()
     if not binary:
-        raise RuntimeError("llama-server is not installed (brew install llama.cpp)")
+        raise RuntimeError(f"no llama-server, neither in the app nor at {constants.LLAMA_SERVER}")
     url = urllib.parse.urlparse(entry["llamaServer"])
     log_file = constants.path(f"{constants.LOGS}/llama-server.log")
     version = os.environ.get(APP_VERSION)

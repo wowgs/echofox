@@ -52,7 +52,7 @@ class VariantTest(unittest.TestCase):
         constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER = self.saved
 
     def test_the_bundles_llama_server_comes_first(self):
-        self.assertEqual(llama.llama_server(), self.binary)  # no bundled one: Homebrew's
+        self.assertEqual(llama.llama_server(), self.binary)  # no bundled one: the installed app's
         bundled = os.path.join(self.folder, "bundled-llama-server")
         open(bundled, "w").close()
         os.chmod(bundled, 0o755)
