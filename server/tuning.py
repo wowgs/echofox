@@ -143,9 +143,19 @@ def adapter_options(entry):
     return parse({k: v for k, v in (entry or {}).items() if k != "enabled"}, "adapter", "adapter")
 
 
+def resolve(*owners, client=None):
+    """The options of a recording: the owners' values, each over the ones before it, then the client's over all of
+    them (an experiment wins over every owner). The one place of this order (docs/design.md, "Settings"). The owners
+    come in this order: the model's catalog defaults, the user's options of the model; for the context, then the
+    adapter's manifest defaults and the adapter's entry in the config."""
+    out = {}
+    for layer in (*owners, client):
+        out.update(layer or {})
+    return out
+
+
 def value(name, options, server):
-    """A knob's value for one recording: the options' (the client's over the owner's: see Session and Dictation),
-    else the server's, else the fallback."""
+    """A knob's value for one recording: the options' (resolve), else the server's, else the fallback."""
     if name in options:
         return options[name]
     return getattr(server, name, BY_NAME[name].default)

@@ -92,10 +92,9 @@ class Dictation:
         return lo, used
 
     def adapter_options(self, name):
-        """The options for the context of adapter `name`: the model's and the client's, then the adapter's settings
-        (its manifest's defaults, then its entry in the config), then the client's again: they win over every owner."""
-        return {**self.options, **adapters.registry.context_defaults(name), **context_options(name, self.server),
-                **self.client}
+        """The options for the context of adapter `name`: the recording's, then the adapter's owners (tuning.resolve)."""
+        return tuning.resolve(self.options, adapters.registry.context_defaults(name), context_options(name, self.server),
+                              client=self.client)
 
     def _build(self, context):
         """The text before the audio: the context within the token budget, then the prompt. The context's settings are
