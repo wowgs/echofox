@@ -4,7 +4,7 @@ with none enabled, dictation runs in the base mode, without context. Plugins imp
 bundle and terms, and adapters.markdown for chat apps that write Markdown. The core knows no vendor: everything about
 one platform's apps lives in that platform's plugin.
 
-The core (protocol.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
+The core (session.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
 and how sure it is (claim), and gives the recording to the surest one; if none claims it, the dictation runs without
 context. Only that adapter finds the session and builds its context. Every adapter has clean(text): the core passes

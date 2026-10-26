@@ -1,5 +1,5 @@
 // The speed of a download and the time it has left, from the progress the server sends (bytes so far, every 0.5 s:
-// server/protocol.py, DOWNLOAD_PROGRESS_S). The speed is over the last few seconds, so that it follows the network
+// server/variants.py, DOWNLOAD_PROGRESS_S). The speed is over the last few seconds, so that it follows the network
 // without jumping with each message.
 import Foundation
 

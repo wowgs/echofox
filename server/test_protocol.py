@@ -1,4 +1,4 @@
-"""Tests of protocol.py: the client protocol, with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of the client protocol (protocol.py, session.py, variants.py), with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import glob

@@ -1,5 +1,5 @@
 """The numbers and names the server, its scripts and its tests share: one place for each. The menu bar app gets the
-ones it needs from the server (protocol.info) and reads the working port from the config file."""
+ones it needs from the server (info.info) and reads the working port from the config file."""
 import os
 
 # Where the servers listen: the working ones (the dictation you use) and the test ones (server/test_server.sh).
