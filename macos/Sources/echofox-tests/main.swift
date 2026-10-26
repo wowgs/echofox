@@ -32,6 +32,83 @@ do {
     check(false, "info does not decode: \(error)")
 }
 
+// Where the text goes (InsertionRule), on a desk that records what was tried and does what each case says.
+final class FakeDesk: InsertionDesk {
+    typealias Box = String
+    var inputs: Set<String> = [], lengths: [String: Int] = [:], front: Int32 = 0, focus: [Int32: String] = [:]
+    var now: (box: String, pid: Int32)?
+    var results: [String: InsertionResult] = [:]   // by way: "selected", "paste", "value", "keys", "type", "front"
+    var grows: [String: String] = [:]              // a way after which a box shows the text late: way → box
+    var calls: [String] = []
+    func isInput(_ box: String) -> Bool { inputs.contains(box) }
+    func length(_ box: String) -> Int? { lengths[box] }
+    func isFront(_ pid: Int32) -> Bool { pid == front }
+    func focused(in pid: Int32) -> String? { focus[pid] }
+    func same(_ a: String, _ b: String) -> Bool { a == b }
+    func describe(_ box: String) -> String { box }
+    func focusedInput() -> (box: String, pid: Int32)? { now }
+    private func way(_ name: String, _ box: String) -> InsertionResult? {
+        calls.append("\(name) \(box)")
+        if let late = grows[name] { lengths[late, default: 0] += 5 }
+        return results[name]
+    }
+    func setSelectedText(_ text: String, _ box: String) -> InsertionResult? { way("selected", box) }
+    func paste(_ text: String, into box: String, pid: Int32, anyFocus: Bool) -> InsertionResult? {
+        way(anyFocus ? "paste any" : "paste", box)
+    }
+    func setValueIfEmpty(_ text: String, _ box: String) -> InsertionResult? { way("value", box) }
+    func keysPaste(_ text: String, into box: String, pid: Int32) -> InsertionResult? { way("keys", box) }
+    func type(_ text: String, into box: String, pid: Int32) -> InsertionResult? { way("type", box) }
+    func bringToFrontAndPaste(_ text: String, into box: String, pid: Int32) -> InsertionResult? { way("front", box) }
+    func pasteAtCursor(_ text: String) { calls.append("cursor") }
+    func keep(_ text: String) { calls.append("clipboard") }
+}
+do {
+    func desk(_ set: (FakeDesk) -> Void) -> FakeDesk {
+        let d = FakeDesk()
+        d.inputs = ["tap", "other"]
+        d.lengths = ["tap": 0, "other": 0]
+        set(d)
+        return d
+    }
+    // 1. The box of the tap takes the selected text: nothing else is tried.
+    var d = desk { $0.results["selected"] = .accessibility }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .accessibility && d.calls == ["selected tap"],
+          "insert: the selected text of the box of the tap, \(d.calls)")
+    // 2. A terminal in front: its Cmd+V counts though the box does not grow, and no way sends the text again.
+    d = desk { $0.front = 1; $0.focus[1] = "tap"; $0.results["paste"] = .pasteUnchecked }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .pasteUnchecked
+          && d.calls == ["selected tap", "paste tap"], "insert: a paste in front ends it, \(d.calls)")
+    // 3. In the background, the ways in their order, until one works.
+    d = desk { $0.front = 2; $0.results["keys"] = .axKeysInBackground }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .axKeysInBackground
+          && d.calls == ["selected tap", "paste any tap", "value tap", "keys tap"], "insert: the background ways in order, \(d.calls)")
+    // 4. The app's focus is in another box: no background way, the app comes to the front.
+    d = desk { $0.front = 2; $0.focus[1] = "other"; $0.results["front"] = .pasteBroughtToFront }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .pasteBroughtToFront
+          && d.calls == ["selected tap", "paste tap", "front tap"], "insert: focus in another box, \(d.calls)")
+    // 5. A way that landed late counts, and no next way sends the text again.
+    d = desk { $0.front = 2; $0.grows["paste any"] = "tap" }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .late
+          && d.calls == ["selected tap", "paste any tap"], "insert: a late text counts, \(d.calls)")
+    // 6. No box at the tap: the box focused now.
+    d = desk { $0.now = ("other", 3); $0.results["selected"] = .accessibility }
+    check(InsertionRule.insert("hi", tapBox: nil, tapPid: 1, on: d).0 == .accessibility && d.calls == ["selected other"],
+          "insert: the box focused at the end, \(d.calls)")
+    // 7. Once the tap's app got keys, the box focused now in that app gets nothing more: the clipboard.
+    d = desk { $0.front = 1; $0.focus[1] = "tap"; $0.now = ("tap", 1) }
+    check(InsertionRule.insert("hi", tapBox: "tap", tapPid: 1, on: d).0 == .clipboard && d.calls.last == "clipboard"
+          && !d.calls.contains("cursor"), "insert: no second try in the tap's app, \(d.calls)")
+    // 8. An app that tells nothing of its focus, still in front: a paste where its cursor is.
+    d = desk { $0.front = 1 }
+    check(InsertionRule.insert("hi", tapBox: nil, tapPid: 1, on: d).0 == .pasteUnchecked && d.calls == ["cursor"],
+          "insert: at the cursor of an app that tells nothing, \(d.calls)")
+    // 9. Nothing: the clipboard.
+    d = desk { $0.front = 2 }
+    check(InsertionRule.insert("hi", tapBox: nil, tapPid: nil, on: d).0 == .clipboard && d.calls == ["clipboard"],
+          "insert: the clipboard, \(d.calls)")
+}
+
 // The labels' stats, and a language's lists as the settings window shows and reads them.
 do {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-stats-\(getpid())")
