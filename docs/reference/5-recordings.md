@@ -4,7 +4,7 @@
 
 To stop saving future recordings, turn off **Save recordings** in Settings, or set `server.saveRecordings` to `false` in the [config file](2-config.md). Existing recordings are not deleted. EchoFox does not automatically remove old recordings.
 
-See also: [review recordings in the app](4-app.md#label-recordings) and [the proposed training feature](../lora-training/1-idea.md).
+See also: [review recordings in the app](4-app.md#label-recordings) and [the planned training](../research/training.md).
 
 ## Recording files
 

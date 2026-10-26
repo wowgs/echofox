@@ -40,11 +40,11 @@ Use `server/launchd.sh status` to inspect the agent or `server/launchd.sh uninst
 
 ## Build a distributable app
 
-Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`.
+Run `macos/build-app.sh --bundle` to create `macos/build/bundle/EchoFox.app`, or use `--dmg` to also create `macos/build/EchoFox.dmg`, the installer window that dmgbuild lays out ([distribution](../distribution.md#the-installer)).
 
 The bundle includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`. The build rejects libraries linked from Homebrew. Models are downloaded separately.
 
-`ECHOFOX_SIGN` selects the signing identity. Development builds use the self-signed “EchoFox Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../design/7-distribution.md).
+`ECHOFOX_SIGN` selects the signing identity. Development builds use the self-signed “EchoFox Dev” certificate when available, otherwise ad hoc signing. A public release needs the separate signing and notarization setup described in [distribution](../distribution.md#releases).
 
 ## Run the tests
 

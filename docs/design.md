@@ -1,0 +1,121 @@
+# Design
+
+This page explains the product decisions and the architecture of EchoFox. The [README](../README.md) is for users. The [reference](README.md#use-and-configure-the-app) describes the current behavior in detail. The [requirements](requirements.md) list the target behavior, and the [observations](observations.md) record the measurements behind the decisions.
+
+## Who it is for
+
+The first user works on a Mac with AI assistants and chats. They often dictate in Russian and use English names and technical terms. They want to speak in the window where they work, without a separate program, and without sending audio to a cloud service.
+
+What they get:
+
+- Dictation into the app they use. A key starts the recording, the same key stops it, and the text goes into the text box.
+- Local recognition. After the model download, no internet is needed.
+- Context from the conversation. An adapter gives the model the names and terms of the current chat, in the apps that have one.
+- Private dictation on a key of its own, without context and without saved recordings.
+
+The gain from the context on mixed speech is not measured yet, and no comparison with cloud dictation exists. So the product does not promise "error-free recognition" or "understands any conversation". It says that the context comes from specific adapters, and that regular dictations are saved on the Mac by default.
+
+## Decisions
+
+- macOS on Apple Silicon. Dictation works through system features. EchoFox does not change the target apps.
+- One model catalog. Now it has Gemma 4 E4B in two variants, Q4_0 and Q8_0.
+- One app package without the model. The model is downloaded from the app.
+- Adapters are optional plugins. When the conversation is not certain, the dictation runs without context.
+- The keys are toggles, not hold-to-talk.
+- A short menu for frequent actions. All other settings are in the settings window.
+- The server owns recognition and models. The app owns recording, the interface and insertion.
+- Each setting has one owner and one way to set it (see [Settings](#settings)).
+- The core knows no vendor. Everything about one app lives in its plugin.
+
+## Architecture
+
+![The path of a dictation: the app, the dictation server, the adapters and the local model.](img/architecture.svg)
+
+Blue is the app, orange is the server, green is the model. Arrows show the data. The sizes of the blocks mean nothing.
+
+Three processes run:
+
+- **The Mac app.** The interface, the keys, the microphone, Accessibility and insertion. macOS gives the permissions to this process.
+- **The dictation server.** A launchd agent. It receives the audio, chooses an adapter, sends requests to the model and saves the results. The protocol is in the [protocol reference](reference/6-protocol.md).
+- **llama-server.** A launchd agent for the chosen model, which the server writes and starts. Only the chosen model is in memory.
+
+In the distributed app, the server, Python and llama-server are inside `EchoFox.app`; see [distribution](distribution.md).
+
+| Component | Responsibility | Reference |
+|---|---|---|
+| Keys and menu | Start and stop, state, settings | [App](reference/4-app.md) |
+| Audio capture | The chosen microphone, 16 kHz, 16-bit, mono, through AUHAL | [App](reference/4-app.md) |
+| WebSocket | One recording per connection: start, audio, stop, results | [Protocol](reference/6-protocol.md) |
+| Dictation server | Speech detection, cutting, the prompt, model requests | [Server](reference/1-server.md) |
+| Adapters | Find the current conversation and its context | [Context](reference/3-context.md) |
+| Insertion | The current text box, the box of the start, or the clipboard | [App](reference/4-app.md#where-the-text-goes) |
+| Models | Catalog, download, removal, launchd agents | [Distribution](distribution.md) |
+| Storage | Config, recordings, labels, logs, metrics | [Recordings](reference/5-recordings.md) |
+
+### Why the audio is cut into pieces
+
+The model takes at most 30 seconds of audio per request. The server sends finished pieces while the person still speaks, and handles the rest after the stop. Two model slots let two pieces run at once. Silero VAD decides whether a piece has speech. The audio level helps to choose a quiet place for a cut, but it does not replace the VAD. A speech threshold and a limit on the answer's length protect against invented text on silence and endless generation. The values are in the [server reference](reference/1-server.md).
+
+## Settings
+
+Each setting has an owner: the component that defines what it means and its default. The user's change is stored at the same owner.
+
+| Owner | Defaults | The user's changes in the config |
+|---|---|---|
+| Adapter | `adapter.json`, field `context` | `adapters.<name>` |
+| Model | `server/catalog.json` | `models.<name>.prompt`, `models.<name>.options` |
+| Language | `server/languages.json` | `languages.<code>` |
+| Server | `server/tuning.py` | `server` |
+| App | the Swift code | the top level of the config |
+
+The order: an experiment's start options, then the user's change, then the owner's default. Limits of the model, such as the longest audio, apply in any case. The app sends no experiment options; only the test client does.
+
+Common settings are shown at once, and fine tuning is under Advanced. Protective constants are not settings. The prompt template belongs to the model, and the language notes belong to the language, so a new template keeps the notes. An adapter is turned off with `enabled`, not with a budget of 0. The server migrates the config; the current keys are in the [config reference](reference/2-config.md).
+
+![The server and the app describe their settings; the app places them and builds the interface.](img/settings.svg)
+
+A setting's meaning is separate from its place. The server sends the settings of the server, the models and the adapters in its info; the app's own settings are described in Swift. `SettingsLayout.swift` puts each setting on a page, in a section and in an order; a new server setting without a line there goes to the page of its owner. The window changes one value in `~/.echofox/config.json` and keeps the file's formatting (`JSONEdit.swift`). The server picks up the change by itself. Blue is the app, orange is the server, gray is the config; the dashed line is a write.
+
+A setting has the owner's default and an optional change by the user. A reset removes the change from the config. A value equal to the default does not count as changed. The same rule drives the "2 changed" counter, the reset button and the "Set here." note (`SettingStore.swift`). An empty number field shows the default in gray, and the allowed range appears with a wrong value.
+
+## Interface
+
+The menu, in this order: the permissions while one is missing (a missing one opens System Settings, a granted one shows a gray check), the microphone and the input volume (the volume of macOS), **Label Recordings…**, **Settings… (⌘,)**, **Quit EchoFox**. `SettingsLayout.menu` sets the order, `MenuBar.swift` shows it.
+
+The menu bar icon is a fox face; the drawings and their states are in [the art](../macos/art/README.md). A problem, such as a missing permission, shows a crossed-out microphone.
+
+The right Option key toggles a regular dictation, the right Command key a private one. A single press and release of the key counts. Both keys can be changed on the General page. A private dictation starts no adapter and sends no snapshot; the app still finds the text box for the insertion. Conflicts with other apps' keys are possible, and no way to detect them is chosen yet.
+
+| Settings page | What it has |
+|---|---|
+| General | The keys, the stop on silence, the longest recording. |
+| Microphone | The microphone and its volume. |
+| Language | The language, the prompt notes, the hesitation sounds to remove. |
+| Model | The model, its variant, the prompt, the models folder, download and removal; sampling under Advanced. |
+| Adapters | A group with a page for each adapter: its state, its sources and its context settings. |
+| Recordings & Labels | Saving and the data folders, the labeling. |
+| Diagnostics | The server, the chosen model, diagnostics; refreshed every 2 seconds while open. |
+
+The window remembers the last page and the open sections. A value applies on Return or when the field loses focus.
+
+## Adapters
+
+An adapter adds the context of the app: recent messages, names and terms. Without adapters, EchoFox still recognizes speech and inserts the text. The supported apps, the plugin format and the checks are in the [context reference](reference/3-context.md).
+
+- **Optional.** No matching plugin, or no exact match with the conversation, means a dictation without context.
+- **One platform, one plugin.** Paths, transcript formats and screen rules of an app stay in its plugin. The core has no vendor logic.
+- **The conversation comes from the current window.** The newest session is not always the one the person dictates into. When it is not certain, no context is used.
+- **Access is visible.** The manifest lists the apps, the files and the screen data that the plugin needs. The client takes the Electron accessibility tree and the screen content (the rows of lists, or the outline of a page) only for the apps of enabled adapters that ask for them. A config migration never turns on an adapter that reads the screen.
+- **Private dictation skips the adapters.**
+- **Plugins run with the user's rights.** The checks of the manifest and the interface version are not an isolation of the code.
+
+The help of context on recognition is not measured on a labeled set yet, so the product does not promise that an adapter improves accuracy.
+
+Proposed, not built: installation from a GitHub link and a catalog of plugins, a hint to enable an adapter for a detected app, the source of the last context in the menu, plugins in other languages through a separate process.
+
+## Open questions
+
+- How to match a window with Claude Code in a terminal or in VS Code.
+- How to detect conflicts of the chosen keys with the system and other apps.
+- The recording indicator: a character over the window that takes no focus and lets clicks through. A prototype of the transparent rendering exists (`macos/prototypes/transparent-realitykit-overlay.swift`, macOS 15 API); how it fits the minimum macOS is open.
+- The public product's scope for the first public version.

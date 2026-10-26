@@ -2,7 +2,7 @@
 
 The structural problems that the architecture review of 2026-10-26 found in the app, the server and the build. They do not block a release; the release blockers of the same review are fixed separately. Each item names the evidence, so that it can be checked before the work starts. "Checked" means that the evidence was read in the code or reproduced; the rest comes from a reading of the code that was not reproduced.
 
-Related: [architecture](design/4-hld.md), [distribution](design/7-distribution.md), [development](reference/7-development.md).
+Related: [design](design.md), [distribution](distribution.md), [plan](plan.md), [development](reference/7-development.md).
 
 ## The config has no single owner
 

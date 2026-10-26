@@ -20,26 +20,23 @@ Choose a guide for the task you want to complete. For a visual introduction and 
 | Build from source, run checks, or test recognition | [Development guide](reference/7-development.md) |
 | Deploy the Worker that finishes releases after Apple's check | [Notary relay](../ci/notary-relay/README.md) |
 
-The reference pages describe the current implementation. Design and research pages below are in Russian and distinguish implemented behavior from proposals.
+The reference pages describe the current implementation. The pages below explain why it is built this way and what comes next.
 
-## Product decisions
+## Decisions and plans
 
-- [Purpose and audience](design/1-what-and-why.md): the problem EchoFox solves and how to explain it.
-- [Requirements](design/2-requirements.md): target behavior, including features not yet implemented.
-- [Constraints](design/3-constraints.md): dated observations that influenced the design.
-- [Architecture](design/4-hld.md): component responsibilities and data flow.
-- [Interface](design/5-ui.md): menu, settings, and their implementation.
-- [Distribution](design/7-distribution.md): packaging, downloads, and release checks.
-- [Adapter decisions](adapters/1-idea.md): why adapters are optional and how the plugin boundary works.
-- [Work plan](ideas.md): remaining tasks and experiments.
-- [Structural refactoring](refactoring.md): the structural problems found on 2026-10-26, with evidence and fixes.
+- [Design](design.md): who EchoFox is for, the decisions, the architecture, who owns each setting, the interface and the adapters.
+- [Requirements](requirements.md): the target behavior, with stable FR and NFR numbers.
+- [Distribution](distribution.md): the package, the installer, models and downloads, releases and notarization.
+- [Observations](observations.md): dated measurements and observations behind the decisions.
+- [Plan](plan.md): the work that is left.
+- [Refactoring](refactoring.md): structural problems in the code, with evidence and fixes.
 
-## Research and future features
+## Research
 
-These pages describe proposed work, not available product features:
+Proposed work, not product features:
 
-- **Personal training:** [idea](lora-training/1-idea.md), [requirements](lora-training/2-requirements.md), and [implementation plan](lora-training/3-hld.md).
-- **Term dictionary:** [question, experiment, and open decisions](dictation-terms/1-untitled.md).
+- [Training on your recordings](research/training.md): automatic fine-tuning (LoRA) on your own labels.
+- [Term dictionary](research/terms.md): suggesting the conversation's terms to the model.
 
 ## Keeping these docs useful
 

@@ -39,7 +39,7 @@ Use <kbd>⌘</kbd> **right Command** for **Ultra Private Dictation**: the same l
 
 Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
 
-Why keep them? We plan to introduce automatic on-device fine-tuning (LoRA) based on your own labels in **Label Recordings…**. [Training plan →](docs/lora-training/1-idea.md)
+Why keep them? We plan to introduce automatic on-device fine-tuning (LoRA) based on your own labels in **Label Recordings…**. [Training plan →](docs/research/training.md)
 
 Apple Silicon · macOS 13+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
 

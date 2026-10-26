@@ -4,7 +4,7 @@ An adapter supplies recent conversation text to help the speech model recognize 
 
 Private dictation never sends a context snapshot or runs an adapter.
 
-See also: [configuration](2-config.md), [saved context](5-recordings.md), and [adapter design decisions](../adapters/1-idea.md).
+See also: [configuration](2-config.md), [saved context](5-recordings.md), and [adapter design decisions](../design.md#adapters).
 
 ## How the server finds the conversation
 
