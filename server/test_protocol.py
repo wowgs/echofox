@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 
@@ -156,11 +157,13 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
     async def test_a_plugin_that_hangs_costs_the_context_not_the_dictation(self):
-        saved = adapters.context, adapters.CONTEXT_TIMEOUT_S
-        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: time.sleep(2)), 0.2
+        saved, release = (adapters.context, adapters.CONTEXT_TIMEOUT_S), threading.Event()
+        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: release.wait(5)), 0.2
         try:
             stub, got = await self.run_stream(START, LOUD)
         finally:
+            release.set()  # the hung call ends, so that the next tests' dictations get their context
+            adapters._running.result(5)
             adapters.context, adapters.CONTEXT_TIMEOUT_S = saved
         self.assertEqual([m["type"] for m in got if m["type"] != "speech"], ["text", "done"])
         self.assertIn("no context", self.latest()[1]["chat"]["errors"][0])

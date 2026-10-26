@@ -294,13 +294,10 @@ class Session:
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
-        try:
-            found = await asyncio.wait_for(asyncio.to_thread(adapters.context, self.start.snapshot, self.start.hints,
-                                                             self.args.adapters), adapters.CONTEXT_TIMEOUT_S)
-        except TimeoutError:  # a plugin hangs: the dictation goes on without context
-            log.error("recording %s: the adapters gave no context in %.0f s", self.id, adapters.CONTEXT_TIMEOUT_S)
-            found = {"errors": [f"no context in {adapters.CONTEXT_TIMEOUT_S:.0f} s"]}
-        found = found or {}
+        # A plugin that hangs: the dictation goes on without context
+        found = await adapters.context_within(self.start.snapshot, self.start.hints, self.args.adapters) or {}
+        if not found.get("adapter") and found.get("errors"):
+            log.error("recording %s: no context: %s", self.id, "; ".join(found["errors"]))
         self.chat.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source", "details",
                                                 "errors") if found.get(k)})
         chat = found if found.get("messages") else None

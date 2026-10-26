@@ -448,3 +448,27 @@ class TelegramTest(Fixture):
             f.write("from adapters import Adapter\nclass P(Adapter):\n    def claim(self, f, h): pass\n"
                     "    def context(self, f, h): pass\n    def clean(self, t): return t\n")
         self.assertIn("screen", registry.plugins()["peek"].error)
+
+
+class HungPluginTest(unittest.IsolatedAsyncioTestCase):
+    async def test_a_hung_plugin_keeps_only_its_own_thread_and_the_next_dictations_skip_it(self):
+        release, threads = __import__("threading").Event(), []
+
+        def hung(focus, hints=None, enabled=None):
+            threads.append(__import__("threading").current_thread().name)
+            release.wait(5)
+            return {"adapter": "slow"}
+
+        saved = adapters.context
+        adapters.context = hung
+        try:
+            self.assertEqual(await adapters.context_within({}, timeout=0.05), {"errors": ["no context in 0 s"]})
+            self.assertEqual(await adapters.context_within({}, timeout=0.05),
+                             {"errors": ["the adapters still run for an earlier dictation"]})  # no second thread
+            release.set()
+            adapters._running.result(5)
+            self.assertEqual(await adapters.context_within({}, timeout=1), {"adapter": "slow"})
+            self.assertTrue(all(t.startswith("adapters") for t in threads), threads)  # not the loop's default pool
+        finally:
+            release.set()
+            adapters.context = saved

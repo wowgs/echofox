@@ -33,6 +33,8 @@ apps of an enabled adapter whose manifest asks for it in "screen"):
 Any part may be missing.
 """
 import abc
+import asyncio
+import concurrent.futures
 import logging
 import re
 from dataclasses import dataclass
@@ -132,6 +134,26 @@ from . import registry  # noqa: E402
 
 
 CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s with Claude Code's transcript (2026-10-15)
+
+# The plugins run on a thread of their own, not in the event loop's default pool, which the model's requests use:
+# a plugin that hangs past the timeout keeps its thread, and must not take one of theirs. While it hangs, the next
+# dictations get no context instead of a second hung thread.
+_plugins = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="adapters")
+_running = None  # the call that runs now, a concurrent.futures.Future
+
+
+async def context_within(focus, hints=None, enabled=None, timeout=None):
+    """context(), on the plugins' thread, for at most `timeout` seconds. A call that hangs gives {"errors": […]}; so
+    does a call while an earlier one still runs. `timeout`: CONTEXT_TIMEOUT_S unless given."""
+    global _running
+    timeout = CONTEXT_TIMEOUT_S if timeout is None else timeout
+    if _running is not None and not _running.done():
+        return {"errors": ["the adapters still run for an earlier dictation"]}
+    _running = _plugins.submit(context, focus, hints, enabled)
+    try:
+        return await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(_running)), timeout)
+    except TimeoutError:
+        return {"errors": [f"no context in {timeout:.0f} s"]}
 
 
 def _guarded(adapter, what, fn, *args):
