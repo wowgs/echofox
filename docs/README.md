@@ -32,6 +32,7 @@ The reference pages describe the current implementation. Design and research pag
 - [Distribution](design/7-distribution.md): packaging, downloads, and release checks.
 - [Adapter decisions](adapters/1-idea.md): why adapters are optional and how the plugin boundary works.
 - [Work plan](ideas.md): remaining tasks and experiments.
+- [Structural refactoring](refactoring.md): the structural problems found on 2026-10-26, with evidence and fixes.
 
 ## Research and future features
 
