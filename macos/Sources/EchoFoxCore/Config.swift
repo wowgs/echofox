@@ -66,6 +66,8 @@ public struct Config: Equatable {
                             systemLanguage: String? = Locale.preferredLanguages.first) -> Config {
         var c = Config()
         c.language = systemLanguage.map { String($0.prefix(while: { $0 != "-" })) } ?? ""
+        // No file yet (the first start): every value is its default, which is no error
+        guard FileManager.default.fileExists(atPath: url.path) else { return c }
         guard let data = try? Data(contentsOf: url) else {
             c.error = "cannot read \(url.path)"
             return c

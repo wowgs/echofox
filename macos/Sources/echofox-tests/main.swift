@@ -223,6 +223,8 @@ var c = Config.load(from: file, systemLanguage: "en-GB")
 check(c.models == ["a", "b"] && c.model == "a" && c.language == "ru" && c.silenceStopSeconds == 30 && c.port == 8099
       && c.error == nil, "config: read \(c)")
 check(c.microphone == "builtin", "config: the built-in microphone by default")
+let none = Config.load(from: file.deletingLastPathComponent().appendingPathComponent("not-there.json"), systemLanguage: "ru-RU")
+check(none.error == nil && none.model == nil && none.language == "ru", "config: no file yet is the defaults, not an error")
 check(c.recordings.path.hasSuffix("/speech/recordings") && !c.recordings.path.contains("~")
       && c.labeled.path.hasSuffix("/elsewhere"), "config: the folders, ~ expanded; the labels' from the server's section")
 try Config.set(["model"], to: "b", in: file)

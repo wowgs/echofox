@@ -253,6 +253,12 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             choose("none of them")  # a name not in the registry: no model in memory
             await w.follow_selection()
             self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("stop", "x.big")])
+            os.remove(f)  # no config yet, as at the first start: the server's default model, the registry's first
+            await w.follow_selection()
+            self.assertEqual((models.selected, agents.calls[-2:]), ("e4b", [("stop", "x.big"), ("start", "x.e4b")]))
+            json.dump({"version": constants.CONFIG_VERSION}, open(f, "w"))  # a config without "model": the same
+            await w.follow_selection()
+            self.assertEqual(models.selected, "e4b")
             models.manage = False  # a test server never starts or stops the agents
             n = len(agents.calls)
             await models.get("big")

@@ -224,13 +224,20 @@ def apply(now, into=None):
 
 
 def selected_model(config_path, models):
-    """The model chosen in the menus ("model" in the config), if this server has it; None otherwise."""
+    """The model chosen in the menus ("model" in the config), if this server has it; None if the config names another
+    one. A config without "model", or no config yet (the first start), means the server's default: the registry's
+    first model, the one a start message without a model gets."""
+    entries = getattr(models, "entries", None) or {}
     try:
         with open(config_path, encoding="utf-8") as f:
             name = (json.load(f) or {}).get("model")
+    except FileNotFoundError:
+        name = None
     except (OSError, ValueError, AttributeError):
         return None
-    return name if isinstance(name, str) and name in (getattr(models, "entries", None) or {}) else None
+    if name is None:
+        return next(iter(entries), None)
+    return name if isinstance(name, str) and name in entries else None
 
 
 def migrate(path):

@@ -276,6 +276,7 @@ struct SettingsView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
+            .toolbar(removing: .sidebarToggle)  // the sidebar is always shown
         } detail: {
             switch model.selection {
             case let .page(page)?: PageView(model: model, page: page)
