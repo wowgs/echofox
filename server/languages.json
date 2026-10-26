@@ -47,7 +47,9 @@
   "ru": {
     "name": "Russian",
     "notes": [
-      "The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken."
+      "The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken.",
+      "The speech is Russian with English technical terms.",
+      "Keep Russian words with Russian endings in Cyrillic, for example задеплоить, закоммитил."
     ],
     "fillers": [
       "э",

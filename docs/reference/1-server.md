@@ -33,7 +33,7 @@ The server discards output that reaches the limit. This is a safeguard against r
 
 ## Recognition prompt
 
-The prompt combines the model's template with notes for the selected language. The Gemma template requests speech recognition, punctuation, and capitalization; it produces numbers as digits. Language notes live in `server/languages.json`.
+The prompt combines the model's template with notes for the selected language. The Gemma template is the speech recognition prompt of Google's model card with two additions: the speech may contain English terms, and it comes from software engineers, so product names, services and abbreviations keep their official Latin spelling. It asks for punctuation, capital letters and numbers as digits. The Russian notes say that the speech is Russian with English technical terms, that Russian words with Russian endings stay in Cyrillic (задеплоить, закоммитил), and that the imperative mood stays as spoken. Language notes live in `server/languages.json`.
 
 A custom model prompt replaces only the template. Language notes are still appended. The default sampling settings are temperature 1.0, top_k 64, and top_p 0.95.
 

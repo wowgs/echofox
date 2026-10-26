@@ -63,7 +63,7 @@
       "tr",
       "uk"
     ],
-    "prompt": "Transcribe the following speech segment in {LANGUAGE} into {LANGUAGE} text.\n\nFollow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.\n* Write it with punctuation and capital letters.",
+    "prompt": "Transcribe the following speech segment in {LANGUAGE} + English terms into {LANGUAGE} + English terms text.\n\nFollow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.\n* You transcribe speech of software engineers. Write product names, services and abbreviations in their official Latin spelling. Write English terms the way they are officially spelled.\n* Write it with punctuation and capital letters.",
     "promptAnyLanguage": "Transcribe the following speech segment in its original language.\nFollow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.\n* Write it with punctuation and capital letters.",
     "options": {
       "temperature": 1.0,

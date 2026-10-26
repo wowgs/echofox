@@ -33,15 +33,19 @@ class OptionsTest(unittest.TestCase):
 
 
 class PromptTest(unittest.TestCase):
-    def test_googles_asr_template_with_the_language(self):
-        self.assertTrue(d.prompt("ru").startswith("Transcribe the following speech segment in Russian into Russian text."))
+    def test_the_catalogs_template_with_the_language(self):
+        # Google's ASR prompt with English terms and the speech of software engineers
+        self.assertTrue(d.prompt("ru").startswith("Transcribe the following speech segment in Russian + English terms "
+                                                  "into Russian + English terms text."))
         self.assertIn("write the digits", d.prompt("ru"))
+        self.assertIn("You transcribe speech of software engineers.", d.prompt("ru"))
 
     def test_the_clients_prompt_with_the_language_filled_in(self):
         self.assertEqual(d.prompt("en", "Say it in {LANGUAGE}."), "Say it in English.")
         self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."),  # the language's notes follow any template
                          "Say it in Russian.\n* The speaker often uses the imperative mood (сделай, посмотри, проверь): "
-                         "keep it as spoken.")
+                         "keep it as spoken.\n* The speech is Russian with English technical terms.\n"
+                         "* Keep Russian words with Russian endings in Cyrillic, for example задеплоить, закоммитил.")
         self.assertEqual(d.prompt("ru", "Say it.", configured={"ru": {"notes": []}}), "Say it.")  # the config's
         self.assertEqual(d.prompt("xx", "Say it in {LANGUAGE}."), "Say it in its original language.")
 
