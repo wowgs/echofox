@@ -6,7 +6,9 @@ import os
 import unittest
 
 import constants
-import protocol
+import info
+import session
+import variants
 from fakes import args, stub_models
 
 EXAMPLES = json.load(open(os.path.join(os.path.dirname(__file__), "..", "shared", "protocol-examples.json"),
@@ -15,31 +17,31 @@ EXAMPLES = json.load(open(os.path.join(os.path.dirname(__file__), "..", "shared"
 
 class ContractTest(unittest.TestCase):
     def test_the_servers_info_has_the_examples_fields_and_values(self):
-        info = protocol.info(args())
+        got = info.info(args())
         example = EXAMPLES["info"]
-        self.assertEqual(set(info), set(example))
+        self.assertEqual(set(got), set(example))
         for k in ("type", "interface", "sampleRate", "encoding", "textWaitSeconds", "languages"):
-            self.assertEqual(info[k], example[k], k)
-        self.assertEqual(set(info["adapters"][0]), set(example["adapters"][0]))
+            self.assertEqual(got[k], example[k], k)
+        self.assertEqual(set(got["adapters"][0]), set(example["adapters"][0]))
         fields = {"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
                   "minExclusive", "maxExclusive", "help"}
-        for entry in info["settings"] + example["settings"]:  # a setting's description, as the settings window reads it
+        for entry in got["settings"] + example["settings"]:  # a setting's description, as the settings window reads it
             self.assertLessEqual({"key", "owner", "group", "kind", "title", "default", "help"}, set(entry), entry)
             self.assertIn(entry["owner"], ("server", "model", "adapter"), entry)
             self.assertLessEqual(set(entry), fields, entry)
             self.assertIn(entry["kind"], ("number", "integer", "boolean", "string"), entry)
-        self.assertEqual((protocol.INTERFACE, constants.RATE, constants.TEXT_WAIT_S),
+        self.assertEqual((constants.PROTOCOL_INTERFACE, constants.RATE, constants.TEXT_WAIT_S),
                          (example["interface"], example["sampleRate"], example["textWaitSeconds"]))
 
     def test_the_apps_start_message_is_one_the_server_takes(self):
-        start = protocol.parse_start(EXAMPLES["start"], stub_models({"gemma-e4b": {"llamaServer": "http://h:1"}}))
+        start = session.parse_start(EXAMPLES["start"], stub_models({"gemma-e4b": {"llamaServer": "http://h:1"}}))
         self.assertEqual((start.model, start.language, start.client), ("gemma-e4b", "ru", "echofox-mac"))
         self.assertEqual(EXAMPLES["stop"]["reason"], "user")
-        self.assertIn(EXAMPLES["stop"]["reason"], protocol.STOP_REASONS)
+        self.assertIn(EXAMPLES["stop"]["reason"], session.STOP_REASONS)
 
     def test_the_server_sends_only_the_kinds_of_messages_of_the_examples(self):
         kinds = {m["type"] for m in EXAMPLES["server"]}
-        source = open(protocol.__file__, encoding="utf-8").read()
+        source = "".join(open(m.__file__, encoding="utf-8").read() for m in (session, info, variants))
         for kind in ("speech", "text", "error", "stopped", "done", "info"):
             self.assertIn(f'type="{kind}"' if kind != "info" else '"type": "info"', source)
         self.assertEqual(kinds, {"speech", "text", "error", "stopped", "done"})

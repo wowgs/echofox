@@ -10,7 +10,7 @@ import audio
 import llama
 import metrics
 import recordings
-import protocol
+import session
 import settings
 import vad
 from audio import RATE
@@ -31,7 +31,7 @@ class ToneStream(vad.Stream):
         return float(((chunk * 32768.0) ** 2).mean() ** 0.5 > 1000), state
 
 
-protocol.Stream = ToneStream
+session.Stream = ToneStream
 LOUD = array.array("h", [8000, -8000] * (RATE // 2)).tobytes()  # 1 s, about -12 dBFS
 QUIET = b"\0\0" * RATE  # 1 s of silence
 ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"llamaServer": "http://127.0.0.1:9"}}

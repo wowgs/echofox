@@ -16,6 +16,7 @@ from websockets.exceptions import ConnectionClosed
 import adapters
 import dictation
 import metrics
+import constants
 import protocol
 import recordings
 from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, stub_models
@@ -149,7 +150,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.args.adapters = ["claude"]
         got = await self.ask_info()
         self.assertEqual((got["type"], got["interface"], got["sampleRate"], got["encoding"], got["textWaitSeconds"]),
-                         ("info", protocol.INTERFACE, 16000, "pcm_s16le", 180))
+                         ("info", constants.PROTOCOL_INTERFACE, 16000, "pcm_s16le", 180))
         by = {a["name"]: a for a in got["adapters"]}
         self.assertTrue(by["claude"]["enabled"] and by["claude"]["electronTree"] and by["claude"]["builtin"])
         self.assertEqual(by["claude"]["apps"], ["com.anthropic.claudefordesktop"])

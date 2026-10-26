@@ -14,7 +14,8 @@ import catalog
 import constants
 import llama
 import metrics
-import protocol
+import info
+import variants
 import settings as s
 import tuning
 from fakes import FakeAgents, StubModel
@@ -106,7 +107,7 @@ class VariantTest(unittest.TestCase):
 
     def test_the_info_says_which_variants_are_downloaded(self):
         self.put("gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
-        v = protocol.variants({"catalog": "gemma-4-e4b"}, self.folder)
+        v = variants.variants({"catalog": "gemma-4-e4b"}, self.folder)
         self.assertEqual(v["variant"], "q8_0")
         self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
                          [("q4_0", True, 4590807392 + 991552256), ("q8_0", False, 8031242688 + 991552256)])
@@ -235,7 +236,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
                                    "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
             st = s.recording_settings(s.resolve({}))
             s.ConfigWatcher(f, models, st, {}, None, follow=False)
-            self.assertEqual(protocol.info(st, models)["model"]["name"], "big")
+            self.assertEqual(info.info(st, models)["model"]["name"], "big")
 
     async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:

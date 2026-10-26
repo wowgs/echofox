@@ -26,6 +26,7 @@ MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model file
 LLAMA_SERVER = "/opt/homebrew/bin/llama-server"  # llama.cpp's server (Homebrew); launchd's PATH does not have it
 PLUGINS = "~/Library/Application Support/EchoFox/adapters"  # $ECHOFOX_PLUGINS sets another
 CONFIG_VERSION = 7
+PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
 RATE = 16000

@@ -15,6 +15,7 @@ from websockets.asyncio.server import serve
 import catalog
 import downloads
 import protocol
+import variants
 from fakes import args, stub_models
 
 MODEL, MMPROJ = os.urandom(300_000), os.urandom(100_000)
@@ -126,7 +127,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(got[-1], {"type": "downloaded"})
         self.assertEqual(got[-2], {"type": "progress", "bytes": len(MODEL) + len(MMPROJ),
                                    "total": len(MODEL) + len(MMPROJ)})
-        v = protocol.variants({"catalog": "tiny"}, self.folder)["variants"]
+        v = variants.variants({"catalog": "tiny"}, self.folder)["variants"]
         self.assertEqual([(x["id"], x["downloaded"]) for x in v], [("a", True), ("b", False), ("bad", False)])
 
 
