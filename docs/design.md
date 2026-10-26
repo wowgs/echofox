@@ -114,5 +114,5 @@ Proposed: a release check that runs the package on a test recording and fails on
 
 - How to match a window with Claude Code in a terminal or in VS Code.
 - How to detect conflicts of the chosen keys with the system and other apps.
-- The recording indicator: a character over the window that takes no focus and lets clicks through. A prototype of the transparent rendering exists (`macos/prototypes/transparent-realitykit-overlay.swift`, macOS 15 API); how it fits the minimum macOS is open.
+- The recording indicator: a 3D fox over the window of the dictation that peeks out, listens and turns its head, takes no focus and lets clicks through; optional. RealityKit renders it (the oldest macOS, 26, has all of RealityKit); the character is a rigged USDZ model with animation clips, and the code turns its head. A prototype of the transparent rendering exists (`macos/prototypes/transparent-realitykit-overlay.swift`). Next: a check of the pipeline with a ready rigged model (clips, a turned head, the GPU cost beside the model), then the character.
 - The public product's scope for the first public version.

@@ -31,7 +31,7 @@ After recording stops, the app waits up to 180 seconds for each next piece of te
 
 ## Requirements and model choices
 
-Use an Apple Silicon Mac with at least 16 GB of memory and macOS 14 or later. Everything in the app is built for macOS 14, but it has run only on an Apple M5 with 24 GB and macOS 27; macOS 14–26 are not tested.
+Use an Apple Silicon Mac with at least 16 GB of memory and macOS 26 or later. Everything in the app is built for macOS 26, but it has run only on an Apple M5 with 24 GB and macOS 27; macOS 26 is not tested.
 
 The two downloads are differently compressed variants of Gemma 4 E4B:
 

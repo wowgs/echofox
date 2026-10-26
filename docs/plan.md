@@ -23,7 +23,7 @@ Before the repository opens:
 
 - Installation, permissions, the launchd agents and a restart on a clean Mac.
 - A full model download from the source, and its recovery after a break.
-- The oldest supported macOS: everything is built for 14, but the app has run only on 27.
+- The oldest supported macOS: everything is built for 26, but the app has run only on 27.
 - The terms of use and distribution of the Gemma model.
 - Quality, speed and memory of Q4_0 against Q8_0 on one labeled set.
 

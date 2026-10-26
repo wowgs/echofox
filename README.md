@@ -41,6 +41,6 @@ Nothing of your dictations leaves your Mac. EchoFox goes online only to download
 
 Why keep them? We plan to introduce automatic on-device fine-tuning (LoRA) based on your own labels in **Label Recordings…**. [Training plan →](docs/research/training.md)
 
-Apple Silicon · macOS 14+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
+Apple Silicon · macOS 26+ · 16 GB memory minimum. [Setup and model choices →](docs/reference/4-app.md#requirements-and-model-choices)
 
 [How recognition works](docs/reference/1-server.md) · [Build and develop](docs/reference/7-development.md) · [All documentation](docs/README.md)

@@ -7,7 +7,7 @@ import PackageDescription
 // because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
 let package = Package(
     name: "EchoFox",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("26.0")],  // pins.sh MACOS_MIN
     products: [
         .library(name: "FocusSnapshot", targets: ["FocusSnapshot"]),
         .library(name: "EchoFoxCore", targets: ["EchoFoxCore"]),

@@ -2,8 +2,8 @@
 # so that a build is the same everywhere (docs/reference/7-development.md, "The package").
 
 # The oldest macOS that the app runs on. build-app.sh builds llama-server and the app's Info.plist for it and refuses a
-# bundle with any executable or library that needs a newer one; Package.swift says the same (.macOS(.v14)).
-MACOS_MIN=14.0
+# bundle with any executable or library that needs a newer one; Package.swift says the same (.macOS("26.0")).
+MACOS_MIN=26.0
 
 # CPython from python-build-standalone (Astral): relocatable, for Apple Silicon. The SHA-256 is the release's own
 # (SHA256SUMS and the asset's digest agree, 2026-10-25).
