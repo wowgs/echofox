@@ -212,7 +212,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 
             class SlowModels:
                 recording = asyncio.Lock()
-                entries = {}
+                entries, active = {}, llama.UNKNOWN
 
                 async def activate(self, name):
                     await asyncio.sleep(0)
@@ -257,6 +257,23 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             n = len(agents.calls)
             await models.get("big")
             self.assertEqual(len(agents.calls), n)
+
+    async def test_a_recording_on_the_active_model_runs_no_launchctl_and_the_menus_model_comes_back(self):
+        with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            json.dump({"version": constants.CONFIG_VERSION, "model": "e4b"}, open(f, "w"))
+            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
+                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
+            await w.follow_selection()
+            n = len(agents.calls)
+            await models.get("e4b")
+            await models.get("e4b")
+            self.assertEqual(len(agents.calls), n)  # the active model: no launchctl for each recording
+            await models.get("big")  # a client asked for another model
+            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("start", "x.big")])
+            await w.follow_selection()  # the menu's model is not in memory any more: it comes back
+            self.assertEqual(agents.calls[-2:], [("stop", "x.big"), ("start", "x.e4b")])
 
 
 class LaunchdTest(unittest.TestCase):

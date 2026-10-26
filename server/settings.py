@@ -462,7 +462,7 @@ class ConfigWatcher:
 
     def __init__(self, path, models, st, current, stop, follow=True):
         self.path, self.models, self.st, self.current, self.stop = path, models, st, current, stop
-        self.follow, self.chosen, self.chosen_known = follow, None, False
+        self.follow = follow
         self.seen = self._mtime()  # before the first model loads, so a change during that load is not lost
         self._select()
 
@@ -480,13 +480,12 @@ class ConfigWatcher:
     async def follow_selection(self):
         """After the running recording, only the menu's model stays in memory."""
         now = self._select()
-        if self.chosen_known and now == self.chosen:
+        if now == self.models.active:
             return
         async with self.models.recording:
             log.info("the menu's model is %s: only it stays in memory", now or "not on this server")
             try:
                 await self.models.activate(now)
-                self.chosen, self.chosen_known = now, True
             except Exception:
                 log.exception("cannot make %s the model in memory", now)
 
@@ -512,7 +511,6 @@ class ConfigWatcher:
                         apply(now, self.st)
                         if "model" in levels:
                             self.models.reconfigure(now["models"], constants.path(now["modelsFolder"]))
-                            self.chosen_known = False  # start the chosen model again, with the new entries
                             log.info("models: %s", ", ".join(now["models"]))
                         self.current.clear()
                         self.current.update(now)

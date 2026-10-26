@@ -324,6 +324,9 @@ def wait_healthy(url, seconds=constants.MODEL_START_S):
     return False
 
 
+UNKNOWN = object()  # Models.active before the first activation, and after the registry changed
+
+
 class Models:
     """The models of the config's registry, by name; the first is the default. Only one is in memory at a time: its
     llama-server's launchd agent runs, the others' agents are stopped (unless `manage` is off: the test server).
@@ -335,6 +338,9 @@ class Models:
         # The model chosen in the menus ("model" in the server's config file), if this server has it: the config
         # watcher keeps it (settings.ConfigWatcher), so that nothing else reads the file
         self.selected = None
+        # The model whose agent this server last made the only one running (None: no model); activating it again
+        # only checks that it answers
+        self.active = UNKNOWN
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()
@@ -342,7 +348,7 @@ class Models:
     def reconfigure(self, entries, models_folder=None):
         """New model entries or a new models folder: the next recording, or the menu's choice, starts its model
         again."""
-        self.entries, self.models = dict(entries), {}
+        self.entries, self.models, self.active = dict(entries), {}, UNKNOWN
         if models_folder:
             self.models_folder = models_folder
 
@@ -360,9 +366,10 @@ class Models:
         return self.models[name]
 
     async def activate(self, name):
-        """Makes `name` the only model in memory; None: no model at all."""
+        """Makes `name` the only model in memory; None: no model at all. When it already is, only checks that it
+        answers (launchd restarts a llama-server that stopped)."""
         entry = self.entries.get(name) if name else None
-        if self.manage:
+        if self.manage and name != self.active:
             for n, e in self.entries.items():
                 if e.get("launchd") and n != name:
                     await asyncio.to_thread(stop_agent, e["launchd"])
@@ -370,5 +377,7 @@ class Models:
                 if await asyncio.to_thread(write_agent, entry, self.models_folder):  # another variant or folder
                     await asyncio.to_thread(stop_agent, entry["launchd"])
                 await asyncio.to_thread(start_agent, entry["launchd"])
+        if self.manage:
+            self.active = name
         if entry is not None and not await asyncio.to_thread(wait_healthy, entry["llamaServer"].rstrip("/")):
             raise RuntimeError(f"llama-server of {name} at {entry['llamaServer']} does not answer")
