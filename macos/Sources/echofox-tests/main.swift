@@ -214,8 +214,12 @@ do {
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     let settings = info.settings ?? []
-    check(settings.map(\.key) == ["maxRecordingMinutes", "temperature"] && settings.map(\.owner) == ["server", "model"]
-          && settings[0].advanced == nil && settings[1].advanced == true, "settings: decoded \(settings.map(\.key))")
+    let by = Dictionary(uniqueKeysWithValues: settings.map { ($0.key, $0) })
+    check(settings.map(\.key) == ["maxRecordingMinutes", "recordings", "temperature"]
+          && settings.map(\.owner) == ["server", "server", "model"]
+          && by["maxRecordingMinutes"]?.advanced == nil && by["temperature"]?.advanced == true, "settings: decoded \(settings.map(\.key))")
+    check(by["maxRecordingMinutes"]?.unit == "min" && by["temperature"]?.unit == nil && by["recordings"]?.kind == "folder",
+          "settings: the server names units and folders")
     check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
           "settings: the model and the languages")
     let gib: UInt64 = 1 << 30
@@ -224,7 +228,7 @@ do {
           "settings: the variant for 8, 16, 24 and 64 GB: \([8, 16, 24, 64].map { pick(UInt64($0)) })")
     check(info.model?.variant == "q8_0" && info.model?.variants?.map(\.id) == ["q4_0", "q8_0"]
           && info.model?.variants?.first?.downloaded == false, "settings: the model's variants")
-    let cut = settings[0], temperature = settings[1]
+    let cut = by["maxRecordingMinutes"]!, temperature = by["temperature"]!
     check(cut.value == nil && cut.default == .number(30) && cut.minExclusive == true
           && temperature.value == .number(0.7), "settings: values")
     check(!cut.allows(0) && cut.allows(0.5) && cut.allows(1000) && !temperature.allows(-1), "settings: range")

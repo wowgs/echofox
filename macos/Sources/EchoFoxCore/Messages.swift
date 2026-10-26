@@ -205,7 +205,7 @@ public struct SettingInfo: Decodable, Equatable {
     public let owner: String
     /// What it is about: cutting, speech, recording, storage, sampling, output, context.
     public let group: String
-    /// number, integer, boolean or string.
+    /// number, integer, boolean, string, or folder (a string that is a folder's path: the window offers a folder panel).
     public let kind: String
     /// Its name in the settings window, for the user.
     public let title: String
@@ -222,14 +222,16 @@ public struct SettingInfo: Decodable, Equatable {
     public let maxExclusive: Bool?
     /// What it does, in plain words for the user; "" when the title says it all.
     public let help: String
+    /// What its number counts, shown beside the field: "s", "min", "tokens"; nil for none.
+    public let unit: String?
 
     /// A setting the app describes itself, as the server describes its own (owner "app": the top of the config).
     public init(key: String, owner: String, group: String = "", kind: String, title: String, advanced: Bool? = nil,
                 default d: SettingValue?, value: SettingValue? = nil, min: Double? = nil, max: Double? = nil,
-                minExclusive: Bool? = nil, maxExclusive: Bool? = nil, help: String = "") {
+                minExclusive: Bool? = nil, maxExclusive: Bool? = nil, unit: String? = nil, help: String = "") {
         self.key = key; self.owner = owner; self.group = group; self.kind = kind; self.title = title
         self.advanced = advanced; self.default = d; self.value = value; self.min = min; self.max = max
-        self.minExclusive = minExclusive; self.maxExclusive = maxExclusive; self.help = help
+        self.minExclusive = minExclusive; self.maxExclusive = maxExclusive; self.unit = unit; self.help = help
     }
 
     /// Whether `v` is in the setting's range.

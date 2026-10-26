@@ -32,6 +32,7 @@ class Knob:
     open_low: bool = False  # low < value, not ≤
     open_high: bool = False
     client: bool = True     # an experiment's start message may set it
+    unit: str = None        # what the number counts, shown beside its field: "s", "min", "tokens"
 
     def ok(self, v):
         """Whether the value is in the knob's range."""
@@ -48,6 +49,7 @@ class Knob:
                 **{k: v for k, v in (("min", self.low), ("max", self.high)) if v is not None},
                 **({"minExclusive": True} if self.open_low else {}),
                 **({"maxExclusive": True} if self.open_high else {}),
+                **({"unit": self.unit} if self.unit else {}),
                 "help": self.help}
 
 
@@ -58,19 +60,20 @@ KNOBS = [
     # The server's constants: how a recording is cut into pieces, what counts as speech. The pieces are at most 15 s:
     # longer pieces (18 s and more) turned Russian words into Latin letters more often (2026-10-19); cutting while
     # the speaker talks took the median wait after the stop for 20 to 40 s recordings from 3.66 to 2.35 s (2026-10-20).
-    Knob("pieceSeconds", "piece_seconds", float, 15.0, "server", "cutting", low=5),
-    Knob("cutSearchSeconds", "cut_search_seconds", float, 3.0, "server", "cutting", low=0, high=10, open_low=True),
+    Knob("pieceSeconds", "piece_seconds", float, 15.0, "server", "cutting", low=5, unit="s"),
+    Knob("cutSearchSeconds", "cut_search_seconds", float, 3.0, "server", "cutting", low=0, high=10, open_low=True,
+         unit="s"),
     Knob("cutWhileSpeaking", "cut_while_speaking", bool, True, "server", "cutting"),
-    Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server", "cutting", low=0),
+    Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server", "cutting", low=0, unit="s"),
     # From the speech that Silero VAD found in the 2038 saved pieces (2026-10-15 to 2026-10-22): the 35 pieces with
     # 0 to 0.06 s of it all got text of the model's own or copied from the context; the shortest real answer had
     # 0.51 s. A piece with less speech than this does not go to the model.
-    Knob("minSpeechSeconds", "min_speech_seconds", float, 0.3, "server", "speech", low=0),
+    Knob("minSpeechSeconds", "min_speech_seconds", float, 0.3, "server", "speech", low=0, unit="s"),
     Knob("warmText", "warm_text", bool, True, "server", "recording", client=False),
     # The server's setting: the recording's time limit
     Knob("maxRecordingMinutes", "max_recording_minutes", float, float(constants.MAX_RECORDING_MIN), "server",
          "recording", "basic", "Recording time limit", "Stops a recording if you forget to stop it.",
-         low=0, open_low=True, client=False),
+         low=0, open_low=True, client=False, unit="min"),
     # The model's constant: the longest text of a piece, in tokens per second of its speech; the value is the
     # catalog entry's (catalog.json), as tokens are the model's. A text that reaches it is the model's own and is
     # dropped; without a limit, a model that never ends its text decodes until the context is full.
@@ -89,9 +92,9 @@ KNOBS = [
     # ("enabled") turns the context off; a budget does not.
     Knob("chatHistoryTokenBudget", "chat_history_token_budget", int, 1000, "adapter", "context", "advanced",
          "Chat context", "How much of the chat the model reads: names and terms first, then the newest messages.",
-         low=1),
+         low=1, unit="tokens"),
     Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, 100, "adapter", "context", "advanced",
-         "Names and terms", "How much of the chat context goes to names and terms.", low=0),
+         "Names and terms", "How much of the chat context goes to names and terms.", low=0, unit="tokens"),
     Knob("proseOnly", "prose_only", bool, True, "adapter", "context", "advanced", "Only sentences",
          "Leaves out lines that are mostly digits or symbols, such as tables and paths."),
 ]

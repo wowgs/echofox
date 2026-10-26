@@ -86,7 +86,7 @@ public enum SettingsLayout {
     /// The app's own settings that a SettingRow shows, described as the server describes its own.
     public static let appSettings = [
         SettingInfo(key: "silenceStopSeconds", owner: "app", kind: "number", title: "Stop after silence",
-                    default: .number(Tuning.silenceStopSeconds), min: 0, minExclusive: true,
+                    default: .number(Tuning.silenceStopSeconds), min: 0, minExclusive: true, unit: "s",
                     help: "Recording stops after this long without speech."),
     ]
 

@@ -39,6 +39,7 @@ class Setting:
     section: str = None      # "server", or None: at the top of the file
     title: str = ""          # for the settings window, if it shows the setting
     help: str = ""
+    folder: bool = False     # a folder's path: the settings window offers the system's folder panel
 
 
 def good_model(m):
@@ -86,11 +87,11 @@ SETTINGS = [
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
             "Save recordings", "Keeps each recording and its text. Private dictations are never saved."),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
-            "Recordings folder", ""),
+            "Recordings folder", "", folder=True),
     Setting("labeled", "labeled", str, bool, constants.LABELED, "recording", "server",
-            "Labels folder", "Holds the pieces that you labeled."),
+            "Labels folder", "Holds the pieces that you labeled.", folder=True),
     Setting("modelsFolder", "models_folder", str, bool, constants.MODELS_FOLDER, "model", "server",
-            "Models folder", "The folder for the model files."),
+            "Models folder", "The folder for the model files.", folder=True),
     Setting("metrics", "metrics", str, bool, constants.METRICS, "recording", "server"),
     *(Setting(k.key, k.name, k.kind, k.ok, k.default, "recording", "server") for k in tuning.KNOBS
       if k.owner == "server" and k.user),
@@ -122,9 +123,9 @@ def schema(st, model_entry=None):
     for s in SETTINGS:  # the storage settings: the ones with a title, which are not knobs
         if not s.title:
             continue
-        kind = "boolean" if s.kind is bool else "string"
+        kind = "boolean" if s.kind is bool else "folder" if s.folder else "string"
         now = getattr(st, s.name, s.default)
-        shown = constants.path(s.default) if kind == "string" else s.default
+        shown = constants.path(s.default) if s.kind is str else s.default
         out.append({"key": s.key, "owner": "server", "group": "storage", "kind": kind, "title": s.title,
                     "default": s.default, **({"value": now} if now not in (s.default, shown) else {}),
                     "help": s.help})

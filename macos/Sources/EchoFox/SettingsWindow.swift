@@ -187,6 +187,8 @@ final class SettingsModel: ObservableObject {
     /// The server's settings and the app's own.
     var settings: [SettingInfo] { (info?.settings ?? []) + SettingsLayout.appSettings }
     var adapterSettings: [SettingInfo] { settings.filter { $0.owner == "adapter" } }
+    /// Every unit of the settings, so that each number field's unit column is as wide as the widest.
+    var units: [String] { Array(Set(settings.compactMap(\.unit))).sorted() }
     func setting(_ key: String) -> SettingInfo? { settings.first { $0.key == key } }
 
     func sections(_ page: SettingsPage) -> [(section: String, ids: [String])] {
@@ -429,7 +431,9 @@ struct SettingRow: View {
     private var state: SettingState { model.state(setting, scope) }
     private var refused: Bool { model.refused.contains(id) }
     /// The field's text: the value set here; empty when it is inherited (the placeholder shows it).
-    private var shown: String { setting.kind == "string" ? show(state.value) : state.own.map { show($0) } ?? "" }
+    private var shown: String {
+        ["string", "folder"].contains(setting.kind) ? show(state.value) : state.own.map { show($0) } ?? ""
+    }
 
     private var note: String? {
         if refused { return allowedValues(setting) }
@@ -460,9 +464,9 @@ struct SettingRow: View {
             Toggle("", isOn: Binding(get: { state.value == .bool(true) },
                                      set: { model.apply(SettingStore.toggle($0, state: state), to: setting, scope, id: id) }))
                 .labelsHidden().toggleStyle(.switch)
-        case "string":
+        case "string", "folder":
             InputField(text: model.draft(id, shown: shown), width: 240, refused: refused, onSubmit: commit)
-            if setting.key.hasSuffix("Folder") || setting.key == "recordings" || setting.key == "labeled" {
+            if setting.kind == "folder" {
                 Button("Choose…") {
                     if let folder = chooseFolder(starting: shown) {
                         model.apply(SettingStore.edit(folder, of: setting, state: state), to: setting, scope, id: id)
@@ -472,7 +476,7 @@ struct SettingRow: View {
         default:
             InputField(placeholder: show(state.inherited), text: model.draft(id, shown: shown), width: 80, number: true,
                        refused: refused, onSubmit: commit)
-            UnitLabel(unit: unit(of: setting.key))
+            UnitLabel(unit: setting.unit, units: model.units)
         }
     }
 

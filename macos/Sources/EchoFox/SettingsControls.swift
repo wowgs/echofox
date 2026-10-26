@@ -97,6 +97,8 @@ struct InputField: View {
 /// field of a page ends at the same place, as in macOS's own settings.
 struct UnitLabel: View {
     let unit: String?
+    /// Every unit of the window's settings, for the column's width.
+    let units: [String]
     var body: some View {
         ZStack(alignment: .leading) {
             ForEach(units, id: \.self) { Text($0).hidden() }
@@ -131,13 +133,6 @@ extension View {
             .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color(nsColor: .separatorColor)))
     }
 }
-
-/// The units of the settings, by the end of their keys: "maxRecordingMinutes" is in minutes, "chatHistoryTokenBudget"
-/// in tokens.
-private let unitsByKeyEnd: [(end: String, unit: String)] = [("Minutes", "min"), ("Seconds", "s"), ("TokenBudget", "tokens")]
-let units = unitsByKeyEnd.map(\.unit)
-
-func unit(of key: String) -> String? { unitsByKeyEnd.first { key.hasSuffix($0.end) }?.unit }
 
 /// A folder chosen in the system's open panel, or nil.
 func chooseFolder(starting path: String) -> String? {

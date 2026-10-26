@@ -24,12 +24,12 @@ class ContractTest(unittest.TestCase):
             self.assertEqual(got[k], example[k], k)
         self.assertEqual(set(got["adapters"][0]), set(example["adapters"][0]))
         fields = {"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
-                  "minExclusive", "maxExclusive", "help"}
+                  "minExclusive", "maxExclusive", "unit", "help"}
         for entry in got["settings"] + example["settings"]:  # a setting's description, as the settings window reads it
             self.assertLessEqual({"key", "owner", "group", "kind", "title", "default", "help"}, set(entry), entry)
             self.assertIn(entry["owner"], ("server", "model", "adapter"), entry)
             self.assertLessEqual(set(entry), fields, entry)
-            self.assertIn(entry["kind"], ("number", "integer", "boolean", "string"), entry)
+            self.assertIn(entry["kind"], ("number", "integer", "boolean", "string", "folder"), entry)
         self.assertEqual((constants.PROTOCOL_INTERFACE, constants.RATE, constants.TEXT_WAIT_S),
                          (example["interface"], example["sampleRate"], example["textWaitSeconds"]))
 

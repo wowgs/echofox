@@ -81,7 +81,7 @@ public enum SettingStore {
         if t.isEmpty { return .remove }
         let v: SettingValue
         switch s.kind {
-        case "string": v = .string(t)
+        case "string", "folder": v = .string(t)
         case "number", "integer":
             guard let n = Double(t.replacingOccurrences(of: ",", with: ".")), s.allows(n) else { return .refuse }
             v = .number(n)
