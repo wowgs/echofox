@@ -51,6 +51,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
             self?.firstRun.showIfNeeded(self?.server.info)
         }
         firstRun.askServer = { [weak self] in self?.askServer() }
+        // A removal that leaves no variant downloaded opens the first start's window again (when the info says so)
+        downloads.onEnd { [weak self] _, job, isDownload in if !isDownload, job.error == nil { self?.firstRun.allowAgain() } }
         updater.busy = { [unowned self] in self.current != nil || !self.waiting.isEmpty }
         updater.onChange = { [weak self] in self?.menu.update() }
         updater.start()
@@ -164,6 +166,11 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     // MARK: MenuActions
 
     func checkForUpdates() { updater.check() }
+
+    func uninstall() {
+        Uninstaller.confirmAndRun(info: server.info, serverURL: store.config.serverURL,
+                                  folders: store.config.folders(server.info))
+    }
 
     func allowAccessibility() {
         permissions.askAccessibility()

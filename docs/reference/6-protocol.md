@@ -90,4 +90,4 @@ The client sends `{"type": "download", "catalog": "gemma-4-e4b", "variant": "q4_
 
 ## Remove a model
 
-The client sends `{"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server deletes the files of that variant that no other downloaded variant uses. The active variant cannot be removed. It answers `{"type": "removed", "bytes": 4590807392}` or an error, and closes the connection.
+The client sends `{"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server deletes the files of that variant that no other downloaded variant uses. The variant in use is removed too: after the running recording the server takes the model out of memory and removes its `llama-server` agent, and the next dictation has no model until one is downloaded. It answers `{"type": "removed", "bytes": 4590807392}` or an error, and closes the connection.

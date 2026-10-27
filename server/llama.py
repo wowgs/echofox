@@ -296,6 +296,12 @@ def start_agent(label):
     log.info("started the launchd agent %s", label)
 
 
+def drop_agent(label):
+    """Removes the agent's plist (stopped before), so that launchd does not start it at the next login."""
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(constants.path(f"{constants.LAUNCH_AGENTS}/{label}.plist"))
+
+
 def stop_agent(label):
     """Stops the launchd agent and waits until it is gone (bootout returns before that)."""
     if not agent_running(label):

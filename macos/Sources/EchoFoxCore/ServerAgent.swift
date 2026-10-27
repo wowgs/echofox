@@ -7,6 +7,8 @@ import Foundation
 
 public enum ServerAgent {
     public static let label = "echofox.gemma-voice"
+    /// The agent of the model's llama-server, which the dictation server writes.
+    public static let llamaLabel = "echofox.llama-server"
     /// launchd waits this long for the server to stop: it lets a running recording end.
     public static let exitTimeoutSeconds = 210
     public static let logInHome = "Library/Logs/EchoFox/gemma-voice.log"

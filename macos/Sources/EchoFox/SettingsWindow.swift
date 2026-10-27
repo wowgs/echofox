@@ -23,6 +23,8 @@ protocol SettingsActions: AnyObject {
     func setInputVolume(_ value: Float)
     func openLabeling()
     func openLog()
+    /// Uninstall EchoFox…: asks, then removes the models, the agents, the app's files and the app (Uninstaller).
+    func uninstall()
 }
 
 /// The settings window (Apple HIG, Settings): its minimize and zoom buttons dimmed, its title the visible page's, and
@@ -393,6 +395,7 @@ struct ItemView: View {
         case "labelRecordings": Button("Label Recordings…") { model.actions?.openLabeling() }
         case "serverStatus": ServerStatus(model: model)
         case "openLog": Button("Open the Log") { model.actions?.openLog() }
+        case "uninstall": Button("Uninstall EchoFox…", role: .destructive) { model.actions?.uninstall() }
         default:
             if let s = model.setting(id) { SettingRow(model: model, setting: s, scope: .owner) }
         }
@@ -625,7 +628,8 @@ struct VariantPicker: View {
 func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
 
 /// One quantization in a row: its name, its size on the disk and in memory, then its state and what can be done:
-/// In use; Use and Remove (after a confirmation) for one on the disk; Download, with its progress and Cancel, for one
+/// In use and Remove, or Use and Remove, for one on the disk (Remove after a confirmation, which for the one in use says
+/// that dictation stops until a model is downloaded); Download, with its progress and Cancel, for one
 /// that is not. While another window (the first start's) downloads it, the server's info says so and there is no
 /// Download.
 struct VariantRow: View {
@@ -660,7 +664,8 @@ struct VariantRow: View {
             }
             Button("Keep", role: .cancel) {}
         } message: {
-            Text("Its files are deleted from the disk. You can download it again later.")
+            Text(inUse ? "It is the model in use: dictation stops until you download one. Its files are deleted from the disk."
+                       : "Its files are deleted from the disk. You can download it again later.")
         }
     }
 
@@ -670,7 +675,7 @@ struct VariantRow: View {
             Button("Cancel") { model.cancel(variant.id) }
         } else if inUse {
             Label("In use", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                .help("The model in use. Choose another one to remove it.")
+            Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
         } else if variant.downloaded {
             Button("Use") {
                 model.write(SettingStore.variantPath(of: name), variant.id)

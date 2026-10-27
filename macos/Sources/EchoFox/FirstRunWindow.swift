@@ -17,6 +17,9 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     /// The app's model downloads, which the settings window shares.
     var downloads = ModelDownloads()
 
+    /// The variant in use was removed: the window may open again (showIfNeeded).
+    func allowAgain() { shown = false }
+
     /// Opens the window once in a run of the app, when the server's info says that no variant of the menu's model is
     /// downloaded or downloading.
     func showIfNeeded(_ info: ServerInfo?) {

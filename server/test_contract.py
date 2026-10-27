@@ -38,7 +38,7 @@ class ContractTest(unittest.TestCase):
         c = constants
         mine = {"interface": c.PROTOCOL_INTERFACE, "configVersion": c.CONFIG_VERSION, "config": c.CONFIG, "host": c.HOST,
                 "workingPort": c.WORKING_PORT, "sampleRate": c.RATE, "encoding": c.ENCODING,
-                "serverLabel": c.SERVER_LABEL, "serverLog": c.SERVER_LOG,
+                "serverLabel": c.SERVER_LABEL, "llamaLabel": c.LLAMA_LABEL, "serverLog": c.SERVER_LOG,
                 "launchdExitTimeoutSeconds": c.LAUNCHD_EXIT_TIMEOUT_S, "configCheckSeconds": c.CONFIG_CHECK_S,
                 "recordings": c.RECORDINGS, "labeled": c.LABELED}
         self.assertEqual(mine, {k: v for k, v in CONSTANTS.items() if k != "about"})

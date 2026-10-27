@@ -65,7 +65,7 @@ The menu bar icon is a fox face. While you dictate, the fox wears a white headse
 | General | Choose dictation keys and recording limits. |
 | Microphone | Select the input device. |
 | Language | Choose the language and edit language-specific prompt notes or hesitation sounds. |
-| Model | The model (a choice only when the config's registry has more than one), then its quantizations, one row each with its size on disk and in memory: **Use** a downloaded one, **Download** one, or **Remove** one to delete its files from the disk (after a confirmation; the one in use cannot be removed, choose another first). Then the prompt and the model folder. |
+| Model | The model (a choice only when the config's registry has more than one), then its quantizations, one row each with its size on disk and in memory: **Use** a downloaded one, **Download** one, or **Remove** one to delete its files from the disk, after a confirmation. Removing the one in use stops dictation until you download one; the first start's window opens again. Then the prompt and the model folder. |
 | Individual adapters | Enable conversation context for a supported app and adjust its limits. |
 | Recordings & Labels | Choose whether and where to save recordings and labels. |
 | Diagnostics | Inspect server status and diagnostic information. |
@@ -93,15 +93,15 @@ When a new version is out, the menu's first line says so; it opens the update wi
 
 ## Uninstall
 
-Quit EchoFox, stop its two launchd agents, and remove them and the app:
+Settings → General → **Uninstall EchoFox…** asks once, then:
 
-```sh
-launchctl bootout gui/$(id -u)/echofox.gemma-voice
-launchctl bootout gui/$(id -u)/echofox.llama-server
-rm ~/Library/LaunchAgents/echofox.gemma-voice.plist ~/Library/LaunchAgents/echofox.llama-server.plist
-```
+1. The dictation server deletes the downloaded models, the one in use last.
+2. Its launchd agents stop, and their files are deleted.
+3. The settings (`~/.echofox`), `~/Library/Application Support/EchoFox` (models, your adapters), the logs, the caches and the app's preferences are deleted.
+4. If you check the box, the recordings and the labels go to the Trash, but only from folders that hold nothing but EchoFox's day folders.
+5. EchoFox goes to the Trash and quits.
 
-Your data is in `~/Library/Application Support/EchoFox` (models, adapters), `~/.echofox` (config) and `~/Library/Logs/EchoFox`; your recordings are in the folder set in Settings. If you delete only the app, launchd stops its server after one failed start (macOS 27).
+macOS keeps the Microphone and Accessibility permissions; remove EchoFox from them in System Settings → Privacy & Security. To remove only the model, use **Remove** next to it on the Model page; for the one in use, dictation stops until you download one.
 
 ## Logs
 

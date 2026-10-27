@@ -8,6 +8,7 @@
   "sampleRate": 16000,
   "encoding": "pcm_s16le",
   "serverLabel": "echofox.gemma-voice",
+  "llamaLabel": "echofox.llama-server",
   "serverLog": "~/Library/Logs/EchoFox/gemma-voice.log",
   "launchdExitTimeoutSeconds": 210,
   "configCheckSeconds": 2,

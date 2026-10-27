@@ -459,7 +459,7 @@ do {
           && c["recordings"] as? String == Config.defaultRecordings && c["labeled"] as? String == Config.defaultLabeled
           && c["sampleRate"] as? Int == (examples["info"] as! [String: Any])["sampleRate"] as? Int,
           "shared values: the app's copies")
-    check(c["serverLabel"] as? String == ServerAgent.label
+    check(c["serverLabel"] as? String == ServerAgent.label && c["llamaLabel"] as? String == ServerAgent.llamaLabel
           && c["launchdExitTimeoutSeconds"] as? Int == ServerAgent.exitTimeoutSeconds
           && c["serverLog"] as? String == "~/" + ServerAgent.logInHome, "shared values: the server agent's")
     check(c["configCheckSeconds"] as? Double == Tuning.configCheckSeconds
@@ -481,6 +481,28 @@ do {
     check(Config().folders(nil).labeled == Config().labeled, "folders: the config's without a server")
 } catch {
     check(false, "folders: \(error)")
+}
+
+// Uninstall: the agents and the app's folders; recordings only from folders that are EchoFox's own.
+do {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-uninstall-\(getpid())")
+    let fm = FileManager.default
+    for p in ["Library/LaunchAgents", ".echofox", "Library/Logs/EchoFox", "speech/recordings/2026-10-27/x",
+              "Documents/notes", "Documents/2026-10-27"] {
+        try fm.createDirectory(at: home.appendingPathComponent(p), withIntermediateDirectories: true)
+    }
+    fm.createFile(atPath: home.appendingPathComponent("Library/LaunchAgents/echofox.gemma-voice.plist").path, contents: nil)
+    let rec = home.appendingPathComponent("speech/recordings"), docs = home.appendingPathComponent("Documents")
+    let names = { (items: [Uninstall.Item]) in items.map { $0.url.path.replacingOccurrences(of: home.path + "/", with: "") } }
+    check(names(Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: false))
+          == ["Library/LaunchAgents/echofox.gemma-voice.plist", ".echofox", "Library/Logs/EchoFox"],
+          "uninstall: what exists of the agents and folders")
+    let with = Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: true)
+    check(names(with).suffix(1) == ["speech/recordings"] && with.last?.toTrash == true,
+          "uninstall: the recordings to the Trash, not a folder that holds other things: \(names(with))")
+    try? fm.removeItem(at: home)
+} catch {
+    check(false, "uninstall: \(error)")
 }
 
 // The launchd agent of a bundled server.

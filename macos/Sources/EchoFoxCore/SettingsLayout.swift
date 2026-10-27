@@ -72,6 +72,7 @@ public enum SettingsLayout {
         "prompt": [.page(.model, section: "Prompt", order: 3)],
         "serverStatus": [.page(.diagnostics, section: "Server", order: 0)],
         "openLog": [.page(.diagnostics, section: "Logs", order: 0)],
+        "uninstall": [.page(.general, section: "Uninstall", order: 90)],
         // The server's settings placed by hand
         "saveRecordings": [.page(.recordings, section: "Recordings", order: 0)],
         "recordings": [.page(.recordings, section: "Recordings", order: 1)],

@@ -13,10 +13,12 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 
 import catalog
+import constants
 import downloads
+import llama
 import protocol
 import variants
-from fakes import args, stub_models
+from fakes import FakeAgents, StubModel, args, stub_models
 
 MODEL, MMPROJ = os.urandom(300_000), os.urandom(100_000)
 
@@ -116,6 +118,22 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
             downloads.remove("tiny", "a", self.folder, in_force="a")
         self.assertEqual(downloads.remove("tiny", "a", self.folder), len(MODEL))  # mm.gguf stays for b
         self.assertTrue(os.path.exists(self.path("mm.gguf")) and os.path.exists(self.path("big.gguf")))
+        self.assertFalse(os.path.exists(self.path("m.gguf")))
+
+    async def test_the_variant_in_use_is_removed_after_its_model_leaves_memory(self):
+        self.run_job("a")
+        models = llama.Models({"m": {"catalog": "tiny", "variant": "a", "launchd": "x.m", "llamaServer": "http://h:1"}},
+                              make=StubModel, models_folder=self.folder)
+        models.selected = "m"
+        plist = constants.path(f"{constants.LAUNCH_AGENTS}/x.m.plist")
+        os.makedirs(os.path.dirname(plist), exist_ok=True)
+        open(plist, "w").close()
+        sent = []
+        async def send(**m): sent.append(m)
+        with FakeAgents() as agents:
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args(models_folder=self.folder))
+        self.assertEqual(sent[0]["type"], "removed")
+        self.assertEqual((agents.calls, models.active, os.path.exists(plist)), ([("stop", "x.m")], None, False))
         self.assertFalse(os.path.exists(self.path("m.gguf")))
 
     async def test_the_download_message_sends_progress_then_downloaded(self):
