@@ -21,9 +21,9 @@ defaults (docs/design.md, "Settings"):
   promptAnyLanguage  the template when the language is not one it names: the card's code example
   options            the defaults of the model's settings and its constants (tuning.py): Gemma 4's sampler is
                      Google's ("Use the following standardized sampling configuration across all use cases", model
-                     card; generation_config.json of google/gemma-4-E4B-it); maxTokensPerSpeechSecond, which every
-                     entry must give: in 346 pieces with speech (2026-10-22 to 2026-10-25), Gemma 4 E4B wrote at most
-                     10.4 tokens per second of speech (8.1 for 99 % of them), and 20 is twice that
+                     card; generation_config.json of google/gemma-4-E4B-it); maxTokensPerPiece, which every entry
+                     must give: in 798 pieces with speech (2026-10-22 to 2026-10-27), Gemma 4 E4B wrote at most 10.4
+                     tokens per second of speech, and 600 is twice that for the longest piece (maxAudioSeconds, 30 s)
   llamaServer.args   the arguments of its llama-server, after its files and address (llama.agent); --offline and
                      --no-webui: llama-server never goes to the network and serves no web page
 """

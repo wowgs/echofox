@@ -324,7 +324,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)  # a file of this version is not written
             self.assertEqual(os.stat(f).st_mtime_ns, mtime)
 
-    def test_version_3_becomes_9_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_10_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -338,7 +338,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
-            self.assertEqual(c["version"], 9)
+            self.assertEqual(c["version"], 10)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude-code"]["chatHistoryTokenBudget"], 1000)  # its own value stays
@@ -349,7 +349,7 @@ class MigrateTest(unittest.TestCase):
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
 
-    def test_version_4_becomes_9_without_the_second_ways_and_the_order_kept(self):
+    def test_version_4_becomes_10_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v4 = {"model": "m", "version": 4,
@@ -366,7 +366,7 @@ class MigrateTest(unittest.TestCase):
                 s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])
-            self.assertEqual(c["version"], 9)
+            self.assertEqual(c["version"], 10)
             self.assertEqual(c["server"], {"maxRecordingSeconds": 600})
             self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
             self.assertNotIn("options", c["models"]["n"])
@@ -378,7 +378,7 @@ class MigrateTest(unittest.TestCase):
             self.assertEqual(s.file_settings(f)["maxRecordingSeconds"], 600.0)
 
 
-    def test_version_6_becomes_9_with_adapter_defaults_in_each_adapter(self):
+    def test_version_6_becomes_10_with_adapter_defaults_in_each_adapter(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v6 = {"version": 6, "adapters": {"claude": {"enabled": True, "chatTermsTokenBudget": 50},
@@ -389,10 +389,27 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), ["version", "adapters", "model"])
-            self.assertEqual(c["version"], 9)
+            self.assertEqual(c["version"], 10)
             self.assertEqual(c["adapters"], {"claude-code": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "claude-chat": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "telegram": {"enabled": True, "chatTermsTokenBudget": 150, "proseOnly": False}})
+
+    def test_version_9_becomes_10_without_the_copies_of_version_9s_defaults(self):
+        old = {"version": 9, "models": {"gemma-e4b": {"prompt": s.V9_PROMPT, "variant": "q8_0"},
+                                        "mine": {"prompt": "Say it."}},
+               "languages": {"ru": {"notes": list(s.V9_RU_NOTES)}, "de": {"notes": ["Mine."]}}}
+        c, what = s.from_9(old, None)
+        self.assertEqual(c, {"version": 10, "models": {"gemma-e4b": {"variant": "q8_0"}, "mine": {"prompt": "Say it."}},
+                             "languages": {"de": {"notes": ["Mine."]}}})  # a copy goes, a changed one stays
+        self.assertIn("models.gemma-e4b.prompt, languages.ru.notes", what)
+        kept = {"version": 9, "languages": {"ru": {"notes": ["Mine."], "fillers": ["э"]}}}
+        self.assertEqual(s.from_9(kept, None)[0]["languages"], {"ru": {"notes": ["Mine."], "fillers": ["э"]}})
+        self.assertNotIn("languages", s.from_9({"version": 9, "languages": {"ru": {"notes": list(s.V9_RU_NOTES)}}},
+                                               None)[0])  # nothing left of it
+
+    def test_the_notes_of_every_language_are_only_notes(self):
+        self.assertTrue(s.good_languages({"*": {"notes": ["The speech is {LANGUAGE}."]}, "ru": {"fillers": ["э"]}}))
+        self.assertFalse(s.good_languages({"*": {"fillers": ["э"]}}))
 
     def test_version_8_becomes_9_with_the_time_limit_in_seconds(self):
         c, _ = s.from_8({"version": 8, "server": {"port": 8090, "maxRecordingMinutes": 2.5}}, None)
@@ -410,7 +427,7 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 300)  # copies, not one dict
         self.assertEqual(s.from_7({"version": 7}, None)[0], {"version": 8})  # no adapters: nothing to split
 
-    def test_version_5_becomes_9_without_the_constants_and_with_minutes(self):
+    def test_version_5_becomes_10_without_the_constants_and_with_seconds(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v5 = {"version": 5, "server": {"port": 8090, "pieceSeconds": 15, "cutSearchSeconds": 3,
@@ -423,7 +440,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v5, fh)
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
-            self.assertEqual(c["version"], 9)
+            self.assertEqual(c["version"], 10)
             self.assertEqual(c["server"], {"port": 8090, "maxRecordingSeconds": 1800})
             self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})
             self.assertNotIn("options", c["models"]["n"])
@@ -434,7 +451,7 @@ class SchemaTest(unittest.TestCase):
     def test_the_constants_are_not_settings_and_the_tuning_ones_are_advanced(self):
         st = s.recording_settings(s.resolve({}))
         info = {e["key"]: e for e in s.schema(st, {"catalog": "gemma-4-e4b"})}
-        for constant in ("pieceSeconds", "minSpeechSeconds", "warmText", "maxTokensPerSpeechSecond"):
+        for constant in ("pieceSeconds", "minSpeechSeconds", "warmText", "maxTokensPerPiece"):
             self.assertNotIn(constant, info)
         self.assertNotIn("advanced", info["maxRecordingSeconds"])
         for key in ("temperature", "topK", "topP", "seed", "chatHistoryTokenBudget", "chatTermsTokenBudget",
@@ -446,7 +463,7 @@ class SchemaTest(unittest.TestCase):
 
     def test_every_catalog_entry_gives_the_models_constants(self):
         for name, entry in catalog.entries().items():
-            self.assertIsNotNone(s.model_defaults({"catalog": name}).get("max_tokens_per_speech_second"), name)
+            self.assertIsNotNone(s.model_defaults({"catalog": name}).get("max_tokens_per_piece"), name)
 
 
 if __name__ == "__main__":

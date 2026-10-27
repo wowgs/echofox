@@ -377,7 +377,10 @@ struct ItemView: View {
         case "privateDictationKey": KeyPicker(model: model, isPrivate: true, title: "Private dictation",
                                               note: "Reads nothing on the screen and saves nothing.")
         case "language": LanguagePicker(model: model)
-        case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for the model",
+        case "commonNotes": LanguageList(model: model, field: "notes", title: "Notes for every language",
+                                         note: "{LANGUAGE} is replaced with the language. English speech gets none.",
+                                         every: true)
+        case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for this language",
                                            note: "Rules about this language for the model, one on each line.")
         case "languageFillers": LanguageList(model: model, field: "fillers", title: "Hesitation sounds",
                                              note: "Removed from the text. Separate them with commas.")
@@ -702,7 +705,7 @@ struct Measure: View {
     }
 }
 
-/// The model's prompt template: its own in the config, or its catalog entry's. The language's notes follow it.
+/// The model's prompt template: its own in the config, or its catalog entry's. The language notes follow it.
 struct PromptEditor: View {
     @ObservedObject var model: SettingsModel
     private var id: String { "prompt." + (model.config.model ?? "") }
@@ -718,7 +721,7 @@ struct PromptEditor: View {
             TextEditor(text: model.draft(id, shown: shown)).font(.system(.body, design: .monospaced))
                 .frame(minHeight: 160).inputBox()
             HStack {
-                Text("{LANGUAGE} is replaced with the language. Its notes come after the prompt.")
+                Text("{LANGUAGE} is replaced with the language. The language notes come after the prompt.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if own != nil {
@@ -737,17 +740,20 @@ struct PromptEditor: View {
     }
 }
 
-/// A language's list (its notes or its hesitation sounds): the config's for the language, else the table's.
+/// A language's list (its notes or its hesitation sounds), or with `every` the notes of every language: the config's,
+/// else the table's.
 struct LanguageList: View {
     @ObservedObject var model: SettingsModel
     let field: String, title: String, note: String
+    var every = false
 
-    private var code: String { String(model.config.language.prefix(while: { $0 != "-" })) }
+    private var code: String { every ? "*" : String(model.config.language.prefix(while: { $0 != "-" })) }
     private var id: String { "language.\(code).\(field)" }
     private var list: SettingStore.LanguageList { field == "notes" ? .notes : .fillers }
     private var path: [String] { list.path(of: code) }
     private var own: [String]? { model.config.value(path) as? [String] }
     private var defaults: [String] {
+        if every { return model.info?.commonNotes ?? [] }
         let l = model.info?.languages.first { $0.code == code }
         return (field == "notes" ? l?.notes : l?.fillers) ?? []
     }
@@ -761,7 +767,7 @@ struct LanguageList: View {
                 HStack {
                     Text(title)
                     Spacer()
-                    ResetButton(visible: own != nil, help: "Restore the defaults of the language") {
+                    ResetButton(visible: own != nil, help: "Restore the defaults") {
                         model.done(id)
                         model.remove(path)
                     }

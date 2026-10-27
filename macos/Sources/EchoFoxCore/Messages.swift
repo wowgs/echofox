@@ -74,6 +74,8 @@ public struct ServerInfo: Decodable, Equatable {
     public let encoding: String
     public let textWaitSeconds: Double
     public let languages: [Language]
+    /// The notes of every language (server/languages.json, "*"), {LANGUAGE} not filled in; an older server sends none.
+    public let commonNotes: [String]?
     public let adapters: [Adapter]
     /// The settings the server describes; an older server sends none.
     public let settings: [SettingInfo]?

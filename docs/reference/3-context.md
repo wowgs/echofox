@@ -20,7 +20,7 @@ The app collects additional screen content only for enabled adapters that reques
 Context is placed before the recognition prompt, between `<context>` and `</context>`:
 
 - A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
-- Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency.
+- Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency. English speech gets no terms: every English word would be one.
 - The newest messages that fit the adapter's budget, arranged from oldest to newest.
 
 Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.

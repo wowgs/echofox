@@ -8,7 +8,7 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 
 ```json
 {
-  "version": 9,
+  "version": 10,
   "model": "Gemma E4B llama.cpp",
   "language": "ru",
   "microphone": "builtin",
@@ -31,7 +31,7 @@ This example enables the three built-in adapters and overrides several defaults.
 
 | Key | Purpose |
 |---|---|
-| `version` | Config format version. The server migrates supported older versions to version 9 at startup, preserving field order. Version 9 has the recording's time limit in seconds (`maxRecordingSeconds`), as every other time. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
+| `version` | Config format version. The server migrates supported older versions to version 10 at startup, preserving field order. Version 10 removes a model's `prompt` and the Russian `notes` when they are copies of version 9's defaults, so that the new defaults apply: the notes of every language took over the English terms from the model's template. Version 9 has the recording's time limit in seconds (`maxRecordingSeconds`), as every other time. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
 | `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |
@@ -39,7 +39,7 @@ This example enables the three built-in adapters and overrides several defaults.
 | `dictationKey`, `privateDictationKey` | The keys to tap: `rightOption` (the default for dictation), `rightCommand` (the default for private dictation), `rightShift`, `rightControl`, or `none`. |
 | `silenceStopSeconds` | The app stops a recording after this many seconds without speech. It must be more than 0. |
 | `adapters` | Adapter enablement (`enabled`) and context settings. See [the chat context](3-context.md). |
-| `languages` | Your changes to a language: `notes`, the lines added to the prompt, and `fillers`, hesitation sounds to remove. An empty list turns one off. The defaults are in `server/languages.json`. |
+| `languages` | Your changes to a language: `notes`, the lines added to the prompt, and `fillers`, hesitation sounds to remove. `"*"` holds the notes of every language; `{LANGUAGE}` in them is replaced with the language's name, and English speech gets none of them. An empty list turns one off. The defaults are in `server/languages.json`. |
 | `server` | The settings of the server: `maxRecordingSeconds` (1800 by default), `saveRecordings`, `recordings`, `labeled`, `modelsFolder` (the model files, by default `~/Library/Application Support/EchoFox/models`), `metrics`, `host`, `port`. |
 
 ## Model entries

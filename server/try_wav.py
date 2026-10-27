@@ -2,7 +2,7 @@
 
 The audio goes in 100 ms chunks at real-time speed, then the stop message. The script prints each message with
 its time, and the time from the stop until the server says done.
-Usage: try_wav.py <16 kHz mono 16-bit WAV> [--url URL] [--working] [--model NAME] [--language ru]
+Usage: try_wav.py <16 kHz mono 16-bit WAV> [--url URL] [--working] [--model NAME] [--language CODE]
                   [--hint KEY=VALUE]... [--snapshot FILE] [--options JSON] [--prompt TEXT] [--fast]
 It goes to the test dictation server (server/test_server.sh, constants.TEST_URL) unless --url says otherwise. The working
 server, the one your dictation uses, it reaches only with --working: a run there would wait behind your dictation,
@@ -18,7 +18,17 @@ import wave
 from websockets.asyncio.client import connect
 
 import constants
+import settings
 
+
+def config_language():
+    """The config's language ("" if it names none, or cannot be read)."""
+    try:
+        with open(settings.config_file(), encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    return (c.get("language") or "") if isinstance(c, dict) else ""
 
 
 async def main():
@@ -26,7 +36,8 @@ async def main():
     p.add_argument("wav")
     p.add_argument("--url", default=constants.TEST_URL, help=f"the dictation server (default the test one, {constants.TEST_URL})")
     p.add_argument("--working", action="store_true", help=f"allow the working server ({constants.WORKING_URL})")
-    p.add_argument("--language", default="ru")
+    p.add_argument("--language", default=config_language(),
+                   help="the speech's language (default: the config's, as the app sends it)")
     p.add_argument("--model", help="a model of the registry (default: the server's first)")
     p.add_argument("--hint", action="append", default=[], metavar="KEY=VALUE",
                    help="a hint for the adapters, sent in the start message's hints; VALUE is JSON, or else text "

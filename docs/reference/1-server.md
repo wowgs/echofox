@@ -25,15 +25,15 @@ While you speak, the server also prepares the shared context and prompt in the m
 
 Speech detection also drives the app's silence timeout. Audio levels are used to choose cut points and report recording quality, not to decide whether speech is present.
 
-## Guard against runaway output
+## Limit of a piece's text
 
-The output limit is 20 tokens per second of detected speech. A token is a word or part of a word. In a local sample of 346 speech pieces collected on 22–25 October 2026, the maximum observed rate was 10.4 tokens per second.
-
-The server discards output that reaches the limit. This is a safeguard against runaway generation, not proof that every discarded result is wrong.
+A piece's text has at most 600 tokens (`maxTokensPerPiece` in the model's catalog entry). A token is a word or part of a word. The limit stops a model that does not end its text; without it, the model writes until its slot's context is full. The text that reached the limit is kept. In 798 speech pieces collected on 22–27 October 2026, Gemma 4 E4B wrote at most 10.4 tokens per second of speech; 600 is twice that for the longest piece the model takes, 30 seconds.
 
 ## Recognition prompt
 
-The prompt combines the model's template with notes for the selected language. The Gemma template is the speech recognition prompt of Google's model card with two additions: the speech may contain English terms, and it comes from software engineers, so product names, services and abbreviations keep their official Latin spelling. It asks for punctuation, capital letters and numbers as digits. The Russian notes say that the speech is Russian with English technical terms, that Russian words with Russian endings stay in Cyrillic (задеплоить, закоммитил), and that the imperative mood stays as spoken. Language notes live in `server/languages.json`.
+The prompt combines the model's template with the language notes. The Gemma template is the speech recognition prompt of Google's model card with two additions: the speech comes from software engineers, so product names, services and abbreviations keep their official Latin spelling, and the text has punctuation and capital letters. It also asks for numbers as digits.
+
+The language notes come in two parts, both in `server/languages.json`. The notes of every language (`"*"`) say that the speech mixes in English technical terms and that words of the language stay in its script. `{LANGUAGE}` in them is replaced with the language's name. English speech gets none of them, and its chat context gets no list of terms, since every English word would be one. Then come the notes of the language itself. The Russian notes say that the imperative mood stays as spoken and give examples of Russian words made from English ones (задеплоить, закоммитил). Hesitation sounds are listed only for Russian.
 
 A custom model prompt replaces only the template. Language notes are still appended. The default sampling settings are temperature 1.0, top_k 64, and top_p 0.95.
 

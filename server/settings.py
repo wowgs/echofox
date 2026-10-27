@@ -18,6 +18,7 @@ from typing import Callable
 
 import catalog
 import constants
+import languages
 import metrics
 import tuning
 
@@ -69,10 +70,11 @@ def good_adapters(v):
 
 
 def good_languages(v):
-    """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional."""
+    """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional; "*" (every language) has only notes."""
     def strings(w):
         return isinstance(w, list) and all(isinstance(x, str) and x.strip() for x in w)
-    return all(isinstance(k, str) and isinstance(e, dict) and set(e) <= {"notes", "fillers"}
+    return all(isinstance(k, str) and isinstance(e, dict)
+               and set(e) <= ({"notes"} if k == languages.ALL else {"notes", "fillers"})
                and all(strings(w) for w in e.values()) for k, e in v.items())
 
 
@@ -437,7 +439,43 @@ def from_8(c, path):
                else "no server.maxRecordingMinutes")
 
 
-MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 8: from_8}  # a file's version → its next step
+# The defaults of version 9 that version 10 changed: a copy of them in a config is not the user's choice
+V9_PROMPT = ("Transcribe the following speech segment in {LANGUAGE} + English terms into {LANGUAGE} + English terms "
+             "text.\n\nFollow these specific instructions for formatting the answer:\n"
+             "* Only output the transcription, with no newlines.\n"
+             "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead "
+             "of three.\n"
+             "* You transcribe speech of software engineers. Write product names, services and abbreviations in their "
+             "official Latin spelling. Write English terms the way they are officially spelled.\n"
+             "* Write it with punctuation and capital letters.")
+V9_RU_NOTES = ["The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken.",
+               "The speech is Russian with English technical terms.",
+               "Keep Russian words with Russian endings in Cyrillic, for example задеплоить, закоммитил."]
+
+
+def from_9(c, path):
+    """Version 9 → 10: the notes of every language ("*" in languages.json) say that the speech mixes in English terms,
+    instead of the model's template and the Russian notes. A model's prompt or the Russian notes that are a copy of
+    version 9's defaults go, so that the new defaults apply; a changed one stays."""
+    gone = []
+    for name, m in (c.get("models") or {}).items():
+        if isinstance(m, dict) and m.get("prompt") == V9_PROMPT:
+            del m["prompt"]
+            gone.append(f"models.{name}.prompt")
+    langs = c.get("languages")
+    ru = langs.get("ru") if isinstance(langs, dict) else None
+    if isinstance(ru, dict) and ru.get("notes") == V9_RU_NOTES:
+        del ru["notes"]
+        gone.append("languages.ru.notes")
+        if not ru:
+            del langs["ru"]
+        if not langs:
+            del c["languages"]
+    c["version"] = 10
+    return c, ("the copies of version 9's defaults went: " + ", ".join(gone)) if gone else "no copy of version 9's defaults"
+
+
+MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 8: from_8, 9: from_9}  # a file's version → its next step
 
 
 class ConfigWatcher:

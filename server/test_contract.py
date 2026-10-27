@@ -22,7 +22,7 @@ class ContractTest(unittest.TestCase):
         got = info.info(args())
         example = EXAMPLES["info"]
         self.assertEqual(set(got), set(example))
-        for k in ("type", "interface", "sampleRate", "encoding", "textWaitSeconds", "languages"):
+        for k in ("type", "interface", "sampleRate", "encoding", "textWaitSeconds", "languages", "commonNotes"):
             self.assertEqual(got[k], example[k], k)
         self.assertEqual(set(got["adapters"][0]), set(example["adapters"][0]))
         fields = {"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",

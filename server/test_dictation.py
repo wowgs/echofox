@@ -20,9 +20,9 @@ from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 class OptionsTest(unittest.TestCase):
     def test_known_options_are_checked_and_renamed(self):
-        self.assertEqual(tuning.parse_options({"temperature": 0, "topK": 1, "maxTokensPerSpeechSecond": 15,
+        self.assertEqual(tuning.parse_options({"temperature": 0, "topK": 1, "maxTokensPerPiece": 15,
                                                "pieceSeconds": 10}),
-                         {"temperature": 0.0, "top_k": 1, "max_tokens_per_speech_second": 15.0, "piece_seconds": 10.0})
+                         {"temperature": 0.0, "top_k": 1, "max_tokens_per_piece": 15, "piece_seconds": 10.0})
         self.assertEqual(tuning.parse_options(None), {})
 
     def test_unknown_or_wrong_options_are_refused(self):
@@ -35,19 +35,26 @@ class OptionsTest(unittest.TestCase):
 
 class PromptTest(unittest.TestCase):
     def test_the_catalogs_template_with_the_language(self):
-        # Google's ASR prompt with English terms and the speech of software engineers
-        self.assertTrue(d.prompt("ru").startswith("Transcribe the following speech segment in Russian + English terms "
-                                                  "into Russian + English terms text."))
+        # Google's ASR prompt and the speech of software engineers; the English terms are in the notes
+        self.assertTrue(d.prompt("ru").startswith("Transcribe the following speech segment in Russian into Russian "
+                                                  "text."))
+        self.assertIn("* The speech is Russian with English technical terms.", d.prompt("ru"))
         self.assertIn("write the digits", d.prompt("ru"))
         self.assertIn("You transcribe speech of software engineers.", d.prompt("ru"))
 
     def test_the_clients_prompt_with_the_language_filled_in(self):
         self.assertEqual(d.prompt("en", "Say it in {LANGUAGE}."), "Say it in English.")
-        self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."),  # the language's notes follow any template
-                         "Say it in Russian.\n* The speaker often uses the imperative mood (сделай, посмотри, проверь): "
-                         "keep it as spoken.\n* The speech is Russian with English technical terms.\n"
-                         "* Keep Russian words with Russian endings in Cyrillic, for example задеплоить, закоммитил.")
-        self.assertEqual(d.prompt("ru", "Say it.", configured={"ru": {"notes": []}}), "Say it.")  # the config's
+        self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."),  # the notes follow any template
+                         "Say it in Russian.\n* The speech is Russian with English technical terms.\n"
+                         "* Keep Russian words in the Russian script, also those made from English words with Russian "
+                         "endings.\n* The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it "
+                         "as spoken.\n* Russian words made from English ones stay in Cyrillic, for example задеплоить, "
+                         "закоммитил.")
+        self.assertEqual(d.prompt("ru", "Say it.", configured={"*": {"notes": []}, "ru": {"notes": []}}),
+                         "Say it.")  # the config's
+        self.assertEqual(d.prompt("de", "Say it.", configured={"*": {"notes": ["Mind {LANGUAGE} names."]}}),
+                         "Say it.\n* Mind German names.")  # the config's notes of every language, filled in
+        self.assertEqual(d.prompt("en", "Say it."), "Say it.")  # English speech: no notes of English terms
         self.assertEqual(d.prompt("xx", "Say it in {LANGUAGE}."), "Say it in its original language.")
 
     def test_unknown_language_uses_the_original_language_form(self):
@@ -89,7 +96,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(body["messages"]), 1)  # no system turn by default
             self.assertEqual(base64.b64decode(parts[1]["input_audio"]["data"])[:4], b"RIFF")
             self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
-        self.assertEqual((bodies[0]["max_tokens"], bodies[0]["cache_prompt"], bodies[0]["seed"]), (40, True, 3))
+        self.assertEqual((bodies[0]["max_tokens"], bodies[0]["cache_prompt"], bodies[0]["seed"]), (600, True, 3))
         m = self.metrics("piece")[0]
         self.assertEqual((m["prefill_tokens"], m["cached_tokens"], m["decode_tokens"]), (30, 6, 5))
 
@@ -117,6 +124,15 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("old long reply", d.text)
         self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
+
+    async def test_english_speech_gets_no_terms_since_every_word_of_it_is_one(self):
+        chat = {"messages": [{"from": "Anna", "text": "hello there"}], "terms": ["GitHub"]}
+        for language, terms in (("en-GB", False), ("ru", True)):
+            dictation = d.Dictation(self.fake.model(), "PROMPT", settings.model_defaults({}), args(),
+                                    {"language": language})
+            await dictation.prepare(chat)
+            self.assertEqual("Terms: GitHub" in dictation.text, terms, language)
+            self.assertIn("Anna: hello there", dictation.text)
 
     async def test_a_piece_without_speech_never_goes_to_the_model(self):
         dictation = self.dictation({"min_speech_seconds": 0.3})
@@ -165,14 +181,11 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         await other.prepare({**chat, "adapter": "claude-code"})
         self.assertIn("Anna: hello there", other.text)  # another adapter keeps the model's budget
 
-    async def test_the_text_is_limited_by_the_length_of_the_speech(self):
+    async def test_the_text_of_a_piece_has_a_fixed_limit(self):
         await self.dictation({}).piece(LOUD * 20, 1, 12.3)
-        await self.dictation({"max_tokens_per_speech_second": 5}).piece(LOUD * 20, 1, 12.3)
-        await self.dictation({"min_speech_seconds": 0}).piece(LOUD, 1, 0)
-        self.assertEqual([b["max_tokens"] for b in self.fake.completions()],
-                         [246, 62, 1])  # 20 per second of speech by default, rounded up, at least 1
-        self.assertEqual([(m["output_limit"], m["output_limit_hit"]) for m in self.metrics("piece")],
-                         [(246, False), (62, False), (1, True)])
+        await self.dictation({"max_tokens_per_piece": 5}).piece(LOUD, 1, 1)
+        self.assertEqual([b["max_tokens"] for b in self.fake.completions()], [600, 5])  # the catalog's, the options'
+        self.assertEqual([m["max_tokens_hit"] for m in self.metrics("piece")], [False, True])
 
     async def test_the_catalogs_sampler_unless_the_options_set_one(self):
         defaults = settings.model_defaults({})  # Gemma 4 E4B's catalog entry: Google's sampler
@@ -182,16 +195,17 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
                          [{"temperature": 1.0, "top_k": 64, "top_p": 0.95, "seed": None},
                           {"temperature": 1.0, "top_k": 1, "top_p": 0.95, "seed": 3}])
 
-    async def test_a_text_that_reaches_the_limit_is_the_models_own_and_is_dropped(self):
+    async def test_a_text_that_reaches_the_limit_stays(self):
         fake = FakeLlamaServer(decode=1000)
         try:
             with self.assertLogs("gemma_voice", "WARNING") as logs:
-                self.assertEqual(await self.dictation(model=fake.model()).piece(LOUD * 2, 1, 2), "")
+                text = await self.dictation(model=fake.model()).piece(LOUD * 2, 1, 2)
         finally:
             fake.close()
-        self.assertIn("reached the limit of 40 tokens", logs.output[0])
+        self.assertEqual(text, "text from llama")
+        self.assertIn("stopped at the limit of 600 tokens", logs.output[0])
         m = self.metrics("piece")[0]
-        self.assertEqual((m["output_limit_hit"], m["text_chars"], m["dropped_chars"]), (True, 0, 15))
+        self.assertEqual((m["max_tokens_hit"], m["text_chars"]), (True, 15))
 
     async def test_a_named_recording_keeps_the_text_each_piece_and_its_text(self):
         rec = recordings.Recording(self.dir.name)

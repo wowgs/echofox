@@ -1,4 +1,10 @@
 {
+  "*": {
+    "notes": [
+      "The speech is {LANGUAGE} with English technical terms.",
+      "Keep {LANGUAGE} words in the {LANGUAGE} script, also those made from English words with {LANGUAGE} endings."
+    ]
+  },
   "cs": {
     "name": "Czech"
   },
@@ -48,8 +54,7 @@
     "name": "Russian",
     "notes": [
       "The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it as spoken.",
-      "The speech is Russian with English technical terms.",
-      "Keep Russian words with Russian endings in Cyrillic, for example задеплоить, закоммитил."
+      "Russian words made from English ones stay in Cyrillic, for example задеплоить, закоммитил."
     ],
     "fillers": [
       "э",

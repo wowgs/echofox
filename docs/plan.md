@@ -11,6 +11,7 @@ The work that is left, without promised dates; reviewed on 2026-10-26. The [refe
 | Sampling | Unstable text, transliteration and punctuation. | Compare the current settings with a low temperature and greedy decoding on the same recordings. |
 | Context and terms | Separate the gain from false copying of words. | Compare without context, with context, and with extra terms. |
 | Rules of clean text | Consistent labels. | Decide when to keep "ну", "типа", "вот", and how to treat repeats and self-corrections. |
+| Other languages than Russian | The piece length (15 s), the limit of a piece's text (600 tokens) and the prompt were measured only on Russian speech. | Record a set in one Latin-script language and in one without spaces between words; check the transcription and the tokens per second of speech. |
 
 ## Releases
 

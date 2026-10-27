@@ -27,6 +27,7 @@ do {
           "info: apps, trees and lists")
     check(info.languages.first.map { [$0.code, $0.name] } == ["cs", "Czech"] && info.languages.count == 20,
           "info: the languages")
+    check(info.commonNotes?.first?.contains("{LANGUAGE}") == true, "info: the notes of every language, not filled in")
     var other = examples["info"] as! [String: Any]
     other["interface"] = 99
     check((try? ServerInfo.decode(data(other))) == nil, "info: another interface is refused")
@@ -216,7 +217,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 9
+  "version": 10
 }
 
 """
@@ -238,7 +239,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 9,
+  "version": 10,
   "adapters": {"enabled": true}
 }
 

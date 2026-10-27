@@ -64,8 +64,9 @@ public enum SettingsLayout {
         "privateDictationKey": [.page(.general, section: "Shortcuts", order: 1)],
         "silenceStopSeconds": [.page(.general, section: "Recording", order: 0)],
         "language": [.page(.language, section: "Language", order: 0)],
-        "languageNotes": [.page(.language, section: "Language", order: 1)],
-        "languageFillers": [.page(.language, section: "Language", order: 2)],
+        "commonNotes": [.page(.language, section: "Language", order: 1)],
+        "languageNotes": [.page(.language, section: "Language", order: 2)],
+        "languageFillers": [.page(.language, section: "Language", order: 3)],
         "model": [.page(.model, section: "Model", order: 0)],
         "variant": [.page(.model, section: "Quantization", order: 1)],  // a page's sections go by their first order
         "modelsFolder": [.page(.model, section: "Model", order: 2)],

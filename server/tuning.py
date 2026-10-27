@@ -74,11 +74,10 @@ KNOBS = [
     Knob("maxRecordingSeconds", "max_recording_seconds", float, float(constants.MAX_RECORDING_S), "server",
          "recording", "basic", "Recording time limit", "Stops a recording if you forget to stop it.",
          low=0, open_low=True, client=False, unit="s"),
-    # The model's constant: the longest text of a piece, in tokens per second of its speech; the value is the
-    # catalog entry's (catalog.json), as tokens are the model's. A text that reaches it is the model's own and is
-    # dropped; without a limit, a model that never ends its text decodes until the context is full.
-    Knob("maxTokensPerSpeechSecond", "max_tokens_per_speech_second", float, None, "model", "output",
-         low=0, open_low=True),
+    # The model's constant: the longest text of a piece, in tokens; the value is the catalog entry's (catalog.json), as
+    # tokens are the model's. The model stops there and its text stays: without a limit, a model that never ends its
+    # text decodes until its slot's context is full.
+    Knob("maxTokensPerPiece", "max_tokens_per_piece", int, None, "model", "output", low=1),
     # The model's advanced settings: its sampler (defaults: its catalog entry)
     Knob("temperature", "temperature", float, None, "model", "sampling", "advanced", "Temperature",
          "Higher values give more varied text.", low=0),
