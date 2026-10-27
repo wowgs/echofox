@@ -31,10 +31,11 @@ An app writes the server's launchd agent for itself when it starts, so opening a
 |---|---|
 | `MacOS/EchoFox` | The Mac app. |
 | `Resources/server/` | The dictation server, the built-in adapters and Silero VAD. |
-| `Resources/python/` | Python 3.14 with the server's packages. |
+| `Resources/python/` | Python 3.14 with the server's packages, without pip: it only installs the packages during the build. |
 | `Resources/llama/llama-server` | llama-server, built with Metal into one binary. |
 | `Frameworks/Sparkle.framework` | Sparkle, the updater ([updates](#updates)), without its XPC services. |
 | `Resources/Assets.car`, `EchoFox.icns` | The app icon ([art](../../macos/art/README.md)). |
+| `Resources/licenses/` | The licenses of llama.cpp and Sparkle. Python keeps its license in `Resources/python/lib/python3.14/LICENSE.txt`, each package in its `dist-info`, and Silero VAD in `Resources/server/vad/LICENSE`. |
 
 `macos/pins.sh` pins the versions with their checksums or commits, and the oldest macOS, 26 (the onnxruntime and numpy wheels from PyPI are built for older versions and run on it). Everything in the bundle is built for it, and the build fails if a binary needs a newer macOS or links a library from Homebrew. Python's bytecode is compiled before signing, and the server's agent sets `PYTHONDONTWRITEBYTECODE`, so that nothing is written into the signed bundle. At launch, off the main thread, the app writes the launchd agent of its own server. It does not do that when it runs from the dmg or from an App Translocation path: it asks the user to move it to Applications and quits, because the agent would keep a path that goes away. The agent carries the app's version (`ECHOFOX_APP_VERSION`), which the server passes on to the agent of llama-server, so a new version in the same place restarts both. The model is not in the package: it is several gigabytes, it does not change with each app update, and Q4_0 and Q8_0 are variants of one model in the app, not separate builds.
 

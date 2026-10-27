@@ -78,6 +78,12 @@ echo "$PYTHON_SHA256  $tarball" | shasum -a 256 -c - >/dev/null
 tar -xzf "$tarball" -C "$res"
 "$res/python/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check \
   --require-hashes --only-binary :all: -r ../server/requirements.txt
+# pip, which comes with this Python, only installs the packages: the app never installs anything, so pip leaves,
+# and so does ensurepip, which is a copy of pip in the standard library
+"$res/python/bin/python3" -m pip uninstall --yes --quiet --disable-pip-version-check pip
+rm -rf "$res"/python/lib/python3.*/ensurepip
+left=$(find "$res/python" \( -name pip -o -name 'pip-*' -o -name 'pip3*' -o -name ensurepip \) -print)
+[ -z "$left" ] || { echo "pip is still in the bundle: $left" >&2; exit 1; }
 
 # The server's code, without its tests and the tools of its development
 mkdir -p "$res/server"
@@ -108,6 +114,13 @@ if [ ! -x "$src/build/bin/llama-server" ] || [ "$(cat "$src/build/echofox-flags"
 fi
 mkdir -p "$res/llama"
 cp "$src/build/bin/llama-server" "$res/llama/"
+
+# The licenses of what the bundle carries, which they ask to ship with it (docs/reference/7-development.md, "The
+# package"): llama.cpp's and Sparkle's here; Python and its packages keep theirs (python/lib/python3.*/LICENSE.txt and
+# each package's dist-info), Silero VAD's model has server/vad/LICENSE
+mkdir -p "$res/licenses"
+cp "$src/LICENSE" "$res/licenses/llama.cpp.txt"
+cp .build/artifacts/sparkle/Sparkle/LICENSE "$res/licenses/Sparkle.txt"
 
 # The app runs on a Mac without Homebrew and on macOS $MACOS_MIN: no executable or library in it may load a library
 # from Homebrew, or need a newer macOS (the minos of LC_BUILD_VERSION, or the version of the older
