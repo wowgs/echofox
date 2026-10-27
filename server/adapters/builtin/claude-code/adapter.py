@@ -3,6 +3,9 @@
 - Claude Desktop's Code tab, the session in focus (confidence 1.0). Ways to the session: the web area's URL → Desktop's
   record of the session → its Claude Code transcript ("desktop store"); without a record, the web area's title → the
   one transcript with that title ("title"); several transcripts with that title: no context.
+- A terminal's tab (Ghostty, Terminal, iTerm2, Warp) with Claude Code in it (confidence 1.0): the claude among the
+  terminal's processes whose session's name the window's title shows ("terminal title", terminal.py); not in tmux or
+  screen.
 - Claude Code sessions that the client names in the start message (confidence 0.9): the newest of them.
 It never guesses a session from the app alone: without the Code tab's URL in the snapshot (no Accessibility
 permission, another window, a chat: that is claude-chat's) it does not claim Desktop, and the newest session of an app
@@ -12,7 +15,7 @@ Claude writes its replies in Markdown; clean makes them plain prose.
 """
 from adapters import Adapter, Claim, markdown
 
-from . import desktop, transcripts
+from . import desktop, terminal, transcripts
 
 
 ABOUT = "a session with Claude, an AI assistant for software work"
@@ -33,11 +36,18 @@ class ClaudeCode(Adapter):
         m = desktop.code_tab(focus)
         if m:
             return Claim(self.name, 1.0, f"the Code tab of Claude Desktop session {m}")
+        t = terminal.session(focus)
+        if t:
+            return Claim(self.name, 1.0, f"the terminal tab of Claude Code session {t['name']}")
         if sessions(hints):
             return Claim(self.name, 0.9, "the client named its Claude Code sessions")
         return None
 
     def context(self, focus, hints):
+        t = terminal.session(focus)
+        if t:
+            found = transcripts.context_of(transcripts.session_file([t["session"]]), "terminal title")
+            return as_context(found, pid=t["pid"]) or {"about": ABOUT, "details": {"session": t["session"], "pid": t["pid"]}}
         local = desktop.code_tab(focus)
         if not local:
             return as_context(transcripts.context_of(transcripts.session_file(sessions(hints)), "named sessions"))

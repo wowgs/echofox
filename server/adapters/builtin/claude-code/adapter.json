@@ -1,17 +1,24 @@
 {
   "name": "claude-code",
   "title": "Claude Code",
-  "version": "2.0",
+  "version": "2.1",
   "author": "echofox",
   "source": "https://github.com/wowgs/echofox",
-  "description": "Reads the transcript of the Claude Code session in focus: the Code tab of Claude Desktop.",
+  "description": "Reads the transcript of the Claude Code session in focus: the Code tab of Claude Desktop, or a terminal's tab.",
   "interface": 2,
   "apps": [
+    "com.anthropic.claudefordesktop",
+    "com.mitchellh.ghostty",
+    "com.apple.Terminal",
+    "com.googlecode.iterm2",
+    "dev.warp.Warp-Stable"
+  ],
+  "electronTree": [
     "com.anthropic.claudefordesktop"
   ],
-  "electronTree": true,
   "reads": [
     "~/Library/Application Support/Claude/claude-code-sessions",
+    "~/.claude/sessions",
     "~/.claude/projects"
   ],
   "screen": [],

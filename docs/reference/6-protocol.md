@@ -46,7 +46,7 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
  "textWaitSeconds": 180, "maxRecordingSeconds": 1800.0,
  "languages": [{"code", "name", "notes", "fillers"}],
  "adapters": [{"name", "title", "enabled", "builtin", "version", "author", "source", "description", "apps",
-               "electronTree", "reads", "screen", "context", "error"}],
+               "electronTree", "electronApps", "reads", "screen", "context", "error"}],
  "models": ["<name>"],
  "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "variant",
            "variants": [{"id", "name", "bytes", "memoryBytes", "downloaded", "downloading"}]},
@@ -54,7 +54,7 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
                "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
-The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `adapters[].title` is an adapter's name for people from its manifest, or null. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
+The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
 
 `settings` describes each setting that the settings window can show and change:
 

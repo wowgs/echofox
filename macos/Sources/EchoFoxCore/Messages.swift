@@ -16,6 +16,9 @@ public struct ServerInfo: Decodable, Equatable {
         public let enabled: Bool
         public let apps: [String]
         public let electronTree: Bool
+        /// Its apps that build their accessibility tree only on request; an older server sends none, and then all of
+        /// its apps do when electronTree is true.
+        public let electronApps: [String]?
         /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
         public let screen: [String]?
         /// The files it reads.
@@ -81,7 +84,9 @@ public struct ServerInfo: Decodable, Equatable {
     /// Apps whose focus an enabled adapter reads.
     public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }
     /// Electron apps whose accessibility tree an enabled adapter needs.
-    public var treeApps: Set<String> { Set(adapters.filter { $0.enabled && $0.electronTree }.flatMap(\.apps)) }
+    public var treeApps: Set<String> {
+        Set(adapters.filter(\.enabled).flatMap { $0.electronApps ?? ($0.electronTree ? $0.apps : []) })
+    }
     /// Apps whose window lists an enabled adapter reads (a messenger's messages): the snapshot takes their rows.
     public var listApps: Set<String> {
         Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap(\.apps))

@@ -154,8 +154,10 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         by = {a["name"]: a for a in got["adapters"]}
         code, chat = by["claude-code"], by["claude-chat"]
         self.assertTrue(code["enabled"] and code["electronTree"] and code["builtin"] and chat["enabled"])
-        self.assertEqual((code["apps"], code["title"], code["screen"], chat["screen"]),
-                         (["com.anthropic.claudefordesktop"], "Claude Code", [], ["outline"]))
+        self.assertEqual((code["apps"][0], code["electronApps"], code["title"], code["screen"], chat["screen"]),
+                         ("com.anthropic.claudefordesktop", ["com.anthropic.claudefordesktop"], "Claude Code", [],
+                          ["outline"]))
+        self.assertIn("com.mitchellh.ghostty", code["apps"])  # a terminal, which builds its tree without asking
         self.args.adapters = []
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 

@@ -27,10 +27,12 @@ class Fixture(unittest.TestCase):
         for p in ("a", "b"):
             os.makedirs(os.path.join(self.projects, p))
         os.makedirs(os.path.join(self.store, "org", "account"))
+        self.running = os.path.join(self.dir.name, "sessions")
+        os.makedirs(self.running)
         self.saved = {k: os.environ.get(k) for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS",
-                                                      "ECHOFOX_ADAPTERS")}
+                                                      "ECHOFOX_ADAPTERS", "ECHOFOX_CLAUDE_SESSIONS")}
         os.environ.update(ECHOFOX_PROJECTS=self.projects, ECHOFOX_DESKTOP_SESSIONS=self.store,
-                          ECHOFOX_ADAPTERS=os.path.join(self.dir.name, "adapters"))
+                          ECHOFOX_ADAPTERS=os.path.join(self.dir.name, "adapters"), ECHOFOX_CLAUDE_SESSIONS=self.running)
 
     def tearDown(self):
         for k, v in self.saved.items():
@@ -51,6 +53,19 @@ class Fixture(unittest.TestCase):
     def desktop_record(self, desktop_id, cli, title):
         with open(os.path.join(self.store, "org", "account", f"{desktop_id}.json"), "w") as fh:
             json.dump({"sessionId": desktop_id, "cliSessionId": cli, "cwd": "/x", "title": title}, fh)
+
+
+    def claude_running(self, pid, session, name, entrypoint="cli"):
+        """A running claude's file in ~/.claude/sessions, as Claude Code 2.1.300 writes it (the fields used)."""
+        with open(os.path.join(self.running, f"{pid}.json"), "w", encoding="utf-8") as fh:
+            json.dump({"pid": pid, "sessionId": session, "cwd": "/x", "kind": "interactive", "entrypoint": entrypoint,
+                       "name": name, "status": "idle"}, fh, ensure_ascii=False)
+
+
+def terminal(title, pids, bundle="com.mitchellh.ghostty"):
+    """A full snapshot of a terminal: the focused window's title and the app's processes."""
+    return {"app": {"bundleId": bundle, "pid": 100}, "window": {"title": title},
+            "processes": [{"pid": 101, "name": "zsh"}] + [{"pid": p, "name": "claude"} for p in pids]}
 
 
 def code_tab(desktop_id, title="Local Speech"):
@@ -170,6 +185,41 @@ class CleanTest(Fixture):
             def context(self, snapshot, sessions): return None
         with self.assertRaises(TypeError):
             NoClean()
+
+
+class ClaudeTerminalTest(Fixture):
+    """Claude Code in a terminal's tab: the session whose name the window's title shows, among the terminal's
+    processes (docs/observations.md, 2026-10-27)."""
+
+    def test_the_tab_in_focus_gives_its_session_by_the_title(self):
+        self.put("a", "s-radio", [reply("m1", "Антенна готова.")])
+        self.put("a", "s-map", [reply("m2", "Карта собрана.")])
+        self.claude_running(201, "s-radio", "Radio Physics")
+        self.claude_running(202, "s-map", "Карта эфира")
+        c = adapters.context(terminal("✳ Карта эфира", [201, 202]))
+        self.assertEqual((c["adapter"], c["details"]["session"], c["details"]["how"], c["messages"][0]["text"]),
+                         ("claude-code", "s-map", "terminal title", "Карта собрана."))
+        # Terminal adds the folder, the command and the size around the title
+        c = adapters.context(terminal("alex — ✳ Radio Physics — claude --resume s-radio — 120×30", [201, 202],
+                                      "com.apple.Terminal"))
+        self.assertEqual(c["details"]["session"], "s-radio")
+
+    def test_no_sure_session_is_no_claim(self):
+        self.put("a", "s1", [reply("m1", "x")])
+        self.claude_running(201, "s1", "Radio")
+        self.claude_running(202, "s2", "Radio Physics")
+        self.claude_running(203, "s3", "Desk", entrypoint="claude-desktop")
+        self.assertIsNone(adapters.context(terminal("✳ Radio Physics", [201, 202])))  # both names are in the title
+        self.assertIsNone(adapters.context(terminal("~", [201])))                     # a shell tab
+        self.assertIsNone(adapters.context(terminal("✳ Radio", [])))                  # in tmux: not the app's process
+        self.assertIsNone(adapters.context(terminal("✳ Desk", [203])))                # Desktop's, not a terminal's
+        self.assertIsNone(adapters.context(terminal("✳ Radio", [201], "com.example.editor")))  # not a terminal
+
+    def test_a_new_session_without_a_transcript_is_claimed_with_no_messages(self):
+        self.claude_running(201, "fresh", "echofox-cc")
+        c = adapters.context(terminal("✳ echofox-cc", [201]))
+        self.assertEqual((c["adapter"], c["details"]["session"]), ("claude-code", "fresh"))
+        self.assertNotIn("messages", c)
 
 
 class UserAdapterTest(Fixture):

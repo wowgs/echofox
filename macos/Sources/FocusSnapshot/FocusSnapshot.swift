@@ -22,7 +22,6 @@ public enum FocusSnapshot {
     /// How long take() waits for an Electron app's tree after asking for it (it took 2.1 s in Claude Desktop).
     public static let electronWaitSeconds = 3.0
     static let electronPollSeconds = 0.05
-    static let maxPids = 8192  // proc_listallpids' buffer: more processes than a Mac runs
     /// The lists of the focused window: how deep under the window to look for them, how many, and how much of each.
     /// A chat's newest messages are at the end of its list, so a long list keeps its last rows.
     static let maxListDepth = 4
@@ -235,17 +234,13 @@ public enum FocusSnapshot {
 
     // MARK: Processes
 
-    /// The app's descendant processes: [{pid, name, cwd}], breadth first, at most maxProcesses.
+    /// The app's descendant processes: [{pid, name, cwd}], breadth first, at most maxProcesses. The parents come from
+    /// the kernel's process table (sysctl KERN_PROC_ALL, as ps reads them), not from proc_pidinfo, which refuses a
+    /// process of another user: a terminal's tab runs login, owned by root, between the terminal and its shell
+    /// (Terminal and Ghostty, 2026-10-27).
     static func descendants(of root: pid_t) -> [[String: Any]] {
-        var pids = [pid_t](repeating: 0, count: maxPids)
-        let n = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
         var children: [pid_t: [pid_t]] = [:]
-        for p in pids.prefix(max(0, n)) where p > 0 {
-            var info = proc_bsdinfo()
-            if proc_pidinfo(p, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 {
-                children[pid_t(info.pbi_ppid), default: []].append(p)
-            }
-        }
+        for (p, parent) in parents() { children[parent, default: []].append(p) }
         var out: [[String: Any]] = []
         var queue = children[root] ?? []
         while !queue.isEmpty && out.count < maxProcesses {
@@ -254,6 +249,19 @@ public enum FocusSnapshot {
             queue += children[p] ?? []
         }
         return out
+    }
+
+    /// Every process with its parent, from the kernel's process table.
+    static func parents() -> [(pid: pid_t, parent: pid_t)] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        size += size / 8  // processes that start between the two calls
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [] }
+        return procs.prefix(size / MemoryLayout<kinfo_proc>.stride)
+            .map { ($0.kp_proc.p_pid, $0.kp_eproc.e_ppid) }
+            .filter { $0.pid > 0 }
     }
 
     static func name(_ p: pid_t) -> String? {

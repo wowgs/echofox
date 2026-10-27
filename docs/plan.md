@@ -31,7 +31,7 @@ Before the repository opens:
 
 | Feature | State |
 |---|---|
-| Claude Code in a terminal | Designed ([context](reference/3-context.md#claude-code-in-a-terminal-planned)): tabs of Ghostty, Terminal, iTerm2 and Warp; not inside tmux or screen for now. |
+| Claude Code in tmux or screen | Not supported: the session is not found for sure there ([context](reference/3-context.md#claude-code-in-a-terminal-claude-code)). Measured ways in, for later: tmux's status line names its session, and `tmux display` gives the active pane. |
 | Adapters for Codex, ChatGPT, Antigravity, Gemini, Telegram Web | Planned; each needs a reliable way to find the current conversation. |
 | Dictation history | Proposed; storage, recovery of the text and the privacy settings are open. |
 | Recording indicator (a fox over the window) | A prototype of the transparent rendering exists; no character or indicator yet. A text preview is put off. |

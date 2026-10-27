@@ -1,8 +1,9 @@
 """The adapters: the built-in ones in server/adapters/builtin/, the user's in ~/Library/Application Support/EchoFox/
 adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
   adapter.json  its manifest: {"name", "title" (optional, for people), "version", "author", "source", "description", "interface": 2,
-                "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
-                on request (Electron), "reads": [the files it reads],
+                "apps": [bundle ids it reads the focus of], "electronTree": its apps build their accessibility tree
+                only on request (Electron): true for all of them, or the list of those among "apps" that do,
+                "reads": [the files it reads],
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
                 focused window (a messenger's messages); "outline", the tree of the focused web page or window, for
                 messages that are not in lists (a chat in a web app); see FOCUS in adapters/__init__.py],
@@ -47,13 +48,19 @@ class Package:
     adapter: object = None
     error: str = None
 
+    def electron_apps(self):
+        """The apps of "apps" that build their accessibility tree only on request (manifest "electronTree")."""
+        tree, apps = self.manifest.get("electronTree"), self.manifest.get("apps") or []
+        return list(apps) if tree is True else [a for a in apps if a in tree] if isinstance(tree, list) else []
+
     def info(self, enabled):
         """For the app: what the adapter is, says about itself, and whether it works."""
         m = self.manifest
         return {"name": self.name, "title": m.get("title"), "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
                 "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
                 "description": m.get("description"), "apps": m.get("apps") or [],
-                "electronTree": bool(m.get("electronTree")), "reads": m.get("reads") or [],
+                "electronTree": bool(self.electron_apps()), "electronApps": self.electron_apps(),
+                "reads": m.get("reads") or [],
                 "screen": m.get("screen") or [], "context": m.get("context") or {}, "error": self.error}
 
 
@@ -70,6 +77,9 @@ def load(folder, builtin):
             raise ValueError(f"interface {m.get('interface')!r}; this server has interface {INTERFACE}")
         if not all(isinstance(a, str) for a in m.get("apps") or []):
             raise ValueError("\"apps\" is not a list of bundle ids")
+        tree = m.get("electronTree", False)
+        if not isinstance(tree, bool) and not (isinstance(tree, list) and set(tree) <= set(m.get("apps") or [])):
+            raise ValueError("\"electronTree\" is neither true, false nor a list of its \"apps\"")
         unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
