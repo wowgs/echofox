@@ -51,4 +51,4 @@ Apple Silicon · macOS 26+ · 16 GB memory minimum. [Setup and model choices →
 
 ## License
 
-EchoFox is under the [MIT License](LICENSE). The app also carries llama.cpp, Sparkle, Python and its packages, and Silero VAD, each under its own license, which the app keeps inside it. The Gemma model is not part of EchoFox: the app downloads it, and its own terms apply.
+EchoFox is under the [MIT License](LICENSE). The app also carries llama.cpp, Sparkle, Python and its packages, and Silero VAD, each under its own license, which the app keeps inside it. The Gemma model is not part of EchoFox: the app downloads it from Hugging Face, where Gemma 4 is under the Apache 2.0 license and needs no account.
