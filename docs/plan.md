@@ -11,6 +11,7 @@ The work that is left, without promised dates; reviewed on 2026-10-26. The [refe
 | Sampling | Unstable text, transliteration and punctuation. | Compare the current settings with a low temperature and greedy decoding on the same recordings. |
 | Context and terms | Separate the gain from false copying of words. | Compare without context, with context, and with extra terms. |
 | Rules of clean text | Consistent labels. | Decide when to keep "ну", "типа", "вот", and how to treat repeats and self-corrections. |
+| Audio before the model | The app sends the microphone as it is: 16 kHz, mono, without macOS voice processing (no noise suppression, no automatic gain, no echo cancellation). A recording of 2026-10-27 had speech at -34.5 dBFS and noise at -55.4 dBFS. Hypotheses: a denoiser or a fixed input level changes the errors. A denoiser can also add artifacts that the model never heard in training, and make the errors worse. | After the labeled set: run `try_wav.py` on the same recordings as they are, with ffmpeg's `anlmdn`, with DeepFilterNet and at a fixed loudness, and compare the errors with a paired test (MAPSSWE). macOS voice processing works only while recording, so it needs new recordings with it on and off. |
 | Other languages than Russian | The piece length (15 s), the limit of a piece's text (600 tokens) and the prompt were measured only on Russian speech. | Record a set in one Latin-script language and in one without spaces between words; check the transcription and the tokens per second of speech. |
 
 ## Releases
