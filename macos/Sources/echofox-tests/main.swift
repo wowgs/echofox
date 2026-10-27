@@ -216,7 +216,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 8
+  "version": 9
 }
 
 """
@@ -238,7 +238,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 8,
+  "version": 9,
   "adapters": {"enabled": true}
 }
 
@@ -321,10 +321,10 @@ do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     let settings = info.settings ?? []
     let by = Dictionary(uniqueKeysWithValues: settings.map { ($0.key, $0) })
-    check(settings.map(\.key) == ["maxRecordingMinutes", "recordings", "temperature"]
+    check(settings.map(\.key) == ["maxRecordingSeconds", "recordings", "temperature"]
           && settings.map(\.owner) == ["server", "server", "model"]
-          && by["maxRecordingMinutes"]?.advanced == nil && by["temperature"]?.advanced == true, "settings: decoded \(settings.map(\.key))")
-    check(by["maxRecordingMinutes"]?.unit == "min" && by["temperature"]?.unit == nil && by["recordings"]?.kind == "folder",
+          && by["maxRecordingSeconds"]?.advanced == nil && by["temperature"]?.advanced == true, "settings: decoded \(settings.map(\.key))")
+    check(by["maxRecordingSeconds"]?.unit == "s" && by["temperature"]?.unit == nil && by["recordings"]?.kind == "folder",
           "settings: the server names units and folders")
     check(info.model?.catalog == "gemma-4-e4b" && info.languages.first { $0.code == "ru" }?.fillers?.contains("э") == true,
           "settings: the model and the languages")
@@ -334,8 +334,8 @@ do {
           "settings: the variant for 8, 16, 24 and 64 GB: \([8, 16, 24, 64].map { pick(UInt64($0)) })")
     check(info.model?.variant == "q8_0" && info.model?.variants?.map(\.id) == ["q4_0", "q8_0"]
           && info.model?.variants?.first?.downloaded == false, "settings: the model's variants")
-    let cut = by["maxRecordingMinutes"]!, temperature = by["temperature"]!
-    check(cut.value == nil && cut.default == .number(30) && cut.minExclusive == true
+    let cut = by["maxRecordingSeconds"]!, temperature = by["temperature"]!
+    check(cut.value == nil && cut.default == .number(1800) && cut.minExclusive == true
           && temperature.value == .number(0.7), "settings: values")
     check(!cut.allows(0) && cut.allows(0.5) && cut.allows(1000) && !temperature.allows(-1), "settings: range")
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-settings-\(getpid())")
@@ -346,14 +346,14 @@ do {
       "model": "a",
       "models": {"a": {"llamaServer": "http://h:1", "options": {"topK": 2, "temperature": 1}}},
       "adapters": {"claude": {"enabled": true, "chatTermsTokenBudget": 3}},
-      "server": {"port": 8090, "maxRecordingMinutes": 2}
+      "server": {"port": 8090, "maxRecordingSeconds": 2}
     }
 
     """
     try text.write(to: file, atomically: true, encoding: .utf8)
     var config = Config.load(from: file)
     var st = SettingStore.state(of: cut, in: config)
-    check(st.path == ["server", "maxRecordingMinutes"] && st.value == .number(2) && st.changed,
+    check(st.path == ["server", "maxRecordingSeconds"] && st.value == .number(2) && st.changed,
           "settings: a server's at the server, the config's value in force")
     let topK = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"topK","owner":"model","group":"sampling","kind":"integer","title":"Top K","default":64,"help":"h"}"#.utf8))
     st = SettingStore.state(of: topK, in: config)
@@ -382,12 +382,12 @@ do {
     check(SettingStore.json(.number(90), of: terms) as? Int == 90, "settings: an integer is written whole")
     let decimal = try JSONEdit.set(["x"], to: 0.95, in: #"{"x": 1}"#)
     check(decimal == #"{"x": 0.95}"#, "settings: 0.95 is written as 0.95: \(decimal)")
-    try Config.remove(["server", "maxRecordingMinutes"], in: file)
+    try Config.remove(["server", "maxRecordingSeconds"], in: file)
     config = Config.load(from: file)
-    check(config.value(["server", "maxRecordingMinutes"]) == nil && config.value(["server", "port"]) as? Int == 8090,
+    check(config.value(["server", "maxRecordingSeconds"]) == nil && config.value(["server", "port"]) as? Int == 8090,
           "settings: a value taken out")
     st = SettingStore.state(of: cut, in: config)
-    check(!st.changed && st.value == .number(30), "settings: then the server's default")
+    check(!st.changed && st.value == .number(1800), "settings: then the server's default")
     let edited = try String(contentsOf: file, encoding: .utf8)
     check(edited.contains(#""server": {"port": 8090}"#), "settings: the rest of the file as it was: \(edited)")
     try Config.remove(["models", "a", "options", "topK"], in: file)
@@ -400,11 +400,11 @@ do {
     check(SettingsLayout.menu == ["permissions", "microphone", "inputVolume", "labelRecordings"],
           "settings: the menu \(SettingsLayout.menu)")
     let keys: [(key: String, owner: String, group: String, advanced: Bool)] = [
-        ("maxRecordingMinutes", "server", "recording", false), ("topK", "model", "sampling", true),
+        ("maxRecordingSeconds", "server", "recording", false), ("topK", "model", "sampling", true),
         ("chatTermsTokenBudget", "adapter", "context", true), ("brandNew", "server", "new", false)]
     let general = SettingsLayout.sections(of: .general, serverKeys: keys)
     let model = SettingsLayout.sections(of: .model, serverKeys: keys)
-    check(general.contains { $0.section == "Recording" && $0.ids == ["silenceStopSeconds", "maxRecordingMinutes"] }
+    check(general.contains { $0.section == "Recording" && $0.ids == ["silenceStopSeconds", "maxRecordingSeconds"] }
           && general.contains { $0.section == "Other" && $0.ids == ["brandNew"] }
           && !general.contains { $0.ids.contains("topK") || $0.ids.contains("chatTermsTokenBudget") },
           "settings: the server's settings on General \(general)")

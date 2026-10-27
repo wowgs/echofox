@@ -124,7 +124,7 @@ class Session:
 
     async def _receive(self):
         last_speech = 0.0
-        limit = self.args.max_recording_minutes * 60
+        limit = self.args.max_recording_seconds
         async for message in self.ws:
             if isinstance(message, (bytes, bytearray)):
                 self.audio += message

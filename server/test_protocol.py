@@ -281,7 +281,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((got[0]["type"], stub.calls), ("error", []))
 
     async def test_the_server_stops_a_recording_at_the_longest_length_and_says_so(self):
-        self.args.max_recording_minutes = 2 / 60
+        self.args.max_recording_seconds = 2
         stub, got = await self.run_stream(START, LOUD * 4)
         types = [m["type"] for m in got if m["type"] != "speech"]
         self.assertEqual(types, ["stopped", "text", "done"])

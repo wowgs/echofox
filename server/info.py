@@ -20,7 +20,7 @@ def info(args, models=None):
     table = languages.table()
     return {"type": "info", "interface": constants.PROTOCOL_INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
             "sampleRate": constants.RATE, "encoding": constants.ENCODING,
-            "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_minutes * 60,
+            "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
             "languages": sorted(({"code": c, "name": table[c]["name"], "notes": table[c].get("notes", []),
                                   "fillers": table[c].get("fillers", [])} for c in codes if c in table),
                                 key=lambda l: l["name"]),

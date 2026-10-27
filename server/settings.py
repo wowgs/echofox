@@ -425,7 +425,19 @@ def from_7(c, path):
     return c, ("adapters.claude became claude-code and claude-chat" if isinstance(old, dict) else "no adapters.claude")
 
 
-MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7}  # a file's version → its next step
+def from_8(c, path):
+    """Version 8 → 9: the recording's time limit is in seconds, as every other time of the settings:
+    server.maxRecordingMinutes becomes maxRecordingSeconds."""
+    server = c.get("server")
+    m = server.pop("maxRecordingMinutes", None) if isinstance(server, dict) else None
+    if isinstance(m, (int, float)) and not isinstance(m, bool):
+        server["maxRecordingSeconds"] = round(m * 60)
+    c["version"] = 9
+    return c, (f"server.maxRecordingMinutes={m!r} became maxRecordingSeconds" if m is not None
+               else "no server.maxRecordingMinutes")
+
+
+MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 8: from_8}  # a file's version → its next step
 
 
 class ConfigWatcher:

@@ -28,7 +28,7 @@ MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model file
 # llama.cpp's server for a server that runs from the repository (its tests, test_server.sh): the installed app's
 LLAMA_SERVER = "/Applications/EchoFox.app/Contents/Resources/llama/llama-server"
 ADAPTERS = "~/Library/Application Support/EchoFox/adapters"  # the user's adapters; $ECHOFOX_ADAPTERS sets another
-CONFIG_VERSION = 8
+CONFIG_VERSION = 9
 PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
@@ -44,7 +44,7 @@ LAUNCHD_EXIT_TIMEOUT_S = STOP_WAIT_S + 10  # launchd waits for the server to sto
 CONFIG_CHECK_S = 2                      # how often the server looks at the config file
 MODEL_START_S = 180                     # a llama-server agent has this long to answer /health
 MAX_PROMPT = 4000                      # characters of a prompt, the model's or a client's
-MAX_RECORDING_MIN = 30                 # the longest recording the server takes; the config can change it
+MAX_RECORDING_S = 1800                 # the longest recording the server takes, in seconds; the config can change it
 
 
 def path(p):
