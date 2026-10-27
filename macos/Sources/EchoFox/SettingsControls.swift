@@ -99,52 +99,60 @@ struct InputField: View {
     var width: CGFloat = 90
     /// A number: aligned on the trailing side, in digits of one width.
     var number = false
+    /// A number's unit, inside the field after the digits ("60 s"), grey.
+    var unit: String? = nil
     var refused = false
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
 
     var body: some View {
+        if let unit {
+            // The unit inside the field: the box is drawn here, as the rounded field looks, around the digits and it
+            HStack(spacing: 4) {
+                field.textFieldStyle(.plain)
+                Text(unit).foregroundStyle(.secondary).fixedSize()
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .frame(width: width)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .stroke(refused ? Color.red : focused ? Color.accentColor : Color(nsColor: .separatorColor),
+                        lineWidth: refused || focused ? 1.5 : 1))
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
+        } else {
+            field
+                .textFieldStyle(.roundedBorder)
+                .frame(width: width)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: refused ? 1.5 : 0))
+        }
+    }
+
+    private var field: some View {
         TextField("", text: $text, prompt: placeholder.isEmpty ? nil : Text(placeholder))
             .labelsHidden()
-            .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(number ? .trailing : .leading)
             .font(number ? .body.monospacedDigit() : .body)
-            .frame(width: width)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: refused ? 1.5 : 0))
             .focused($focused)
             .onSubmit(onSubmit)
             .onChange(of: focused) { _, now in if !now { onSubmit() } }
     }
 }
 
-/// The unit after a number field, in a column as wide as the widest unit, there even without a unit: so every number
-/// field of a page ends at the same place, as in macOS's own settings.
-struct UnitLabel: View {
-    let unit: String?
-    /// Every unit of the window's settings, for the column's width.
-    let units: [String]
-    var body: some View {
-        ZStack(alignment: .leading) {
-            ForEach(units, id: \.self) { Text($0).hidden() }
-            Text(unit ?? "").foregroundStyle(.secondary)
-        }
-        .accessibilityHidden(unit == nil)
-    }
-}
-
-/// Takes the value out of the config, back to its default; it keeps its place when there is nothing to reset.
+/// Takes the value out of the config, back to its default; shown only when there is something to reset.
 struct ResetButton: View {
     let visible: Bool
     let help: String
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) { Image(systemName: "arrow.uturn.backward.circle") }
-            .buttonStyle(.borderless)
-            .help(help)
-            .accessibilityLabel("Reset to default")
-            .opacity(visible ? 1 : 0)
-            .disabled(!visible)
+        if visible {
+            Button(action: action) { Image(systemName: "arrow.uturn.backward.circle") }
+                .buttonStyle(.borderless)
+                .help(help)
+                .accessibilityLabel("Reset to default")
+        }
     }
 }
 

@@ -202,8 +202,6 @@ final class SettingsModel: ObservableObject {
     /// The server's settings and the app's own.
     var settings: [SettingInfo] { (info?.settings ?? []) + SettingsLayout.appSettings }
     var adapterSettings: [SettingInfo] { settings.filter { $0.owner == "adapter" } }
-    /// Every unit of the settings, so that each number field's unit column is as wide as the widest.
-    var units: [String] { Array(Set(settings.compactMap(\.unit))).sorted() }
     func setting(_ key: String) -> SettingInfo? { settings.first { $0.key == key } }
 
     func sections(_ page: SettingsPage) -> [(section: String, ids: [String])] {
@@ -463,10 +461,11 @@ struct SettingRow: View {
     var body: some View {
         SettingLine(title: setting.title, note: note, refused: refused,
                     pending: model.drafts[id].map { $0 != shown } ?? false) {
-            control
+            // The reset before the control, so that the controls end at the row's edge
             ResetButton(visible: state.changed, help: "Restore the default") {
                 model.apply(.remove, to: setting, scope, id: id)
             }
+            control
         }
         .disabled(state.path == nil || disabledAdapter)
     }
@@ -493,9 +492,8 @@ struct SettingRow: View {
                 }
             }
         default:
-            InputField(placeholder: show(state.inherited), text: model.draft(id, shown: shown), width: 80, number: true,
-                       refused: refused, onSubmit: commit)
-            UnitLabel(unit: setting.unit, units: model.units)
+            InputField(placeholder: show(state.inherited), text: model.draft(id, shown: shown), width: 110, number: true,
+                       unit: setting.unit, refused: refused, onSubmit: commit)
         }
     }
 
