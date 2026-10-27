@@ -8,6 +8,8 @@ Private, on-device dictation for Mac, built for conversations where your languag
 
 **Offline after a one-time model download · No account · No cloud · No telemetry**
 
+https://github.com/user-attachments/assets/b573130d-cc80-477f-b3e1-12d9b6582cc6
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/how-it-works-dark.svg">
   <img alt="Tap a key, speak, and get text in your app. EchoFox reads the chat through adapters for Claude, Telegram and more, and everything runs on your Mac: nothing goes to the internet." src="img/how-it-works.svg">
