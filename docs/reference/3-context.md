@@ -52,6 +52,18 @@ If the record is missing, the adapter uses the web-area title only when exactly 
 
 User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
 
+### Claude Code in a terminal, planned
+
+Decided: Claude Code in a terminal's tab is supported where its session is found for sure; inside tmux or screen it is not, for now, and such a dictation gets no context. The rest of this section is a proposal.
+
+- The apps: Ghostty, Terminal, iTerm2 and Warp, in the manifest's `apps`.
+- The candidates: each running `claude` writes `~/.claude/sessions/<pid>.json` with its `sessionId`, `name` (the session's title) and `entrypoint`. The candidates are the files with `entrypoint` `cli` whose process descends from the terminal app in focus (the snapshot's `pid`). A `claude` in tmux or screen descends from the multiplexer's server, so it is never a candidate.
+- The match: Claude Code sets the terminal's title to `✳ <name>`, and the terminals show it in the window's title (Terminal adds the folder, the command and the size). The session is the one candidate whose `name` the focused window's title contains; its transcript is `~/.claude/projects/*/<sessionId>.jsonl`. No candidate, or more than one: no claim.
+- The snapshot needs nothing new: the window's title and the app's `pid` are in the base snapshot.
+- A new session before its first message has no transcript, and so no context. The session files are undocumented and may change.
+
+The measurements behind it are in [observations](../observations.md#target-apps-and-accessibility): the title found the focused tab's session in 20 of 20 steps in the four terminals; the words of the visible text chose a wrong pane in tmux, so the text is not used.
+
 ### Claude chats
 
 A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So the manifest requests `"screen": ["outline"]`, and the adapter reads the messages from the outline of the page.
