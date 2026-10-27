@@ -580,16 +580,23 @@ struct VolumeRow: View {
     }
 }
 
+/// The model: its name, or a choice when the registry has more than one.
 struct ModelPicker: View {
     @ObservedObject var model: SettingsModel
 
+    private var names: [String] { model.info?.models ?? model.config.models }
+    private var current: String { model.config.model ?? model.info?.model?.name ?? "" }
+
     var body: some View {
-        Picker("Model", selection: Binding(get: { model.config.model ?? model.info?.model?.name ?? "" },
-                                           set: { model.write(["model"], $0) })) {
-            // the model in force by its name for people (Gemma 4 E4B), the others by their registry name
-            ForEach(model.info?.models ?? model.config.models, id: \.self) { name in
-                Text(name == model.info?.model?.name ? model.info?.model?.title ?? name : name).tag(name)
+        if names.count > 1 {
+            Picker("Model", selection: Binding(get: { current }, set: { model.write(["model"], $0) })) {
+                // the model in force by its name for people (Gemma 4 E4B), the others by their registry name
+                ForEach(names, id: \.self) { name in
+                    Text(name == model.info?.model?.name ? model.info?.model?.title ?? name : name).tag(name)
+                }
             }
+        } else {
+            LabeledContent("Model") { Text(model.info?.model?.title ?? current) }
         }
         if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
     }
