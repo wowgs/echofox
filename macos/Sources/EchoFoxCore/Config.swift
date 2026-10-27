@@ -1,5 +1,7 @@
-// The config file the app shares with the dictation server, ~/.echofox/config.json ($ECHOFOX_CONFIG),
-// version 9 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
+// The config file the app shares with the dictation server, ~/.echofox/config.json ($ECHOFOX_CONFIG), format 11
+// (shared/config.schema.json has its keys; docs/design.md, "The config file over versions"). The app reads each key
+// on its own and leaves out what it does not know, so a file of a newer format is read too; it is the file's only
+// writer, one key at a time, and keeps the keys it does not know. The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
 // recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
 // value out to go back to its default.
@@ -7,6 +9,11 @@ import Foundation
 
 public struct Config: Equatable {
     public static let version = 11
+    /// The keys that load reads (the test checks them against shared/config.schema.json).
+    public static let readKeys: [[String]] = [
+        ["version"], ["models"], ["model"], ["language"], ["adapters"], ["silenceStopSeconds"], ["microphone"],
+        ["dictationKey"], ["privateDictationKey"], ["server", "host"], ["server", "port"], ["server", "recordings"],
+        ["server", "labeled"]]
     public static let defaultHost = "127.0.0.1"
     /// The server's own defaults (shared/constants.json); the app uses them before it can ask the server.
     public static let defaultFile = "~/.echofox/config.json"
@@ -47,6 +54,9 @@ public struct Config: Equatable {
     public var recordings = Config.path(Config.defaultRecordings)
     public var labeled = Config.path(Config.defaultLabeled)
     public var error: String?
+    /// A file of a newer format than this app's: it is read key by key, and what this version does not know is
+    /// left out.
+    public var note: String?
 
     public var serverURL: URL { URL(string: "ws://\(host):\(port)")! }
 
@@ -76,7 +86,9 @@ public struct Config: Equatable {
             c.error = "\(url.path) is not a JSON object"
             return c
         }
-        if let v = d["version"] as? Int, v != version { c.error = "\(url.path) is version \(v); the app reads \(version)" }
+        if let v = d["version"] as? Int, v > version {
+            c.note = "The settings file was written by a newer EchoFox (format \(v)); settings it added are not used here."
+        }
         c.models = ((d["models"] as? [String: Any]) ?? [:]).keys.sorted()
         c.model = d["model"] as? String
         if let l = d["language"] as? String { c.language = l }

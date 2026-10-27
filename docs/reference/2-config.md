@@ -25,13 +25,13 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 }
 ```
 
-This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON or has another `version`, the server ignores the whole file and keeps its current settings; the app ignores an invalid value without a log.
+This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON, the server keeps its current settings. A key that a version does not know is left out and kept in the file; a wrong value is replaced by its default, and the server logs it. The rules for changing the file over versions are in the [design](../design.md#the-config-file-over-versions); the keys and their types are in `shared/config.schema.json`.
 
 ## Settings reference
 
 | Key | Purpose |
 |---|---|
-| `version` | Config format version. The server migrates supported older versions to version 11 at startup, preserving field order. Version 11 removes a model's `launchd`: the server starts the llama-server itself, as its child process. Version 10 removes a model's `prompt` and the Russian `notes` when they are copies of version 9's defaults, so that the new defaults apply: the notes of every language took over the English terms from the model's template. Version 9 has the recording's time limit in seconds (`maxRecordingSeconds`), as every other time. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
+| `version` | The config's format, 11. It changes only for a change that an older version would read wrong. The server brings a file of an older format to 11 once at its start and keeps the old file as `config.json.v<N>.bak`; a file of a newer format is read key by key. Format 11 left out a model's `launchd`. Format 10 left out a model's `prompt` and the Russian `notes` that were copies of format 9's defaults. Format 9 has the recording's time limit in seconds (`maxRecordingSeconds`). Format 8 split the adapter `claude` into `claude-code` and `claude-chat`. |
 | `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |

@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from typing import Callable
 
@@ -41,49 +42,113 @@ class Setting:
     folder: bool = False     # a folder's path: the settings window offers the system's folder panel
 
 
-def good_model(m):
-    """A registry entry: llamaServer, and optionally its catalog entry, its variant (one of the catalog entry's),
-    prompt and options (the model's knobs only)."""
-    if not isinstance(m, dict) or not str(m.get("llamaServer", "")).startswith("http") \
-            or not isinstance(m.get("prompt", ""), str) \
-            or len(m.get("prompt", "")) > constants.MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
-        return False
-    if "variant" in m and catalog.variant(m)[1] is None:
-        return False
-    try:
-        tuning.parse(m.get("options"), "model")
-        return True
-    except ValueError:
-        return False
+# The dict settings are read entry by entry and key by key (docs/design.md, "The config file over versions"): a key
+# that this version does not know is left out with a warning (a newer EchoFox may have written it), a wrong value is
+# left out with an error, and the rest of the entry and of the setting stays. `problem(text, known)` logs it.
 
-
-def good_adapters(v):
-    def good(e):
+def _knobs(raw, owner, where, problem):
+    """An entry's knobs of `owner` (a model's options, an adapter's budgets), each checked on its own: the file's
+    keys and values that are good."""
+    if not isinstance(raw, dict):
+        problem(f"{where} is not an object", True)
+        return {}
+    known = {k.key for k in tuning.KNOBS if k.owner == owner and k.user}
+    out = {}
+    for key, value in raw.items():
+        if key not in known:
+            problem(f"{where}.{key} is not known to this version", False)
+            continue
         try:
-            tuning.adapter_options(e)
-            return True
-        except ValueError:
-            return False
-    return all(isinstance(k, str) and isinstance(e, dict) and isinstance(e.get("enabled", False), bool) and good(e)
-               for k, e in v.items())
+            tuning.parse({key: value}, owner, where)
+            out[key] = value
+        except ValueError as e:
+            problem(f"{where}.{key}: {e}", True)
+    return out
 
 
-def good_languages(v):
-    """{code: {"notes": [lines], "fillers": [sounds]}}, either list optional; "*" (every language) has only notes."""
-    def strings(w):
-        return isinstance(w, list) and all(isinstance(x, str) and x.strip() for x in w)
-    return all(isinstance(k, str) and isinstance(e, dict)
-               and set(e) <= ({"notes"} if k == languages.ALL else {"notes", "fillers"})
-               and all(strings(w) for w in e.values()) for k, e in v.items())
+def clean_models(v, problem):
+    """The registry's entries that can run: each needs llamaServer (http) and a catalog entry that exists (the default
+    one if it names none). A wrong variant, prompt or option of an entry is left out, the entry stays. An entry of a
+    default model's name gets that model's fields under its own (an app that writes only {"gemma-e4b": {"variant":
+    "q4_0"}} writes a whole entry)."""
+    out = {}
+    for name, entry in v.items():
+        where = f"models.{name}"
+        if not isinstance(entry, dict):
+            problem(f"{where} is not an object", True)
+            continue
+        m = {**MODEL_DEFAULT.get(name, {}), **entry}
+        if not str(m.get("llamaServer", "")).startswith("http"):
+            problem(f"{where}.llamaServer = {m.get('llamaServer')!r} is not an http URL; the model is left out", True)
+            continue
+        if m.get("catalog", catalog.DEFAULT) not in catalog.entries():
+            problem(f"{where}.catalog = {m.get('catalog')!r} is not in the catalog; the model is left out", True)
+            continue
+        e = {k: m[k] for k in ("catalog", "llamaServer") if k in m}
+        if "variant" in m:
+            if catalog.variant(m)[1] is None:
+                problem(f"{where}.variant = {m['variant']!r} is not a variant of {m.get('catalog', catalog.DEFAULT)}", True)
+            else:
+                e["variant"] = m["variant"]
+        if "prompt" in m:
+            if isinstance(m["prompt"], str) and len(m["prompt"]) <= constants.MAX_PROMPT:
+                e["prompt"] = m["prompt"]
+            else:
+                problem(f"{where}.prompt is not a text of at most {constants.MAX_PROMPT} characters", True)
+        if "options" in m:
+            e["options"] = _knobs(m["options"], "model", f"{where}.options", problem)
+        for key in set(m) - {"catalog", "llamaServer", "variant", "prompt", "options"}:
+            problem(f"{where}.{key} is not known to this version", False)
+        out[name] = e
+    return out
+
+
+def clean_adapters(v, problem):
+    """Each adapter's "enabled" and budgets, each checked on its own."""
+    out = {}
+    for name, entry in v.items():
+        where = f"adapters.{name}"
+        if not isinstance(entry, dict):
+            problem(f"{where} is not an object", True)
+            continue
+        e = {}
+        if "enabled" in entry:
+            if isinstance(entry["enabled"], bool):
+                e["enabled"] = entry["enabled"]
+            else:
+                problem(f"{where}.enabled = {entry['enabled']!r} is not true or false", True)
+        e.update(_knobs({k: x for k, x in entry.items() if k != "enabled"}, "adapter", where, problem))
+        out[name] = e
+    return out
+
+
+def clean_languages(v, problem):
+    """{code: {"notes": [lines], "fillers": [sounds]}}, each list on its own; "*" (every language) has only notes."""
+    out = {}
+    for code, entry in v.items():
+        where = f"languages.{code}"
+        if not isinstance(entry, dict):
+            problem(f"{where} is not an object", True)
+            continue
+        e = {}
+        for key, words in entry.items():
+            if key not in ({"notes"} if code == languages.ALL else {"notes", "fillers"}):
+                problem(f"{where}.{key} is not known to this version", False)
+            elif isinstance(words, list) and all(isinstance(w, str) and w.strip() for w in words):
+                e[key] = words
+            else:
+                problem(f"{where}.{key} is not a list of texts", True)
+        out[code] = e
+    return out
 
 
 SETTINGS = [
     Setting("host", "host", str, bool, constants.HOST, "process", "server"),
     Setting("port", "port", int, lambda v: 0 < v < 65536, constants.WORKING_PORT, "process", "server"),
-    Setting("models", "models", dict, lambda v: bool(v) and all(good_model(m) for m in v.values()), MODEL_DEFAULT,
+    Setting("models", "models", dict, clean_models, MODEL_DEFAULT,
             "model"),
-    Setting("adapters", "adapters", dict, good_adapters, {}, "recording"),
-    Setting("languages", "languages", dict, good_languages, {}, "recording"),
+    Setting("adapters", "adapters", dict, clean_adapters, {}, "recording"),
+    Setting("languages", "languages", dict, clean_languages, {}, "recording"),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
             "Save recordings", "Private dictations are never saved."),
     Setting("recordings", "recordings", str, bool, constants.RECORDINGS, "recording", "server",
@@ -136,23 +201,17 @@ def config_file():
     return os.environ.get("ECHOFOX_CONFIG") or constants.path(constants.CONFIG)
 
 
-def with_defaults(models):
-    """The config's registry with the default entries' fields under an entry of the same name: an app that writes only
-    a variant of the default model ({"gemma-e4b": {"variant": "q4_0"}}) writes a whole entry."""
-    if not isinstance(models, dict):
-        return models
-    return {n: {**MODEL_DEFAULT[n], **e} if n in MODEL_DEFAULT and isinstance(e, dict) else e for n, e in models.items()}
-
-
-def _checked(s, value):
-    """The value of a setting, of its kind and in its range; raises ValueError otherwise."""
-    if s.key == "models":
-        value = with_defaults(value)
+def _checked(s, value, problem):
+    """The value of a setting, of its kind and in its range; raises ValueError otherwise. A dict setting is cleaned
+    entry by entry (its `ok`), and `problem` hears of each part left out; a registry with no model that can run is
+    not valid."""
     if s.key in tuning.BY_KEY:
         return tuning.check(tuning.BY_KEY[s.key], value)
     if s.kind is dict:
-        if isinstance(value, dict) and s.ok(value):
-            return value
+        if isinstance(value, dict):
+            cleaned = s.ok(value, problem)
+            if cleaned or s.key != "models":
+                return cleaned
     elif s.kind is bool:
         if isinstance(value, bool):
             return value
@@ -167,8 +226,10 @@ def _checked(s, value):
 
 
 def file_settings(path):
-    """The settings in the config file, checked: {key: value}. A wrong key or value is logged and left out; None if
-    the file cannot be read or is of another version."""
+    """The settings in the config file, checked: {key: value}. Each key is read on its own (docs/design.md, "The config
+    file over versions"): a key this version does not know is left out with a warning, a wrong value with an error,
+    and the rest stays. A file of an older format is brought to this one first (migrate); one of a newer format is
+    read the same way, key by key. None only if the file cannot be read: the server then keeps its settings."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f) or {}
@@ -177,24 +238,33 @@ def file_settings(path):
     except (OSError, ValueError) as e:
         log.error("config %s: cannot read it (%s); the server keeps its settings", path, e)
         return None
-    if not isinstance(c, dict) or c.get("version") != constants.CONFIG_VERSION:
-        log.error("config %s: version %s, the server reads version %d", path,
-                  c.get("version") if isinstance(c, dict) else None, constants.CONFIG_VERSION)
+    if not isinstance(c, dict):
+        log.error("config %s: not a JSON object; the server keeps its settings", path)
         return None
+    version = c.get("version")
+    if isinstance(version, int) and version < constants.CONFIG_VERSION and version in MIGRATIONS:
+        migrate(path)
+        return file_settings(path)
+    if version != constants.CONFIG_VERSION:
+        log.warning("config %s: format %s, this server's is %d; it reads the keys it knows", path, version,
+                    constants.CONFIG_VERSION)
+
+    def problem(text, wrong):
+        (log.error if wrong else log.warning)("config %s: %s; it is left out", path, text)
+
     server = c.get("server") if isinstance(c.get("server"), dict) else {}
     for key in server:
         if BY_KEY.get(key) is None or BY_KEY[key].section != "server":
-            log.error("config %s: server.%s is not a setting; known: %s", path, key,
-                      ", ".join(s.key for s in SETTINGS if s.section == "server"))
+            problem(f"server.{key} is not a setting of this version", False)
     out = {}
     for s in SETTINGS:
         source = server if s.section == "server" else c
         if s.key not in source:
             continue
         try:
-            out[s.key] = _checked(s, source[s.key])
+            out[s.key] = _checked(s, source[s.key], problem)
         except ValueError as e:
-            log.error("config %s: %s%s; it is left out", path, "server." if s.section else "", e)
+            problem(f"{'server.' if s.section else ''}{e}", True)
     return out
 
 
@@ -242,9 +312,10 @@ def selected_model(config_path, models):
 
 
 def migrate(path):
-    """The config file brought to this version (constants.CONFIG_VERSION): read once, taken through each step from
-    its version on (MIGRATIONS, each one on the dict in memory), and written once, in the file's order. A file that
-    cannot be read, or is of this version already, is left as it is."""
+    """The config file of an older format brought to this one (constants.CONFIG_VERSION): read once, taken through each
+    step from its format on (MIGRATIONS, each one on the dict in memory), and written once, in the file's order, after
+    the file as it was is copied to config.json.v<format>.bak. The only write of the server to the config. A file that
+    cannot be read, or is of this format or a newer one, is left as it is."""
     try:
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
@@ -260,6 +331,10 @@ def migrate(path):
         done.append(before)
     if not done:
         return
+    backup = f"{path}.v{done[0]}.bak"  # the file as the older version wrote it, which an older EchoFox still reads
+    if not os.path.exists(backup):
+        shutil.copy2(path, backup)
+        log.info("config %s: the format %d file kept as %s", path, done[0], backup)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(json.dumps(c, indent=2, ensure_ascii=False) + "\n")

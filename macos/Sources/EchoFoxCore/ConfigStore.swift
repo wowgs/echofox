@@ -65,6 +65,7 @@ public final class ConfigStore {
         let old = config
         config = Config.load(from: url)
         if let e = config.error, e != old.error { log("config: \(e)") }
+        if let n = config.note, n != old.note { log("config: \(n)") }
         if config != old { observers.forEach { $0(old, config) } }
     }
 

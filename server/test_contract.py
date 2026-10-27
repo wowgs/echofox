@@ -8,6 +8,8 @@ import unittest
 
 import constants
 import info
+import settings
+import tuning
 import session
 import variants
 from fakes import args, stub_models
@@ -34,6 +36,22 @@ class ContractTest(unittest.TestCase):
             self.assertIn(entry["kind"], ("number", "integer", "boolean", "string", "folder"), entry)
         self.assertEqual((constants.PROTOCOL_INTERFACE, constants.RATE, constants.TEXT_WAIT_S),
                          (example["interface"], example["sampleRate"], example["textWaitSeconds"]))
+
+    def test_the_config_schema_has_the_servers_settings_with_their_types(self):
+        schema = json.loads(pathlib.Path(SHARED, "config.schema.json").read_text(encoding="utf-8"))
+        json_type = {str: "string", int: "integer", float: "number", bool: "boolean", dict: "object"}
+        top, server = schema["properties"], schema["properties"]["server"]["properties"]
+        for st in settings.SETTINGS:
+            place = server if st.section == "server" else top
+            self.assertIn(st.key, place, st.key)
+            self.assertEqual(place[st.key]["type"], json_type[st.kind], st.key)
+        entries = {"model": top["models"]["additionalProperties"]["properties"]["options"]["properties"],
+                   "adapter": top["adapters"]["additionalProperties"]["properties"]}
+        for knob in tuning.KNOBS:
+            if knob.user and knob.owner in entries:
+                self.assertEqual(entries[knob.owner][knob.key]["type"], json_type[knob.kind], knob.key)
+        self.assertEqual(top["version"]["type"], "integer")
+        self.assertIn(str(constants.CONFIG_VERSION), top["version"]["description"])
 
     def test_the_shared_values_are_the_servers(self):
         c = constants

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wowgs/echofox/shared/config.schema.json",
+  "title": "EchoFox config, ~/.echofox/config.json",
+  "description": "Every key of the config, its type and its owner (x-owner: the component that defines its meaning and default; docs/design.md, \"Settings\"). The file holds only the user's choices; a missing key means the owner's default. Every object allows keys that are not listed: a reader leaves out a key it does not know, and a writer keeps it (docs/design.md, \"The config file over versions\"). The ranges of numbers are the owners' (server/tuning.py). server/test_contract.py and macos/Sources/echofox-tests check both sides against this file.",
+  "type": "object",
+  "properties": {
+    "version": {"type": "integer", "description": "The format, 11. It changes only for a change that an older reader would get wrong.", "x-owner": "config"},
+    "model": {"type": "string", "description": "The model chosen in the menu, a name in models.", "x-owner": "app"},
+    "language": {"type": "string", "description": "The speech's language code; empty: the server's default.", "x-owner": "app"},
+    "microphone": {"type": "string", "description": "\"builtin\", \"system\", or a device's UID.", "x-owner": "app"},
+    "dictationKey": {"type": "string", "x-owner": "app"},
+    "privateDictationKey": {"type": "string", "x-owner": "app"},
+    "silenceStopSeconds": {"type": "number", "x-owner": "app"},
+    "models": {
+      "type": "object",
+      "description": "The model registry by name; the first is the default.",
+      "x-owner": "server",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "catalog": {"type": "string", "description": "An entry of server/catalog.json."},
+          "llamaServer": {"type": "string", "description": "The llama-server's URL; one on this Mac the server starts itself."},
+          "variant": {"type": "string", "description": "A variant of the catalog entry (q4_0, q8_0)."},
+          "prompt": {"type": "string"},
+          "options": {
+            "type": "object",
+            "x-owner": "model",
+            "properties": {
+              "temperature": {"type": "number"},
+              "topK": {"type": "integer"},
+              "topP": {"type": "number"},
+              "seed": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "description": "The adapters by name: whether each is on, and its context budgets over its manifest's.",
+      "x-owner": "adapter",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "chatHistoryTokenBudget": {"type": "integer"},
+          "chatTermsTokenBudget": {"type": "integer"},
+          "proseOnly": {"type": "boolean"}
+        }
+      }
+    },
+    "languages": {
+      "type": "object",
+      "description": "By language code, or \"*\" for every language (notes only).",
+      "x-owner": "language",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "notes": {"type": "array", "items": {"type": "string"}},
+          "fillers": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "server": {
+      "type": "object",
+      "x-owner": "server",
+      "properties": {
+        "host": {"type": "string"},
+        "port": {"type": "integer"},
+        "saveRecordings": {"type": "boolean"},
+        "recordings": {"type": "string"},
+        "labeled": {"type": "string"},
+        "modelsFolder": {"type": "string"},
+        "metrics": {"type": "string"},
+        "maxRecordingSeconds": {"type": "number"}
+      }
+    }
+  }
+}

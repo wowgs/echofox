@@ -86,8 +86,11 @@ class VariantTest(unittest.TestCase):
         self.assertEqual(catalog.variant({"catalog": "gemma-4-e4b"})[0], "q8_0")
         vid, spec = catalog.variant({"catalog": "gemma-4-e4b", "variant": "q4_0"})
         self.assertEqual((vid, spec["files"]["model"]["file"]), ("q4_0", "gemma-4-E4B-it-Q4_0.gguf"))
-        self.assertFalse(s.good_model({"llamaServer": "http://h:1", "variant": "q2_k"}))
-        self.assertTrue(s.good_model({"llamaServer": "http://h:1", "variant": "q4_0"}))
+        problems = []
+        models = {"a": {"llamaServer": "http://h:1", "variant": "q2_k"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}}
+        self.assertEqual(s.clean_models(models, lambda *p: problems.append(p)),
+                         {"a": {"llamaServer": "http://h:1"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}})
+        self.assertEqual([wrong for _, wrong in problems], [True])  # a wrong variant: the model stays, without it
         self.assertEqual(catalog.files({"variant": "q4_0"}, "/m"),
                          {"model": "/m/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0.gguf",
                           "mmproj": "/m/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf"})
@@ -149,11 +152,13 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                                                                             "claude": {}}))
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            for bad in ({"telegram": {"enabled": True, "chatHistoryTokens": 600}},
-                        {"telegram": {"enabled": True, "chatHistoryTokenBudget": -1}}):
+            # an unknown key (a newer version's) or a wrong budget leaves out that key only: the adapter stays on
+            for bad, level in (({"telegram": {"enabled": True, "chatHistoryTokens": 600}}, "WARNING"),
+                               ({"telegram": {"enabled": True, "chatHistoryTokenBudget": -1}}, "ERROR")):
                 self.write(f, adapters=bad)
-                with self.assertLogs("gemma_voice", "ERROR"):
-                    self.assertNotIn("adapters", s.file_settings(f))
+                with self.assertLogs("gemma_voice", "WARNING") as logs:
+                    self.assertEqual(s.file_settings(f)["adapters"], {"telegram": {"enabled": True}})
+                self.assertEqual([r.levelname for r in logs.records], [level])
 
     def test_a_wrong_key_or_value_in_the_file_is_left_out(self):
         with tempfile.TemporaryDirectory() as d:
@@ -161,19 +166,33 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             self.write(f, models={"a": {"llamaServer": "http://h", "options": {"noRepeatNgramSize": 10}}},
                        server={"maxRecordingSeconds": 25, "pieceSeconds": 15, "saveRecordings": "many", "colour": "red"},
                        languages={"ru": {"fillers": "э"}})
-            with self.assertLogs("gemma_voice", "ERROR") as logs:
-                self.assertEqual(s.file_settings(f), {"maxRecordingSeconds": 25.0})
-        # colour, pieceSeconds (a constant), saveRecordings, models (an unknown option), languages
-        self.assertEqual(len(logs.output), 5)
+            with self.assertLogs("gemma_voice", "WARNING") as logs:
+                self.assertEqual(s.file_settings(f), {"maxRecordingSeconds": 25.0, "languages": {"ru": {}},
+                                                      "models": {"a": {"llamaServer": "http://h", "options": {}}}})
+        # unknown: colour, pieceSeconds (a constant), the model's option; wrong: saveRecordings, the fillers
+        self.assertEqual(sorted(r.levelname for r in logs.records), ["ERROR", "ERROR", "WARNING", "WARNING", "WARNING"])
         self.assertTrue(any("server.pieceSeconds is not a setting" in l for l in logs.output))
 
-    def test_a_file_of_another_version_is_not_read(self):
+    def test_a_file_of_a_newer_format_is_read_key_by_key_and_not_written(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            pathlib.Path(f).write_text(json.dumps({"version": 1, "gemmaVoice": {"pieceSeconds": 25}}))
-            with self.assertLogs("gemma_voice", "ERROR") as logs:
-                self.assertIsNone(s.file_settings(f))
-        self.assertIn(f"the server reads version {constants.CONFIG_VERSION}", logs.output[0])
+            text = json.dumps({"version": constants.CONFIG_VERSION + 1, "adapters": {"telegram": {"enabled": True}},
+                               "newThing": {"x": 1}, "server": {"port": 9000, "newKnob": 2}})
+            pathlib.Path(f).write_text(text)
+            with self.assertLogs("gemma_voice", "WARNING"):
+                self.assertEqual(s.file_settings(f), {"adapters": {"telegram": {"enabled": True}}, "port": 9000})
+            s.migrate(f)
+            self.assertEqual(pathlib.Path(f).read_text(), text)  # nothing of it written over
+            self.assertEqual(os.listdir(d), ["config.json"])
+
+    def test_a_file_of_an_older_format_is_brought_up_once_and_kept_as_it_was(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            old = json.dumps({"version": 9, "language": "ru", "adapters": {"claude-code": {"enabled": True}}})
+            pathlib.Path(f).write_text(old)
+            self.assertEqual(s.file_settings(f)["adapters"], {"claude-code": {"enabled": True}})
+            self.assertEqual(json.loads(pathlib.Path(f).read_text())["version"], constants.CONFIG_VERSION)
+            self.assertEqual(pathlib.Path(f + ".v9.bak").read_text(), old)
 
     async def test_changes_of_the_file_take_effect_by_their_level(self):
         calls = []
@@ -426,8 +445,11 @@ class MigrateTest(unittest.TestCase):
                                                None)[0])  # nothing left of it
 
     def test_the_notes_of_every_language_are_only_notes(self):
-        self.assertTrue(s.good_languages({"*": {"notes": ["The speech is {LANGUAGE}."]}, "ru": {"fillers": ["э"]}}))
-        self.assertFalse(s.good_languages({"*": {"fillers": ["э"]}}))
+        problems = []
+        keep = {"*": {"notes": ["The speech is {LANGUAGE}."]}, "ru": {"fillers": ["э"]}}
+        self.assertEqual(s.clean_languages(keep, lambda *p: problems.append(p)), keep)
+        self.assertEqual(s.clean_languages({"*": {"fillers": ["э"]}}, lambda *p: problems.append(p)), {"*": {}})
+        self.assertEqual(problems, [("languages.*.fillers is not known to this version", False)])
 
     def test_version_8_becomes_9_with_the_time_limit_in_seconds(self):
         c, _ = s.from_8({"version": 8, "server": {"port": 8090, "maxRecordingMinutes": 2.5}}, None)

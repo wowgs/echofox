@@ -74,7 +74,18 @@ Each setting has an owner: the component that defines what it means and its defa
 
 The order: an experiment's start options, then the user's change, then the owner's default. Limits of the model, such as the longest audio, apply in any case. The app sends no experiment options; only the test client does.
 
-Common settings are shown at once, and fine tuning is under Advanced. Protective constants are not settings. The prompt template belongs to the model, and the language notes belong to the language, so a new template keeps the notes. An adapter is turned off with `enabled`, not with a budget of 0. The server migrates the config; the current keys are in the [config reference](reference/2-config.md).
+Common settings are shown at once, and fine tuning is under Advanced. Protective constants are not settings. The prompt template belongs to the model, and the language notes belong to the language, so a new template keeps the notes. An adapter is turned off with `enabled`, not with a budget of 0. The keys are in the [config reference](reference/2-config.md) and in the schema, `shared/config.schema.json`.
+
+### The config file over versions
+
+The file must stay readable by an older and a newer EchoFox: a rollback, a local build next to the installed app, and a test server all read the same `~/.echofox/config.json`. So:
+
+- **The file holds only the user's choices.** A default is never written to it; a value equal to the default takes the key out. A new default applies by itself, with no change to the file.
+- **A reader takes each key on its own.** It uses the keys it knows, leaves out a key it does not know, and replaces a wrong value with the default of that key alone. It never drops the whole file. A writer keeps the keys it does not know.
+- **A key keeps its meaning.** Its type, unit and meaning never change. A new meaning is a new key (`maxRecordingSeconds`, not minutes under the old name); a key that is no longer used is left out by readers and stays in the file.
+- **One writer.** Only the app writes the file, one key at a time, in place (`Config.set`). The server only reads it.
+- **`version` is the format.** It changes only for a change that a reader that leaves out unknown keys would get wrong, which these rules avoid. A file of a newer format is read key by key as above, with a note in the log and on the settings window. A file of a format before 11 is brought to 11 once by the server, after it copies the file to `config.json.v<N>.bak`; that is the only time the server writes the file.
+- **One schema.** `shared/config.schema.json` (JSON Schema) lists every key, its type and its owner. The server's tests check its settings against it, and the app's tests check the keys that the app reads and writes.
 
 ![The server and the app describe their settings; the app places them and builds the interface.](img/settings.svg)
 

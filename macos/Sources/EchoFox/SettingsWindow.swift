@@ -603,6 +603,7 @@ struct ModelPicker: View {
             LabeledContent("Model") { Text(model.info?.model?.title ?? current) }
         }
         if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
+        if let n = model.config.note { Text(n).font(.caption).foregroundStyle(.secondary) }
     }
 }
 

@@ -256,6 +256,32 @@ check(after.contains(#""adapters": {"chat": {"enabled": false}, "other": {"enabl
       && after.hasPrefix("{\n  \"model\": \"b\",\n  \"language\": \"\",\n  \"models\": {"),
       "config: the order and the layout stay: \(after)")
 
+// The config over versions: a newer format is read key by key with a note, and a write keeps what this app does not
+// know; the keys the app reads are in the schema.
+do {
+    let newer = dir.appendingPathComponent("newer.json")
+    try #"{"version": 12, "language": "ru", "adapters": {"telegram": {"enabled": true, "newBudget": 5}}, "newThing": [1]}"#
+        .write(to: newer, atomically: true, encoding: .utf8)
+    let n = Config.load(from: newer, systemLanguage: "en-GB")
+    check(n.error == nil && n.note != nil && n.language == "ru" && n.adapters == ["telegram": true],
+          "config: a newer format is read, with a note: \(n)")
+    try Config.set(["model"], to: "a", in: newer)
+    let written = try String(contentsOf: newer, encoding: .utf8)
+    check(written.contains(#""version": 12"#) && written.contains(#""newThing": [1]"#) && written.contains(#""newBudget": 5"#),
+          "config: a write keeps the newer format's keys: \(written)")
+    let schema = try JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent(
+        "shared/config.schema.json"))) as! [String: Any]
+    func known(_ path: [String], _ node: [String: Any]) -> Bool {
+        guard let first = path.first, let props = node["properties"] as? [String: Any],
+              let next = props[first] as? [String: Any] else { return false }
+        return path.count == 1 || known(Array(path.dropFirst()), next)
+    }
+    let missing = Config.readKeys.filter { !known($0, schema) }
+    check(missing.isEmpty, "config: the keys the app reads are in the schema; missing: \(missing)")
+} catch {
+    check(false, "config over versions: \(error)")
+}
+
 // JSONEdit by itself: nested, empty objects, strings with braces and escapes, arrays, a key that is not an object.
 func edit(_ path: [String], _ value: Any, _ text: String) -> String? { try? JSONEdit.set(path, to: value, in: text) }
 check(edit(["a"], 1, "{}") == #"{"a": 1}"#, "edit: into an empty object")
@@ -265,8 +291,10 @@ check(edit(["k"], "v", #"{"s": "a\"}{,", "k": null}"#) == #"{"s": "a\"}{,", "k":
 check(edit(["s", "x"], 1, #"{"s": "text"}"#) == nil, "edit: through a string: an error")
 check(edit(["a"], 1, "[1]") == nil && edit(["a"], 1, #"{"a" 1}"#) == nil, "edit: not an object, or bad JSON: an error")
 check(edit(["n"], "ü/", "{\n\t\"m\": 1\n}") == "{\n\t\"m\": 1,\n\t\"n\": \"ü/\"\n}", "edit: a tab's indentation")
-try #"{"version": 2}"#.write(to: file, atomically: true, encoding: .utf8)
-check(Config.load(from: file).error != nil, "config: another version is an error")
+try #"{"version": 2, "language": "de"}"#.write(to: file, atomically: true, encoding: .utf8)
+let older = Config.load(from: file)
+check(older.error == nil && older.note == nil && older.language == "de",
+      "config: an older format is read too (the server brings it up), with no note")
 check(Config.load(from: dir.appendingPathComponent("none.json"), systemLanguage: "de-DE").language == "de",
       "config: no file: the system's language")
 try? FileManager.default.removeItem(at: dir)
