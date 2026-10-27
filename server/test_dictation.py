@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import pathlib
 import tempfile
 import time
 import unittest
@@ -66,7 +67,8 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.dir.cleanup()
 
     def metrics(self, event):
-        return [m for m in (json.loads(l) for l in open(self.file, encoding="utf-8")) if m["event"] == event]
+        lines = pathlib.Path(self.file).read_text(encoding="utf-8").splitlines()
+        return [m for m in map(json.loads, lines) if m["event"] == event]
 
     def dictation(self, options=None, model=None, recording=None):
         # the model's options as a start message gives them: its catalog entry's, then these
@@ -193,15 +195,16 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_named_recording_keeps_the_text_each_piece_and_its_text(self):
         rec = recordings.Recording(self.dir.name)
+        self.addCleanup(rec.wav.close)  # the test does not finish() it
         d = self.dictation(recording=rec)
         await d.prepare()
         await d.piece(LOUD * 2, 1, 2)
         await d.piece(LOUD, 2, 1)
         files = sorted(os.listdir(rec.dir))
         self.assertEqual(files, ["mic.wav", "piece-1.wav", "piece-2.wav", "pieces.jsonl", "text-before-audio.txt"])
-        self.assertEqual(open(os.path.join(rec.dir, "text-before-audio.txt")).read(), "PROMPT")
+        self.assertEqual(pathlib.Path(rec.dir, "text-before-audio.txt").read_text(encoding="utf-8"), "PROMPT")
         self.assertEqual(os.path.getsize(os.path.join(rec.dir, "piece-1.wav")), 44 + 2 * 32000)
-        lines = [json.loads(l) for l in open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8")]
+        lines = [json.loads(l) for l in pathlib.Path(rec.dir, "pieces.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual([(l["piece"], l["text"]) for l in lines], [(1, "text from llama"), (2, "text from llama")])
 
     async def test_hesitation_sounds_leave_the_text_and_the_record_keeps_the_models_own(self):
@@ -209,10 +212,11 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             def complete(self, text, pcm, limit, options, slot=None):
                 return "Э, привет, мм, мир", {}
         rec = recordings.Recording(self.dir.name)
+        self.addCleanup(rec.wav.close)  # the test does not finish() it
         dict_ = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(), {"language": "ru"}, rec)
         await dict_.prepare()
         self.assertEqual(await dict_.piece(LOUD, 1, 1), "Привет, мир")
-        line = json.loads(open(os.path.join(rec.dir, "pieces.jsonl"), encoding="utf-8").read())
+        line = json.loads(pathlib.Path(rec.dir, "pieces.jsonl").read_text(encoding="utf-8"))
         self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
         other = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(languages={"ru": {"fillers": []}}),
                             {"language": "ru"})

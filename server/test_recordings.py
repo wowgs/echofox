@@ -13,6 +13,7 @@ class RecordingTest(unittest.TestCase):
     def test_the_audio_plays_even_if_the_server_dies_before_the_end(self):
         with tempfile.TemporaryDirectory() as d:
             rec = recordings.Recording(d)
+            self.addCleanup(rec.wav.close)
             for _ in range(6):  # 6 s: the header is brought up to date every 5 s
                 rec.write(LOUD)
             rec.wav.flush()

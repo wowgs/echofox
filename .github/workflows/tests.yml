@@ -22,7 +22,13 @@ jobs:
         run: |
           python -m venv server/.venv
           server/.venv/bin/pip install --disable-pip-version-check --require-hashes --only-binary :all: -r server/requirements.txt
-      - name: The server's tests
-        run: server/.venv/bin/python -m unittest discover -s server
+      - name: The server's tests, which must leave no file or socket open
+        # unittest shows ResourceWarning; one raised while an object is collected only prints, so the log is read
+        run: |
+          set -o pipefail
+          server/.venv/bin/python -m unittest discover -s server 2>&1 | tee "$RUNNER_TEMP/server-tests.log"
+          if grep -q ResourceWarning "$RUNNER_TEMP/server-tests.log"; then
+            echo "::error::the tests left a file or a socket open (ResourceWarning in the log above)"; exit 1
+          fi
       - name: The app's checks
         run: swift run --package-path macos echofox-tests

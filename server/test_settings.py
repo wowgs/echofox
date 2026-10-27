@@ -3,6 +3,7 @@ import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import json
 import os
+import pathlib
 import plistlib
 import tempfile
 import time
@@ -114,7 +115,7 @@ class VariantTest(unittest.TestCase):
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):
     def write(self, f, **c):
-        json.dump({"version": constants.CONFIG_VERSION, **c}, open(f, "w"))
+        pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, **c}))
         os.utime(f, ns=(time.time_ns(), time.time_ns()))
 
     def test_the_file_wins_then_the_defaults(self):
@@ -161,7 +162,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
     def test_a_file_of_another_version_is_not_read(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            json.dump({"version": 1, "gemmaVoice": {"pieceSeconds": 25}}, open(f, "w"))
+            pathlib.Path(f).write_text(json.dumps({"version": 1, "gemmaVoice": {"pieceSeconds": 25}}))
             with self.assertLogs("gemma_voice", "ERROR") as logs:
                 self.assertIsNone(s.file_settings(f))
         self.assertIn(f"the server reads version {constants.CONFIG_VERSION}", logs.output[0])
@@ -230,7 +231,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
         # A server started with --config (the test server) reads its own file, not the default one
         with FakeAgents(), tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "other-config.json")
-            json.dump({"version": constants.CONFIG_VERSION, "model": "big"}, open(f, "w"))
+            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "big"}))
             models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
                                    "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
             st = s.recording_settings(s.resolve({}))
@@ -240,7 +241,8 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            choose = lambda model: json.dump({"version": constants.CONFIG_VERSION, "model": model}, open(f, "w"))
+            choose = lambda model: pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION,
+                                                                          "model": model}))
             models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
                                    "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
             w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
@@ -256,7 +258,8 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
             os.remove(f)  # no config yet, as at the first start: the server's default model, the registry's first
             await w.follow_selection()
             self.assertEqual((models.selected, agents.calls[-2:]), ("e4b", [("stop", "x.big"), ("start", "x.e4b")]))
-            json.dump({"version": constants.CONFIG_VERSION}, open(f, "w"))  # a config without "model": the same
+            # a config without "model": the same
+            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION}))
             await w.follow_selection()
             self.assertEqual(models.selected, "e4b")
             models.manage = False  # a test server never starts or stops the agents
@@ -267,7 +270,7 @@ class SelectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_recording_on_the_active_model_runs_no_launchctl_and_the_menus_model_comes_back(self):
         with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            json.dump({"version": constants.CONFIG_VERSION, "model": "e4b"}, open(f, "w"))
+            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "e4b"}))
             models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
                                    "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
             w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
@@ -334,7 +337,7 @@ class MigrateTest(unittest.TestCase):
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v3, fh)
             s.migrate(f)
-            c = json.load(open(f, encoding="utf-8"))
+            c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(c["version"], 9)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
@@ -361,7 +364,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v4, fh)
             with self.assertLogs("gemma_voice", "INFO") as logs:
                 s.migrate(f)
-            c = json.load(open(f, encoding="utf-8"))
+            c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])
             self.assertEqual(c["version"], 9)
             self.assertEqual(c["server"], {"maxRecordingSeconds": 600})
@@ -384,7 +387,7 @@ class MigrateTest(unittest.TestCase):
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v6, fh)
             s.migrate(f)
-            c = json.load(open(f, encoding="utf-8"))
+            c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), ["version", "adapters", "model"])
             self.assertEqual(c["version"], 9)
             self.assertEqual(c["adapters"], {"claude-code": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
@@ -419,7 +422,7 @@ class MigrateTest(unittest.TestCase):
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v5, fh)
             s.migrate(f)
-            c = json.load(open(f, encoding="utf-8"))
+            c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(c["version"], 9)
             self.assertEqual(c["server"], {"port": 8090, "maxRecordingSeconds": 1800})
             self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})

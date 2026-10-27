@@ -5,6 +5,7 @@ import hashlib
 import http.server
 import json
 import os
+import pathlib
 import tempfile
 import threading
 import unittest
@@ -72,6 +73,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         catalog.entries, catalog.url = self.saved
         self.http.shutdown()
+        self.http.server_close()
 
     def path(self, name):
         return os.path.join(self.folder, "tiny-GGUF", name)
@@ -85,7 +87,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         job = self.run_job("a")
         self.assertIsNone(job.error)
         self.assertEqual(job.done, job.total)
-        self.assertEqual((open(self.path("m.gguf"), "rb").read(), open(self.path("mm.gguf"), "rb").read()),
+        self.assertEqual(tuple(pathlib.Path(self.path(n)).read_bytes() for n in ("m.gguf", "mm.gguf")),
                          (MODEL, MMPROJ))
         self.assertFalse(os.path.exists(self.path("m.gguf.part")))
 
@@ -96,7 +98,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         job = self.run_job("a")
         self.assertIsNone(job.error)
         self.assertIn(120_000, Source.ranges)
-        self.assertEqual(open(self.path("m.gguf"), "rb").read(), MODEL)
+        self.assertEqual(pathlib.Path(self.path("m.gguf")).read_bytes(), MODEL)
 
     def test_a_wrong_sha256_deletes_the_part_and_stops(self):
         job = self.run_job("bad")

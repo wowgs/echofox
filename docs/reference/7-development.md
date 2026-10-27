@@ -52,6 +52,8 @@ Server tests need neither a downloaded model nor a running `llama-server`:
 server/.venv/bin/python -m unittest discover -s server
 ```
 
+A test closes every file and socket it opens: the tests workflow fails when the log shows a `ResourceWarning`.
+
 Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the `launchctl` that `llama.py` calls with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
 
 Run app checks with:
@@ -92,7 +94,7 @@ The ports are in `server/constants.py`.
 
 | Workflow | Trigger | Result |
 |---|---|---|
-| `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac. |
+| `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac; a `ResourceWarning` in the server's tests fails it. |
 | `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, the server's tests again with the bundled Python, and the DMG signed and sent to Apple's notary service. |
 | `staple.yml` | The webhook, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
 

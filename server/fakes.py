@@ -184,3 +184,4 @@ class FakeLlamaServer:
 
     def close(self):
         self.httpd.shutdown()
+        self.httpd.server_close()

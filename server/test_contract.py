@@ -3,6 +3,7 @@ checks (macos echofox-tests) read too. Run: server/.venv/bin/python -m unittest 
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import json
 import os
+import pathlib
 import unittest
 
 import constants
@@ -12,8 +13,8 @@ import variants
 from fakes import args, stub_models
 
 SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
-EXAMPLES = json.load(open(os.path.join(SHARED, "protocol-examples.json"), encoding="utf-8"))
-CONSTANTS = json.load(open(os.path.join(SHARED, "constants.json"), encoding="utf-8"))
+EXAMPLES = json.loads(pathlib.Path(SHARED, "protocol-examples.json").read_text(encoding="utf-8"))
+CONSTANTS = json.loads(pathlib.Path(SHARED, "constants.json").read_text(encoding="utf-8"))
 
 
 class ContractTest(unittest.TestCase):
@@ -51,7 +52,7 @@ class ContractTest(unittest.TestCase):
 
     def test_the_server_sends_only_the_kinds_of_messages_of_the_examples(self):
         kinds = {m["type"] for m in EXAMPLES["server"]}
-        source = "".join(open(m.__file__, encoding="utf-8").read() for m in (session, info, variants))
+        source = "".join(pathlib.Path(m.__file__).read_text(encoding="utf-8") for m in (session, info, variants))
         for kind in ("speech", "text", "error", "stopped", "done", "info"):
             self.assertIn(f'type="{kind}"' if kind != "info" else '"type": "info"', source)
         self.assertEqual(kinds, {"speech", "text", "error", "stopped", "done"})

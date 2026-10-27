@@ -270,15 +270,21 @@ class UserAdapterTest(Fixture):
         msgs = "return {'about': 'a', 'messages': [{'from': 'A', 'text': 'one'}, {'from': 'A', 'text': 'two'}]}"
         self.install("badclaim", code=base.format(claim="raise RuntimeError('claim')", context=msgs, clean="return text"))
         self.install("good", code=base.format(claim="return Claim(self.name, 2.0, 'sure')", context=msgs, clean="return text"))
-        c = adapters.context({}, enabled=["badclaim", "good"])
+        with self.assertLogs("gemma_voice", "ERROR") as logs:
+            c = adapters.context({}, enabled=["badclaim", "good"])
+        self.assertIn("adapter badclaim: claim failed", logs.output[0])
         self.assertEqual((c["adapter"], c["confidence"], len(c["messages"])), ("good", 1.0, 2))  # clamped to 1
         self.assertIn("badclaim.claim: RuntimeError: claim", c["errors"])
         self.install("badcontext", code=base.format(claim=ok, context="raise KeyError('k')", clean="return text"))
-        c = adapters.context({}, enabled=["badcontext"])
+        with self.assertLogs("gemma_voice", "ERROR") as logs:
+            c = adapters.context({}, enabled=["badcontext"])
+        self.assertIn("adapter badcontext: context failed", logs.output[0])
         self.assertNotIn("messages", c)
         self.assertIn("badcontext.context: KeyError", c["errors"][0])
         self.install("badclean", code=base.format(claim=ok, context=msgs, clean="raise ValueError('v')"))
-        c = adapters.context({}, enabled=["badclean"])
+        with self.assertLogs("gemma_voice", "ERROR") as logs:
+            c = adapters.context({}, enabled=["badclean"])
+        self.assertIn("adapter badclean: clean failed", logs.output[0])
         self.assertEqual(c["messages"], [])
         self.assertIn("badclean.clean: ValueError: v", c["errors"])
 

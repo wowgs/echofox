@@ -3,6 +3,7 @@ Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import glob
 import os
+import pathlib
 import re
 import socket
 import unittest
@@ -15,7 +16,8 @@ import settings
 class SandboxTest(unittest.TestCase):
     def test_every_test_module_imports_the_sandbox_first(self):
         for f in sorted(glob.glob(os.path.join(os.path.dirname(__file__), "test_*.py"))) + ["fakes.py"]:
-            code = re.sub(r'^\s*"""[\s\S]*?"""\n', "", open(os.path.join(os.path.dirname(__file__), f) if f == "fakes.py" else f).read())
+            source = pathlib.Path(os.path.dirname(__file__), f).read_text(encoding="utf-8")
+            code = re.sub(r'^\s*"""[\s\S]*?"""\n', "", source)
             first = next(l for l in code.splitlines() if l.startswith(("import ", "from ")))
             self.assertTrue(first.startswith("import sandbox"), f"{f}: the first import is {first!r}")
 

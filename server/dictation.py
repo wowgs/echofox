@@ -38,16 +38,18 @@ def output_limit(speech_seconds, options, server):
 
 async def run_blocking(fn, *args, cancel=None):
     """fn(*args) in a thread. If the caller is cancelled, cancel() stops fn, and this waits until fn has returned,
-    then raises: the next recording starts only when the model is free."""
+    then raises: the next recording starts only when the model is free. asyncio.wait, not asyncio.shield: a shielded
+    task logs its exception as an error when the caller is cancelled (Python 3.14), and fn raises when it is stopped."""
     run = asyncio.ensure_future(asyncio.to_thread(fn, *args))
     try:
-        return await asyncio.shield(run)
+        await asyncio.wait({run})
     except asyncio.CancelledError:
         if cancel:
             cancel()
         with contextlib.suppress(Exception):
             await run
         raise
+    return run.result()
 
 
 def context_options(adapter, server):

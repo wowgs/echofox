@@ -4,6 +4,7 @@ import asyncio
 import glob
 import json
 import os
+import pathlib
 import tempfile
 import threading
 import time
@@ -56,7 +57,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def latest(self):
         """The newest recording folder and its adapter.json."""
         d = max(glob.glob(os.path.join(self.args.recordings, "*", "*")), key=os.path.getmtime)
-        return d, json.load(open(os.path.join(d, "adapter.json"), encoding="utf-8"))
+        return d, json.loads(pathlib.Path(d, "adapter.json").read_text(encoding="utf-8"))
 
     async def ask_info(self):
         async with serve(lambda ws: handle(ws, stub_models(), self.args), "127.0.0.1", 0) as server:
@@ -105,7 +106,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             saved = metrics.configure(file)
             try:
                 stub, got = await self.run_stream(START, LOUD * 22)
-                lines = [json.loads(l) for l in open(file, encoding="utf-8")]
+                lines = [json.loads(l) for l in pathlib.Path(file).read_text(encoding="utf-8").splitlines()]
             finally:
                 metrics.configure(saved)
         # Cuts once 10, 15 and 20 s are heard, at 5, 10 and 15 s; the 7 s left are one piece at the stop.
@@ -247,7 +248,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             saved = metrics.configure(file)
             try:
                 await self.run_stream({**START, "client": "menubar"}, LOUD + QUIET + LOUD)
-                lines = [json.loads(l) for l in open(file, encoding="utf-8")]
+                lines = [json.loads(l) for l in pathlib.Path(file).read_text(encoding="utf-8").splitlines()]
             finally:
                 metrics.configure(saved)
         by = {l["event"]: l for l in lines}
@@ -329,7 +330,7 @@ class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
                 while models.recording.locked():
                     await asyncio.sleep(0.01)
         d = max(glob.glob(os.path.join(a.recordings, "*", "*")), key=os.path.getmtime)
-        rec = json.load(open(os.path.join(d, "adapter.json")))
+        rec = json.loads(pathlib.Path(d, "adapter.json").read_text(encoding="utf-8"))
         self.assertEqual(rec["stopReason"], "connection closed")
         self.assertIn("before the stop", rec["error"])
 
