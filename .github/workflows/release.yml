@@ -13,8 +13,8 @@
 #   DEVELOPER_ID_NAME          its name, for example "Developer ID Application: Your Name (TEAMID)"
 #   NOTARY_KEY_P8              an App Store Connect API key for notarytool, the .p8 file in base64
 #   NOTARY_KEY_ID, NOTARY_ISSUER_ID
-# Variables:
-#   NOTARY_WEBHOOK             the URL that Apple calls when the check is over; what it calls starts staple.yml
+#   NOTARY_WEBHOOK             the URL that Apple calls when the check is over; what it calls starts staple.yml. It is
+#                              a secret so that the public logs show *** in its place
 name: Release
 on:
   push:
@@ -29,12 +29,11 @@ jobs:
     needs: tests
     runs-on: macos-26
     env:
-      HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_P12 != '' && vars.NOTARY_WEBHOOK != '' }}
-      NOTARY_WEBHOOK: ${{ vars.NOTARY_WEBHOOK }}
+      HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_P12 != '' && secrets.NOTARY_WEBHOOK != '' }}
     steps:
       - name: The Developer ID secrets and the webhook are there
         if: env.HAS_DEVELOPER_ID != 'true'
-        run: echo "the build needs the Developer ID secrets and the variable NOTARY_WEBHOOK"; exit 1
+        run: echo "the build needs the Developer ID secrets and NOTARY_WEBHOOK"; exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -83,6 +82,7 @@ jobs:
           KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_WEBHOOK: ${{ secrets.NOTARY_WEBHOOK }}
         run: |
           trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
           echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
