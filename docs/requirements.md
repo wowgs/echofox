@@ -45,7 +45,7 @@ The target behavior of EchoFox. It is not a list of shipped features: the [refer
 
 - **NFR-1. Privacy.** The audio and the text are processed on the Mac.
 - **NFR-2. No terminal.** Installing and using the public version needs no terminal.
-- **NFR-3. Extensible adapters.** A new plugin needs no vendor logic in the core.
+- **NFR-3. Extensible adapters.** A new adapter needs no vendor logic in the core.
 - **NFR-4. A minimal snapshot.** The focus metadata has no values of text boxes and no terminal buffer. Screen content is taken only for enabled adapters that ask for it in their manifest. A config migration never enables such an adapter.
 - **NFR-5. One source for a setting.** The owner defines a setting and its default, and the user's change is stored at the owner. Order: an experiment's option, the user's change, the default. New server settings appear in the interface from the server's description.
 - **NFR-6. Latency, proposed.** Shorten the wait after the stop; the number is chosen after measurements on the supported models.

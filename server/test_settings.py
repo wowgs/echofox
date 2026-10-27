@@ -309,7 +309,7 @@ class LaunchdTest(unittest.TestCase):
 
 
 class MigrateTest(unittest.TestCase):
-    def test_version_2_becomes_3_with_the_built_in_plugins_that_read_no_screen_enabled_and_the_order_kept(self):
+    def test_version_2_becomes_3_with_the_built_in_adapters_that_read_no_screen_enabled_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             c, _ = s.from_2({"model": "m", "language": "ru", "models": {}, "version": 2}, f)

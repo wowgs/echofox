@@ -6,9 +6,9 @@ A dictionary differs from [training](training.md): it gives a hint at recognitio
 
 ## Proposed path (2026-10-14)
 
-1. After a finished turn, a plugin reads that turn's transcript.
+1. After a finished turn, an adapter reads that turn's transcript.
 2. A language model picks the terms from the messages and the code.
-3. The plugin updates a local base: spellings, frequency and source.
+3. The adapter updates a local base: spellings, frequency and source.
 4. Before a dictation, a short list that fits the conversation is chosen from the base.
 
 The base keeps everything useful; only a small selection goes into the prompt. A possible signal is the frequency over the last hour, the last few turns or a number of tokens; the window is not chosen. A cloud model for the dictionary would break the promise of local processing, so it is not an option without a separate decision.

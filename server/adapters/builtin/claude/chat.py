@@ -1,7 +1,7 @@
-"""Claude Desktop's chats (claude.ai conversations, not the Code tab), for the Claude plugin, read from the screen.
+"""Claude Desktop's chats (claude.ai conversations, not the Code tab), for the Claude adapter, read from the screen.
 
 A chat has no transcript on the Mac: Desktop keeps only the web app's own cache in IndexedDB, in an undocumented
-binary format (measured 2026-10-25, Claude Desktop 3.6556.2). So the plugin asks the client for the outline of the
+binary format (measured 2026-10-25, Claude Desktop 3.6556.2). So the adapter asks the client for the outline of the
 page (manifest "screen": ["outline"]) and reads the messages the window shows. The chat's address is
 https://claude.ai/chat/<uuid>.
 

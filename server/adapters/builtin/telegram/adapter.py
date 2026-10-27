@@ -1,6 +1,6 @@
-"""The Telegram plugin: the chat a dictation goes into, in Telegram Desktop.
+"""The Telegram adapter: the chat a dictation goes into, in Telegram Desktop.
 
-The client sends, for this plugin's apps, the rows of the lists in the focused window (manifest "screen": ["lists"]).
+The client sends, for this adapter's apps, the rows of the lists in the focused window (manifest "screen": ["lists"]).
 The open chat's messages are the list above the input box; desktop.py reads them. The context is what the window has
 loaded: the newest messages of the chat, not its whole history. Telegram's texts are plain, so clean only joins the
 lines.

@@ -82,7 +82,7 @@ A download uses one connection per file: more connections were not faster on the
 | `settings.py` | The config file: reading, checking, updates from older versions. |
 | `catalog.json`, `catalog.py` | The model catalog. |
 | `languages.json`, `languages.py`, `fillers.py` | The languages: names, notes, hesitation sounds. |
-| `adapters/`, `plugins/` | The adapters that give [the chat context](3-context.md). |
+| `adapters/` | The core of the adapters that give [the chat context](3-context.md), and the built-in adapters in `adapters/builtin/`. |
 | `recordings.py` | [The recordings](5-recordings.md). |
 | `metrics.py` | The metrics file and its summary. |
 | `constants.py` | Shared constants, paths and names that the server, its scripts and its tests share. The ones the app also needs are in `shared/constants.json`, which the tests of both sides check. |

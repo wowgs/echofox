@@ -37,9 +37,9 @@ Before the repository opens:
 | Recording indicator (a fox over the window) | A prototype of the transparent rendering exists; no character or indicator yet. A text preview is put off. |
 | Automatic fine-tuning (LoRA) on the user's labels | Planned; needs a checked set and a first short experiment. See [training](research/training.md). |
 | Faster labeling | Proposals: short series and choosing doubtful pieces, in [training](research/training.md#easier-labeling). |
-| A plugin catalog and install from GitHub | Install from a folder works. Plugins in other languages only on a real need. |
+| An adapter catalog and install from GitHub | Install from a folder works. Adapters in other languages only on a real need. |
 | Update reminders | The menu's first line says that an update is ready. Proposed: a mark on the menu bar fox (approved art, needs a drawing) and release notes in the update window (a signed feed needs them signed too). |
-| Claude Code sessions named by the client | The Claude plugin takes the sessions a client names in `hints`. No client sends them now; only `try_wav.py --hint` reaches this path. Open: keep it for a future client, or remove it. |
+| Claude Code sessions named by the client | The Claude adapter takes the sessions a client names in `hints`. No client sends them now; only `try_wav.py --hint` reaches this path. Open: keep it for a future client, or remove it. |
 
 ## Experiments without a chosen answer
 

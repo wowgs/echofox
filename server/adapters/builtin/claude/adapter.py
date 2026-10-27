@@ -1,4 +1,4 @@
-"""The Claude plugin: the conversation a dictation goes into, in Anthropic's Claude apps.
+"""The Claude adapter: the conversation a dictation goes into, in Anthropic's Claude apps.
 
 - Claude Desktop's Code tab, the session in focus (confidence 1.0). Ways to the session: the web area's URL → Desktop's
   record of the session → its Claude Code transcript ("desktop store"); without a record, the web area's title → the
@@ -22,7 +22,7 @@ ABOUT_CHAT = "a chat with Claude, an AI assistant"
 
 
 def as_context(found, **details):
-    """A transcript that transcripts.context_of found → this plugin's context, or None."""
+    """A transcript that transcripts.context_of found → this adapter's context, or None."""
     if not found:
         return None
     return {"about": ABOUT, "messages": [{"from": "Claude", "text": m["text"]} for m in found["messages"]],

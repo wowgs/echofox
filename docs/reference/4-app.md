@@ -101,7 +101,7 @@ launchctl bootout gui/$(id -u)/echofox.llama-server
 rm ~/Library/LaunchAgents/echofox.gemma-voice.plist ~/Library/LaunchAgents/echofox.llama-server.plist
 ```
 
-Your data is in `~/Library/Application Support/EchoFox` (models, plugins), `~/.echofox` (config) and `~/Library/Logs/EchoFox`; your recordings are in the folder set in Settings. If you delete only the app, launchd stops its server after one failed start (macOS 27).
+Your data is in `~/Library/Application Support/EchoFox` (models, adapters), `~/.echofox` (config) and `~/Library/Logs/EchoFox`; your recordings are in the folder set in Settings. If you delete only the app, launchd stops its server after one failed start (macOS 27).
 
 ## Logs
 

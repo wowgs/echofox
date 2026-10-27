@@ -172,7 +172,7 @@ class Session:
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
-        # A plugin that hangs: the dictation goes on without context
+        # An adapter that hangs: the dictation goes on without context
         found = await adapters.context_within(self.start.snapshot, self.start.hints, self.args.adapters) or {}
         if not found.get("adapter") and found.get("errors"):
             log.error("recording %s: no context: %s", self.id, "; ".join(found["errors"]))

@@ -78,9 +78,9 @@ Config migrations never enable a screen-reading adapter automatically. Adapters 
 
 ## Write an adapter
 
-An adapter is a Python plugin with two required files.
+An adapter is a Python package with two required files.
 
-`adapter.json` describes the plugin:
+`adapter.json` describes the adapter:
 
 | Fields | Purpose |
 |---|---|
@@ -102,9 +102,9 @@ clean(text)           -> str   ("" drops the message)
 
 `focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `terms` are the names and words of the conversation. `source` and `details` are saved as recording metadata, not sent to the model.
 
-Put plugins in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOFOX_PLUGINS` to use another folder. A plugin with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed plugin files automatically.
+Put adapters in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOFOX_ADAPTERS` to use another folder. An adapter with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed adapter files automatically.
 
-The loader checks the manifest, interface version, and adapter class. It does not isolate the code: plugins run with your user permissions, so only install code you trust.
+The loader checks the manifest, interface version, and adapter class. It does not isolate the code: adapters run with your user permissions, so only install code you trust.
 
 `adapters/markdown.py` converts Markdown to plain text. It removes code blocks, HTML, and bare links, but keeps inline terms such as identifiers, filenames, flags, and short commands.
 

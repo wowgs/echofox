@@ -30,7 +30,7 @@ async def main():
     p.add_argument("--model", help="a model of the registry (default: the server's first)")
     p.add_argument("--hint", action="append", default=[], metavar="KEY=VALUE",
                    help="a hint for the adapters, sent in the start message's hints; VALUE is JSON, or else text "
-                        "(e.g. sessions='[\"<id>\"]' for a plugin that reads named sessions)")
+                        "(e.g. sessions='[\"<id>\"]' for an adapter that reads named sessions)")
     p.add_argument("--snapshot", help="a focus snapshot (macos echofox-snapshot), for the chat context")
     p.add_argument("--options", type=json.loads, help='the start message\'s options, e.g. \'{"cutWhileSpeaking": false}\'')
     p.add_argument("--prompt", help="the start message's own prompt, instead of the model's")

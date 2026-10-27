@@ -1,4 +1,4 @@
-"""Markdown → plain text, for plugins of chat apps whose assistants write their replies in Markdown.
+"""Markdown → plain text, for adapters of chat apps whose assistants write their replies in Markdown.
 
 The model that transcribes reads the chat context before the audio. With Markdown in it (lists, **bold**, `code`,
 tables), the model wrote the transcription without punctuation and capital letters: one recording, five runs each,

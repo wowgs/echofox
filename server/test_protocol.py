@@ -157,7 +157,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.args.adapters = []
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
-    async def test_a_plugin_that_hangs_costs_the_context_not_the_dictation(self):
+    async def test_a_adapter_that_hangs_costs_the_context_not_the_dictation(self):
         saved, release = (adapters.context, adapters.CONTEXT_TIMEOUT_S), threading.Event()
         adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: release.wait(5)), 0.2
         try:
@@ -235,7 +235,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
         self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],
                           a["chat"]["details"]["session"]), ("claude", "desktop store", "local_abc", "s1"))
-        self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the plugin
+        self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the adapter
 
     async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):
         with tempfile.TemporaryDirectory() as d:

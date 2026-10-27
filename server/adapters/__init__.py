@@ -1,8 +1,8 @@
 """Adapters: one per target app (the app with the input box). They give the model the context of the conversation
-the dictation goes into. Each adapter is a plugin (adapters/registry.py), and works only when the config enables it;
-with none enabled, dictation runs in the base mode, without context. Plugins import this module for Adapter, Claim,
+the dictation goes into. Each adapter is a package of its own (adapters/registry.py), and works only when the config enables it;
+with none enabled, dictation runs in the base mode, without context. Adapters import this module for Adapter, Claim,
 bundle and terms, and adapters.markdown for chat apps that write Markdown. The core knows no vendor: everything about
-one platform's apps lives in that platform's plugin.
+one platform's apps lives in that platform's adapter.
 
 The core (session.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
 (see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
@@ -63,7 +63,7 @@ class Claim:
 class Adapter(abc.ABC):
     """An adapter: claim, context, clean, for any app whose content tells what the speaker is writing about: a chat
     with an assistant, a messenger, mail, a document, a terminal. An adapter without one of the three cannot be made.
-    The registry sets `name` and `manifest` from the plugin's adapter.json.
+    The registry sets `name` and `manifest` from the adapter's adapter.json.
 
     focus: the snapshot (FOCUS above). hints: what the client knows and sends in the start message, as it is; the core
     does not read it (an old client's "sessions" arrive as hints["sessions"])."""
@@ -133,23 +133,23 @@ def bundle(snapshot):
 from . import registry  # noqa: E402
 
 
-CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s for a plugin that reads a local transcript (2026-10-15)
+CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s for an adapter that reads a local transcript (2026-10-15)
 
-# The plugins run on a thread of their own, not in the event loop's default pool, which the model's requests use:
-# a plugin that hangs past the timeout keeps its thread, and must not take one of theirs. While it hangs, the next
+# The adapters run on a thread of their own, not in the event loop's default pool, which the model's requests use:
+# an adapter that hangs past the timeout keeps its thread, and must not take one of theirs. While it hangs, the next
 # dictations get no context instead of a second hung thread.
-_plugins = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="adapters")
+_worker = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="adapters")
 _running = None  # the call that runs now, a concurrent.futures.Future
 
 
 async def context_within(focus, hints=None, enabled=None, timeout=None):
-    """context(), on the plugins' thread, for at most `timeout` seconds. A call that hangs gives {"errors": […]}; so
+    """context(), on the adapters' thread, for at most `timeout` seconds. A call that hangs gives {"errors": […]}; so
     does a call while an earlier one still runs. `timeout`: CONTEXT_TIMEOUT_S unless given."""
     global _running
     timeout = CONTEXT_TIMEOUT_S if timeout is None else timeout
     if _running is not None and not _running.done():
         return {"errors": ["the adapters still run for an earlier dictation"]}
-    _running = _plugins.submit(context, focus, hints, enabled)
+    _running = _worker.submit(context, focus, hints, enabled)
     try:
         return await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(_running)), timeout)
     except TimeoutError:
@@ -157,19 +157,19 @@ async def context_within(focus, hints=None, enabled=None, timeout=None):
 
 
 def _guarded(adapter, what, fn, *args):
-    """A plugin's call: its exception is logged and becomes ("error", text), so one plugin cannot stop the others or
+    """An adapter's call: its exception is logged and becomes ("error", text), so one adapter cannot stop the others or
     the dictation."""
     try:
         return "ok", fn(*args)
-    except Exception as e:  # any exception: a plugin is anyone's code
+    except Exception as e:  # any exception: an adapter is anyone's code
         log.exception("adapter %s: %s failed", adapter.name, what)
         return "error", f"{adapter.name}.{what}: {type(e).__name__}: {e}"
 
 
 def claims(focus, hints=None, enabled=None, errors=None):
-    """The claims of the enabled adapters (`enabled`: names; None: every working plugin), the surest first. A plugin
+    """The claims of the enabled adapters (`enabled`: names; None: every working adapter), the surest first. An adapter
     whose claim fails is left out; its error goes to `errors`."""
-    names = enabled if enabled is not None else list(registry.plugins())
+    names = enabled if enabled is not None else list(registry.packages())
     out = []
     for a in registry.enabled(names):
         status, c = _guarded(a, "claim", a.claim, focus or {}, hints or {})
@@ -185,7 +185,7 @@ def claims(focus, hints=None, enabled=None, errors=None):
 def context(focus, hints=None, enabled=None):
     """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
     newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages,
-    "errors": what failed in the plugins}; without "messages" if the surest adapter found nothing or failed; None if no
+    "errors": what failed in the adapters}; without "messages" if the surest adapter found nothing or failed; None if no
     enabled adapter claims the focus (with none enabled: the base mode, no context)."""
     errors = []
     ranked = claims(focus, hints, enabled, errors)

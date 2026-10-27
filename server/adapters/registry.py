@@ -1,5 +1,5 @@
-"""The adapter plugins: the built-in ones in server/plugins/, the user's in ~/Library/Application Support/EchoFox/
-adapters/ ($ECHOFOX_PLUGINS). Each plugin is a folder with:
+"""The adapters: the built-in ones in server/adapters/builtin/, the user's in ~/Library/Application Support/EchoFox/
+adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
   adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 2,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads],
@@ -9,10 +9,10 @@ adapters/ ($ECHOFOX_PLUGINS). Each plugin is a folder with:
                 "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
                 chatHistoryTokenBudget; the user's entry in the config changes them}}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
-                import the plugin's other modules (from . import helpers)
-A plugin the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
-interface is this one, that its "context" has only the adapter's knobs, and that the module has its class. A user plugin with the name of
-a built-in one replaces it. A plugin works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
+                import the adapter's other modules (from . import helpers)
+An adapter the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
+interface is this one, that its "context" has only the adapter's knobs, and that the module has its class. A user adapter with the name
+of a built-in one replaces it. An adapter works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
 """
 import contextlib
 import importlib.util
@@ -29,17 +29,17 @@ import constants
 import tuning
 
 INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
-SCREEN = {"lists", "outline"}  # what of the screen a plugin can ask the client for (its manifest's "screen")
-BUILTIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins")
+SCREEN = {"lists", "outline"}  # what of the screen an adapter can ask the client for (its manifest's "screen")
+BUILTIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builtin")
 log = logging.getLogger("gemma_voice")
 
 
 def user_dir():
-    return os.environ.get("ECHOFOX_PLUGINS") or constants.path(constants.PLUGINS)
+    return os.environ.get("ECHOFOX_ADAPTERS") or constants.path(constants.ADAPTERS)
 
 
 @dataclass
-class Plugin:
+class Package:
     name: str
     dir: str
     builtin: bool
@@ -48,7 +48,7 @@ class Plugin:
     error: str = None
 
     def info(self, enabled):
-        """For the app: what the plugin is, says about itself, and whether it works."""
+        """For the app: what the adapter is, says about itself, and whether it works."""
         m = self.manifest
         return {"name": self.name, "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
                 "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
@@ -58,8 +58,8 @@ class Plugin:
 
 
 def load(folder, builtin):
-    """One plugin from its folder: the Plugin, with its adapter, or with the error that stopped it."""
-    p = Plugin(os.path.basename(folder), folder, builtin)
+    """One adapter from its folder: its Package, with the adapter object, or with the error that stopped it."""
+    p = Package(os.path.basename(folder), folder, builtin)
     try:
         with open(os.path.join(folder, "adapter.json"), encoding="utf-8") as f:
             m = json.load(f)
@@ -74,12 +74,12 @@ def load(folder, builtin):
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
         tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
-        package = f"echofox_plugin_{re.sub(r'\W', '_', p.name)}"
+        package = f"echofox_adapter_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
                                                       submodule_search_locations=[folder])
         module = importlib.util.module_from_spec(spec)
         for name in [n for n in sys.modules if n == package or n.startswith(package + ".")]:
-            del sys.modules[name]  # a plugin that loads again gets its modules fresh
+            del sys.modules[name]  # an adapter that loads again gets its modules fresh
         sys.modules[package] = module
         spec.loader.exec_module(module)
         classes = [c for c in vars(module).values() if isinstance(c, type) and issubclass(c, adapters.Adapter)
@@ -89,18 +89,18 @@ def load(folder, builtin):
         p.adapter = classes[0]()
         p.adapter.name = p.name
         p.adapter.manifest = m
-    except Exception as e:  # a broken plugin stops only itself
+    except Exception as e:  # a broken adapter stops only itself
         p.error = f"{type(e).__name__}: {e}"
-        log.error("adapter plugin %s (%s): %s", p.name, folder, p.error)
+        log.error("adapter %s (%s): %s", p.name, folder, p.error)
     return p
 
 
-_plugins, _signature = None, None
-_lock = threading.Lock()  # plugins() runs in worker threads, sometimes two at once
+_packages, _signature = None, None
+_lock = threading.Lock()  # packages() runs in worker threads, sometimes two at once
 
 
 def _folders():
-    """[(folder, builtin)] of every plugin folder, built-in first, and their signature: every file of every plugin
+    """[(folder, builtin)] of every adapter folder, built-in first, and their signature: every file of every adapter
     folder with the time it changed."""
     out, sig = [], []
     for root, builtin in ((BUILTIN, True), (user_dir(), False)):
@@ -122,29 +122,29 @@ def _folders():
     return out, tuple(sig)
 
 
-def plugins():
-    """Every plugin found, by name; a user plugin replaces a built-in one of the same name. The plugins load again when
-    a file of a plugin folder changes, so a new or edited plugin works without a restart of the server."""
-    global _plugins, _signature
+def packages():
+    """Every adapter found, by name; a user adapter replaces a built-in one of the same name. The adapters load again
+    when a file of an adapter folder changes, so a new or edited adapter works without a restart of the server."""
+    global _packages, _signature
     with _lock:
         folders, sig = _folders()
-        if _plugins is None or sig != _signature:
+        if _packages is None or sig != _signature:
             found = {}
             for folder, builtin in folders:
                 p = load(folder, builtin)
                 if p.name in found and not builtin:
-                    log.info("adapter plugin %s from %s replaces the built-in one", p.name, folder)
+                    log.info("adapter %s from %s replaces the built-in one", p.name, folder)
                 found[p.name] = p
-            _plugins, _signature = found, sig
-        return _plugins
+            _packages, _signature = found, sig
+        return _packages
 
 
 def enabled(names):
-    """The working adapters among `names` (the config's enabled ones), in the order of the plugins."""
-    return [p.adapter for n, p in plugins().items() if n in set(names or ()) and p.adapter is not None]
+    """The working adapters among `names` (the config's enabled ones), in the order of the packages."""
+    return [p.adapter for n, p in packages().items() if n in set(names or ()) and p.adapter is not None]
 
 
 def context_defaults(name):
     """The defaults of adapter `name`'s context settings, from its manifest, by name ({} for none or no adapter)."""
-    p = plugins().get(name) if name else None
+    p = packages().get(name) if name else None
     return tuning.parse((p.manifest if p else {}).get("context"), "adapter", "\"context\"") if p and not p.error else {}

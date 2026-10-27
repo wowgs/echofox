@@ -28,9 +28,9 @@ class Fixture(unittest.TestCase):
             os.makedirs(os.path.join(self.projects, p))
         os.makedirs(os.path.join(self.store, "org", "account"))
         self.saved = {k: os.environ.get(k) for k in ("ECHOFOX_PROJECTS", "ECHOFOX_DESKTOP_SESSIONS",
-                                                      "ECHOFOX_PLUGINS")}
+                                                      "ECHOFOX_ADAPTERS")}
         os.environ.update(ECHOFOX_PROJECTS=self.projects, ECHOFOX_DESKTOP_SESSIONS=self.store,
-                          ECHOFOX_PLUGINS=os.path.join(self.dir.name, "plugins"))
+                          ECHOFOX_ADAPTERS=os.path.join(self.dir.name, "adapters"))
 
     def tearDown(self):
         for k, v in self.saved.items():
@@ -161,7 +161,7 @@ class CleanTest(Fixture):
         c = adapters.context({}, {"sessions": ["s"]})
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
         self.assertEqual(c["terms"], ["FocusSnapshot"])
-        for p in registry.plugins().values():
+        for p in registry.packages().values():
             self.assertIsInstance(p.adapter, adapters.Adapter)
 
     def test_an_adapter_without_clean_cannot_be_made(self):
@@ -172,9 +172,9 @@ class CleanTest(Fixture):
             NoClean()
 
 
-class PluginTest(Fixture):
-    def plugin(self, name, manifest=None, code=None):
-        d = os.path.join(os.environ["ECHOFOX_PLUGINS"], name)
+class UserAdapterTest(Fixture):
+    def install(self, name, manifest=None, code=None):
+        d = os.path.join(os.environ["ECHOFOX_ADAPTERS"], name)
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "adapter.json"), "w") as f:
             json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]}, f)
@@ -189,28 +189,28 @@ class PluginTest(Fixture):
                 "    def clean(self, text):\n"
                 "        return text.replace('**', '')\n"))
 
-    def test_a_users_plugin_in_the_folder_works_once_enabled(self):
-        self.plugin("mine")
+    def test_a_users_adapter_in_the_folder_works_once_enabled(self):
+        self.install("mine")
         snap = {"app": {"bundleId": "com.example.app"}}
         self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
         self.assertIsNone(adapters.context(snap, enabled=["claude"]))
         c = adapters.context(snap, enabled=["mine"])
         self.assertEqual((c["adapter"], c["about"], c["messages"][0], c["terms"]),
                          ("mine", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"}, ["Anna", "Kubernetes", "Hello"]))
-        self.assertEqual(registry.plugins()["mine"].info({"mine"})["apps"], ["com.example.app"])
+        self.assertEqual(registry.packages()["mine"].info({"mine"})["apps"], ["com.example.app"])
 
-    def test_a_broken_plugin_stops_only_itself_and_says_why(self):
-        self.plugin("old", {"name": "old", "interface": 0})
-        self.plugin("twice", code="from adapters import Adapter\n")
-        self.plugin("crash", code="raise RuntimeError('boom')\n")
-        found = registry.plugins()
+    def test_a_broken_adapter_stops_only_itself_and_says_why(self):
+        self.install("old", {"name": "old", "interface": 0})
+        self.install("twice", code="from adapters import Adapter\n")
+        self.install("crash", code="raise RuntimeError('boom')\n")
+        found = registry.packages()
         self.assertIn("interface 0", found["old"].error)
         self.assertIn("0 subclasses", found["twice"].error)
         self.assertIn("boom", found["crash"].error)
         self.assertIsNotNone(found["claude"].adapter)
         self.assertFalse(found["crash"].info({"crash"})["enabled"])
 
-    def test_a_plugin_that_fails_stops_only_itself_and_the_error_is_kept(self):
+    def test_a_adapter_that_fails_stops_only_itself_and_the_error_is_kept(self):
         base = ("from adapters import Adapter, Claim\n"
                 "class P(Adapter):\n"
                 "    def claim(self, focus, hints):\n        {claim}\n"
@@ -218,23 +218,23 @@ class PluginTest(Fixture):
                 "    def clean(self, text):\n        {clean}\n")
         ok = "return Claim(self.name, 0.5, 'x')"
         msgs = "return {'about': 'a', 'messages': [{'from': 'A', 'text': 'one'}, {'from': 'A', 'text': 'two'}]}"
-        self.plugin("badclaim", code=base.format(claim="raise RuntimeError('claim')", context=msgs, clean="return text"))
-        self.plugin("good", code=base.format(claim="return Claim(self.name, 2.0, 'sure')", context=msgs, clean="return text"))
+        self.install("badclaim", code=base.format(claim="raise RuntimeError('claim')", context=msgs, clean="return text"))
+        self.install("good", code=base.format(claim="return Claim(self.name, 2.0, 'sure')", context=msgs, clean="return text"))
         c = adapters.context({}, enabled=["badclaim", "good"])
         self.assertEqual((c["adapter"], c["confidence"], len(c["messages"])), ("good", 1.0, 2))  # clamped to 1
         self.assertIn("badclaim.claim: RuntimeError: claim", c["errors"])
-        self.plugin("badcontext", code=base.format(claim=ok, context="raise KeyError('k')", clean="return text"))
+        self.install("badcontext", code=base.format(claim=ok, context="raise KeyError('k')", clean="return text"))
         c = adapters.context({}, enabled=["badcontext"])
         self.assertNotIn("messages", c)
         self.assertIn("badcontext.context: KeyError", c["errors"][0])
-        self.plugin("badclean", code=base.format(claim=ok, context=msgs, clean="raise ValueError('v')"))
+        self.install("badclean", code=base.format(claim=ok, context=msgs, clean="raise ValueError('v')"))
         c = adapters.context({}, enabled=["badclean"])
         self.assertEqual(c["messages"], [])
         self.assertIn("badclean.clean: ValueError: v", c["errors"])
 
-    def test_a_users_plugin_replaces_a_built_in_one_of_the_same_name(self):
-        self.plugin("claude", {"name": "claude", "interface": 2})
-        self.assertFalse(registry.plugins()["claude"].builtin)
+    def test_a_users_adapter_replaces_a_built_in_one_of_the_same_name(self):
+        self.install("claude", {"name": "claude", "interface": 2})
+        self.assertFalse(registry.packages()["claude"].builtin)
 
 
 class ClaudeDesktopTest(Fixture):
@@ -268,10 +268,10 @@ class ClaudeDesktopTest(Fixture):
 
     def test_the_surest_adapter_wins(self):
         ranked = adapters.claims(code_tab("local_abc"), {"sessions": ["s1"]})
-        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one plugin: the Code tab wins over named sessions
+        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one adapter: the Code tab wins over named sessions
 
     def test_a_bad_desktop_id_reads_no_file(self):
-        self.assertIsNone(sys.modules["echofox_plugin_claude.desktop"].record("local_../../etc"))
+        self.assertIsNone(sys.modules["echofox_adapter_claude.desktop"].record("local_../../etc"))
 
 
 CHAT = "0f8e2a6c-1b3d-4e5f-8a7b-9c0d1e2f3a4b"
@@ -342,7 +342,7 @@ class ClaudeChatTest(Fixture):
         self.assertEqual(c["about"], "a chat with Claude, an AI assistant, titled “Выгрузка данных”")
 
     def test_the_speakers_messages_are_read_but_left_out_of_the_context(self):
-        chat = sys.modules["echofox_plugin_claude.chat"]
+        chat = sys.modules["echofox_adapter_claude.chat"]
         found = chat.messages(chat_focus([(True, ["Первая строка", "вторая"]), (False, ["Ответ."])])["outline"])
         self.assertEqual(found, [{"from": "the speaker", "text": "Первая строка\nвторая"}, {"from": "Claude", "text": "Ответ."}])
 
@@ -383,7 +383,7 @@ def tg_focus(rows, title="Anna – (3)", others=True):
             "focusedFrame": {"x": 590, "y": 847, "width": 826, "height": 31}, "lists": lists}
 
 
-# Rows as Telegram Desktop's MessageAccessibilityName writes them (see plugins/telegram/desktop.py).
+# Rows as Telegram Desktop's MessageAccessibilityName writes them (see adapters/builtin/telegram/desktop.py).
 IN = ["Sender", "Message", "Delivery", "Time"]
 OUT = ["Seen", "Sender", "Message", "Delivery", "Time"]
 TG_ROWS = [
@@ -397,12 +397,12 @@ TG_ROWS = [
 
 
 class TelegramTest(Fixture):
-    def plugin(self):
-        return registry.plugins()["telegram"].adapter
+    def adapter(self):
+        return registry.packages()["telegram"].adapter
 
     def test_the_rows_become_messages_with_the_speakers_own_and_without_the_status(self):
-        self.plugin()  # loads the plugin's package
-        from echofox_plugin_telegram import desktop
+        self.adapter()  # loads the adapter's package
+        from echofox_adapter_telegram import desktop
         self.assertEqual(desktop.messages(TG_ROWS), [
             {"from": "Anna", "text": "Привет! Как дела с Kubernetes?"},
             {"from": "the speaker", "text": "Всё ок, деплою"},
@@ -412,16 +412,16 @@ class TelegramTest(Fixture):
         ])
 
     def test_the_chat_name_comes_from_the_window_title(self):
-        self.plugin()  # loads the plugin's package
-        from echofox_plugin_telegram import desktop
+        self.adapter()  # loads the adapter's package
+        from echofox_adapter_telegram import desktop
         for title, name in [("Anna – (3)", "Anna"), ("(2) Anna", "Anna"), ("Anna @ Work (3)", "Anna"),
                             ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team"),
                             ("\u2068Anna\u2069 \u2013 (3)", "Anna"), ("(2) \u2068Dev team\u2069", "Dev team")]:
             self.assertEqual(desktop.chat_name(title), name, title)
 
     def test_the_message_list_is_the_one_above_the_input_box(self):
-        self.plugin()  # loads the plugin's package
-        from echofox_plugin_telegram import desktop
+        self.adapter()  # loads the adapter's package
+        from echofox_adapter_telegram import desktop
         self.assertIs(desktop.message_list(tg_focus(TG_ROWS))["rows"], TG_ROWS)
         no_box = tg_focus(TG_ROWS)
         no_box.pop("focusedFrame")
@@ -438,20 +438,20 @@ class TelegramTest(Fixture):
         self.assertIsNone(adapters.context({**tg_focus(TG_ROWS), "app": {"bundleId": "com.other"}}, {}, ["telegram"]))
 
     def test_a_manifest_may_ask_only_for_screen_parts_the_client_sends(self):
-        info = registry.plugins()["telegram"].info({"telegram"})
+        info = registry.packages()["telegram"].info({"telegram"})
         self.assertEqual((info["screen"], info["enabled"]), (["lists"], True))
-        d = os.path.join(os.environ["ECHOFOX_PLUGINS"], "peek")
+        d = os.path.join(os.environ["ECHOFOX_ADAPTERS"], "peek")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "adapter.json"), "w") as f:
             json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["everything"]}, f)
         with open(os.path.join(d, "adapter.py"), "w") as f:
             f.write("from adapters import Adapter\nclass P(Adapter):\n    def claim(self, f, h): pass\n"
                     "    def context(self, f, h): pass\n    def clean(self, t): return t\n")
-        self.assertIn("screen", registry.plugins()["peek"].error)
+        self.assertIn("screen", registry.packages()["peek"].error)
 
 
-class HungPluginTest(unittest.IsolatedAsyncioTestCase):
-    async def test_a_hung_plugin_keeps_only_its_own_thread_and_the_next_dictations_skip_it(self):
+class HungAdapterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_a_hung_adapter_keeps_only_its_own_thread_and_the_next_dictations_skip_it(self):
         release, threads = __import__("threading").Event(), []
 
         def hung(focus, hints=None, enabled=None):

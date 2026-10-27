@@ -24,7 +24,7 @@ def info(args, models=None):
             "languages": sorted(({"code": c, "name": table[c]["name"], "notes": table[c].get("notes", []),
                                   "fillers": table[c].get("fillers", [])} for c in codes if c in table),
                                 key=lambda l: l["name"]),
-            "adapters": [p.info(enabled) for p in adapters.registry.plugins().values()],
+            "adapters": [p.info(enabled) for p in adapters.registry.packages().values()],
             "models": list(entries),
             "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
                       "title": model.get("name"),

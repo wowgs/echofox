@@ -266,11 +266,11 @@ def migrate(path):
 
 
 def from_2(c, path):
-    """Version 2 → 3: adapters became plugins that the config enables. A version-2 file had the built-in adapters
-    working, so the upgrade enables the built-in plugins; a new config has none (the base mode). A plugin that asks
+    """Version 2 → 3: adapters became optional, and the config enables them. A version-2 file had the built-in adapters
+    working, so the upgrade enables the built-in adapters; a new config has none (the base mode). An adapter that asks
     for the screen's content (its manifest's "screen") is never enabled for the user: they turn it on themselves."""
-    import adapters  # here, not at the top: only this old step needs the plugins
-    builtin = {n: {"enabled": True} for n, p in adapters.registry.plugins().items()
+    import adapters  # here, not at the top: only this old step needs the adapters
+    builtin = {n: {"enabled": True} for n, p in adapters.registry.packages().items()
                if p.builtin and not p.manifest.get("screen")}
     out = {}
     for k, v in c.items():

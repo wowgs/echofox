@@ -20,12 +20,12 @@ The gain from the context on mixed speech is not measured yet, and no comparison
 - macOS on Apple Silicon. Dictation works through system features. EchoFox does not change the target apps.
 - One model catalog. Now it has Gemma 4 E4B in two variants, Q4_0 and Q8_0.
 - One app package without the model. The model is downloaded from the app.
-- Adapters are optional plugins. When the conversation is not certain, the dictation runs without context.
+- Adapters are optional. When the conversation is not certain, the dictation runs without context.
 - The keys are toggles, not hold-to-talk.
 - A short menu for frequent actions. All other settings are in the settings window.
 - The server owns recognition and models. The app owns recording, the interface and insertion.
 - Each setting has one owner and one way to set it (see [Settings](#settings)).
-- The core knows no vendor. Everything about one app lives in its plugin.
+- The core knows no vendor. Everything about one app lives in its adapter.
 
 ## Architecture
 
@@ -91,18 +91,18 @@ What the menu, the keys and the settings pages do is in the [app reference](refe
 
 ## Adapters
 
-An adapter adds the context of the app: recent messages, names and terms. Without adapters, EchoFox still recognizes speech and inserts the text. The supported apps, the plugin format and the checks are in the [context reference](reference/3-context.md).
+An adapter adds the context of the app: recent messages, names and terms. Without adapters, EchoFox still recognizes speech and inserts the text. The supported apps, the adapter format and the checks are in the [context reference](reference/3-context.md).
 
-- **Optional.** No matching plugin, or no exact match with the conversation, means a dictation without context.
-- **One platform, one plugin.** Paths, transcript formats and screen rules of an app stay in its plugin. The core has no vendor logic.
+- **Optional.** No matching adapter, or no exact match with the conversation, means a dictation without context.
+- **One platform, its own adapter.** Paths, transcript formats and screen rules of an app stay in its adapter. The core has no vendor logic.
 - **The conversation comes from the current window.** The newest session is not always the one the person dictates into. When it is not certain, no context is used.
-- **Access is visible.** The manifest lists the apps, the files and the screen data that the plugin needs. The client takes the Electron accessibility tree and the screen content (the rows of lists, or the outline of a page) only for the apps of enabled adapters that ask for them. A config migration never turns on an adapter that reads the screen.
+- **Access is visible.** The manifest lists the apps, the files and the screen data that the adapter needs. The client takes the Electron accessibility tree and the screen content (the rows of lists, or the outline of a page) only for the apps of enabled adapters that ask for them. A config migration never turns on an adapter that reads the screen.
 - **Private dictation skips the adapters.**
-- **Plugins run with the user's rights.** The checks of the manifest and the interface version are not an isolation of the code.
+- **Adapters run with the user's rights.** The checks of the manifest and the interface version are not an isolation of the code.
 
 The help of context on recognition is not measured on a labeled set yet, so the product does not promise that an adapter improves accuracy.
 
-Proposed, not built: installation from a GitHub link and a catalog of plugins, a hint to enable an adapter for a detected app, the source of the last context in the menu, plugins in other languages through a separate process.
+Proposed, not built: installation from a GitHub link and a catalog of adapters, a hint to enable an adapter for a detected app, the source of the last context in the menu, adapters in other languages through a separate process.
 
 ## Privacy
 
