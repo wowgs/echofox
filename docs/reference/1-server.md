@@ -7,7 +7,7 @@ The dictation server turns microphone audio into text. The Mac app handles recor
   <img alt="Long recordings are processed in pieces while you speak, leaving less work after you stop." src="../../img/dictation-timeline.svg">
 </picture>
 
-The server runs as the launchd agent `echofox.gemma-voice`, listening on `ws://127.0.0.1:8090`. It sends audio to a separate `llama-server` process, which runs Gemma 4 E4B on the Mac's GPU.
+The server runs as the app's child process, listening on `ws://127.0.0.1:8090`. It sends audio to its own child process, `llama-server`, which runs Gemma 4 E4B on the Mac's GPU. The app starts the server with `gemma_voice.py --parent`: the server ends when its standard input closes, that is when the app ends, and on SIGTERM, which the app sends at its quit. Before it ends, the server stops its llama-server. Its output goes to `~/Library/Logs/EchoFox/gemma-voice.log`, llama-server's to `llama-server.log` next to it.
 
 See also: [configuration](2-config.md), [conversation context](3-context.md), [protocol](6-protocol.md), and [development](7-development.md).
 
@@ -39,7 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. Each model has its own launchd agent, which the server writes; only the selected model runs. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
+The model registry is stored in the config file. The server starts the llama-server of the selected model when its `llamaServer` is on this Mac (`127.0.0.1` or `localhost`); a model on another computer is only asked. Only the selected model runs, and a llama-server that ended is started again at the next recording. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 
@@ -54,7 +54,7 @@ Recognition makes only local connections; see [privacy](../design.md#privacy). E
 
 ### The catalog and the downloads
 
-`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. The source of the current model is `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face; it needs no account. The files go to `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-GGUF/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments and the launchd agent of llama-server; a change of the active variant applies after the current recording.
+`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. The source of the current model is `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face; it needs no account. The files go to `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-GGUF/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments of llama-server; a change of the active variant applies after the current recording.
 
 The server, not the app's window, runs a download:
 
@@ -77,7 +77,7 @@ A download uses one connection per file: more connections were not faster on the
 | `audio.py` | The loudness of each 30 ms frame, the cuts, WAV files. |
 | `vad.py` | Silero VAD on the audio as it arrives. |
 | `dictation.py` | The prompt, the context and one request for each piece. |
-| `llama.py` | The models in `llama-server` and their launchd agents. |
+| `llama.py` | The models in `llama-server` and its process. |
 | `tuning.py` | The table of the settings and constants of a recording. |
 | `settings.py` | The config file: reading, checking, updates from older versions. |
 | `catalog.json`, `catalog.py` | The model catalog. |

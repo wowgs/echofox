@@ -1,5 +1,5 @@
 """Shared pieces of the server's tests: audio, stub models and a fake llama-server. Not a test module."""
-import sandbox  # noqa: F401  (before any other import: see sandbox.py)
+import sandbox  # (before any other import: see sandbox.py)
 import array
 import json
 import tempfile
@@ -14,8 +14,9 @@ import settings
 import vad
 from audio import RATE
 
-# No test waits for a real llama-server, touches the real launchd agents or asks macOS about the microphone.
-llama.wait_healthy = lambda url, seconds=0: True
+# No test waits for a real llama-server, starts one or asks macOS about the microphone.
+real_wait_healthy = llama.wait_healthy  # for the test of the wait itself
+llama.wait_healthy = lambda url, seconds=0, stop=None: True
 recordings.input_info = lambda: None
 
 
@@ -115,22 +116,28 @@ def stub_models(entries=ENTRIES, make=None):
     return llama.Models(entries, make=make or StubModel, manage=False)
 
 
-class FakeAgents:
-    """start_agent, stop_agent and write_agent of the server, recorded instead of run; `rewrite`: the labels whose
-    agent write_agent says it changed."""
-
-    def __init__(self, rewrite=()):
-        self.rewrite = set(rewrite)
+class FakeLlama:
+    """The server's llama-server processes, recorded instead of run: a model's command is its llamaServer and its
+    variant (so another variant is another command), and `calls` has ("start", llamaServer) and ("stop", llamaServer).
+    The processes: `procs`."""
 
     def __enter__(self):
-        self.calls, self.saved = [], (llama.start_agent, llama.stop_agent, llama.write_agent)
-        llama.start_agent = lambda label: self.calls.append(("start", label))
-        llama.stop_agent = lambda label: self.calls.append(("stop", label))
-        llama.write_agent = lambda entry, folder: entry["launchd"] in self.rewrite
+        self.calls, self.procs, self.saved = [], [], (llama.command, llama.spawn, llama.end)
+        llama.command = lambda entry, folder: ["llama-server", entry["llamaServer"], str(entry.get("variant", ""))]
+
+        def spawn(argv):
+            self.calls.append(("start", argv[1]))
+            self.procs.append(sandbox.FakeProcess(argv))
+            return self.procs[-1]
+
+        def end(proc):
+            self.calls.append(("stop", proc.argv[1]))
+            proc.terminate()
+        llama.spawn, llama.end = spawn, end
         return self
 
     def __exit__(self, *exc):
-        llama.start_agent, llama.stop_agent, llama.write_agent = self.saved
+        llama.command, llama.spawn, llama.end = self.saved
 
 
 class FakeLlamaServer:

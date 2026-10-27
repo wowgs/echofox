@@ -1,6 +1,6 @@
 // What "Uninstall EchoFox…" removes (docs/reference/4-app.md, "Uninstall"), besides the models, which the dictation
 // server removes first because it knows their files (a models folder of the user's own may hold other files): the
-// launchd agents, the app's folders, caches and logs, and, if asked, the recordings and the labels, which go to the
+// app's folders, caches and logs, and, if asked, the recordings and the labels, which go to the
 // Trash, and only when the folder is EchoFox's own (day folders and nothing else), so that a folder the user chose
 // for other things too is never taken.
 import Foundation
@@ -14,11 +14,9 @@ public enum Uninstall {
 
     public static let bundleId = "uk.wowgs.echofox"
 
-    /// The items that exist on this Mac, in the order they go: the agents first.
+    /// The items that exist on this Mac, in the order they go.
     public static func items(home: URL, recordings: URL, labeled: URL, withRecordings: Bool) -> [Item] {
-        var out = [ServerAgent.label, ServerAgent.llamaLabel].map {
-            Item(url: home.appendingPathComponent("Library/LaunchAgents/\($0).plist"), toTrash: false)
-        }
+        var out: [Item] = []
         for p in [".echofox", "Library/Application Support/EchoFox", "Library/Logs/EchoFox",
                   "Library/Caches/\(bundleId)", "Library/HTTPStorages/\(bundleId)"] {
             out.append(Item(url: home.appendingPathComponent(p), toTrash: false))

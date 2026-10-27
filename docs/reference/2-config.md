@@ -8,7 +8,7 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 
 ```json
 {
-  "version": 10,
+  "version": 11,
   "model": "Gemma E4B llama.cpp",
   "language": "ru",
   "microphone": "builtin",
@@ -18,7 +18,7 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
   "adapters": {"claude-code": {"enabled": true}, "claude-chat": {"enabled": true}, "telegram": {"enabled": true, "chatHistoryTokenBudget": 600}},
   "models": {
     "Gemma E4B llama.cpp": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
-                            "launchd": "echofox.llama-server", "options": {"topK": 40}}
+                            "options": {"topK": 40}}
   },
   "languages": {"ru": {"fillers": ["э", "мм"]}},
   "server": {"host": "127.0.0.1", "port": 8090, "maxRecordingSeconds": 1800, "saveRecordings": true}
@@ -31,7 +31,7 @@ This example enables the three built-in adapters and overrides several defaults.
 
 | Key | Purpose |
 |---|---|
-| `version` | Config format version. The server migrates supported older versions to version 10 at startup, preserving field order. Version 10 removes a model's `prompt` and the Russian `notes` when they are copies of version 9's defaults, so that the new defaults apply: the notes of every language took over the English terms from the model's template. Version 9 has the recording's time limit in seconds (`maxRecordingSeconds`), as every other time. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
+| `version` | Config format version. The server migrates supported older versions to version 11 at startup, preserving field order. Version 11 removes a model's `launchd`: the server starts the llama-server itself, as its child process. Version 10 removes a model's `prompt` and the Russian `notes` when they are copies of version 9's defaults, so that the new defaults apply: the notes of every language took over the English terms from the model's template. Version 9 has the recording's time limit in seconds (`maxRecordingSeconds`), as every other time. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
 | `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |
@@ -49,8 +49,7 @@ Each entry in `models` has a name used by the top-level `model` setting.
 | Field | Purpose |
 |---|---|
 | `catalog` | Model definition in `server/catalog.json`. |
-| `llamaServer` | Model server address. |
-| `launchd` | Launch agent name. |
+| `llamaServer` | Model server address. The server starts the llama-server of an address on this Mac itself. |
 | `variant` | Optional quantization, such as `q4_0` or `q8_0`; defaults to the catalog selection. |
 | `prompt` | Optional replacement prompt template. Language notes are still appended. |
 | `options` | Sampling overrides: `temperature`, `topK`, `topP`, and `seed`. |
@@ -63,6 +62,6 @@ The server checks the file every 2 seconds.
 
 - Recording settings apply to the next recording.
 - Changes to `models`, `model`, or `modelsFolder` apply after the current recording.
-- Changing `host` or `port` stops the server after the current recording; launchd then restarts it.
+- Changing `host` or `port` stops the server after the current recording; the app then starts it again.
 
 The server has no command-line flags for settings. `--config` only names the file; `--ignore-selection`, for the test server, makes it ignore the menu's choice of model.

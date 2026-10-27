@@ -6,7 +6,7 @@ default. The server reads the "server" section and the registries; the app's own
 The server watches the file (ConfigWatcher), and each setting has a level:
   "recording" settings take effect at the next recording;
   "model" settings (the model registry, the models folder) after the running recording;
-  "process" settings (host, port) end the process after the running recording; launchd starts it again.
+  "process" settings (host, port) end the process after the running recording; the app starts it again.
 """
 import argparse
 import asyncio
@@ -24,8 +24,7 @@ import tuning
 
 log = logging.getLogger("gemma_voice")
 MODEL_DEFAULT = {"gemma-e4b": {"catalog": catalog.DEFAULT,
-                               "llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}",
-                               "launchd": constants.LLAMA_LABEL}}
+                               "llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}"}}
 
 
 @dataclass(frozen=True)
@@ -44,9 +43,9 @@ class Setting:
 
 def good_model(m):
     """A registry entry: llamaServer, and optionally its catalog entry, its variant (one of the catalog entry's),
-    launchd, prompt and options (the model's knobs only)."""
+    prompt and options (the model's knobs only)."""
     if not isinstance(m, dict) or not str(m.get("llamaServer", "")).startswith("http") \
-            or not isinstance(m.get("launchd", ""), str) or not isinstance(m.get("prompt", ""), str) \
+            or not isinstance(m.get("prompt", ""), str) \
             or len(m.get("prompt", "")) > constants.MAX_PROMPT or m.get("catalog", catalog.DEFAULT) not in catalog.entries():
         return False
     if "variant" in m and catalog.variant(m)[1] is None:
@@ -475,7 +474,20 @@ def from_9(c, path):
     return c, ("the copies of version 9's defaults went: " + ", ".join(gone)) if gone else "no copy of version 9's defaults"
 
 
-MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 8: from_8, 9: from_9}  # a file's version → its next step
+def from_10(c, path):
+    """Version 10 → 11: a model has no launchd agent any more (the server starts the llama-server of a model on this
+    Mac as its child process), so its "launchd" goes."""
+    gone = []
+    for name, m in (c.get("models") or {}).items():
+        if isinstance(m, dict) and "launchd" in m:
+            del m["launchd"]
+            gone.append(f"models.{name}.launchd")
+    c["version"] = 11
+    return c, ("removed " + ", ".join(gone)) if gone else "no model named a launchd agent"
+
+
+MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 8: from_8, 9: from_9,
+              10: from_10}  # a file's version → its next step
 
 
 class ConfigWatcher:
@@ -526,7 +538,7 @@ class ConfigWatcher:
                              ", ".join(f"{k} {self.current[k]!r} -> {now[k]!r}" for k in sorted(changed)))
                     async with self.models.recording:  # after the running recording
                         if "process" in levels:
-                            log.info("host or port changed: the server ends; launchd starts it again")
+                            log.info("host or port changed: the server ends; the app starts it again")
                             if not self.stop.done():
                                 self.stop.set_result(None)
                             return False

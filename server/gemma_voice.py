@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import signal
+import sys
 
 from websockets.asyncio.server import serve
 
@@ -28,8 +29,11 @@ async def main():
                                 epilog="The settings are in the config file only. The server watches the file.")
     p.add_argument("--config", default=None, help=f"the config file (default {settings.config_file()})")
     p.add_argument("--ignore-selection", action="store_true",
-                   help="do not follow the model chosen in the menus, and never start or stop llama-server agents "
+                   help="do not follow the model chosen in the menus, and never start or stop a llama-server "
                         "(for a test server)")
+    p.add_argument("--parent", action="store_true",
+                   help="the app that started this server holds its standard input: when it closes (the app quit or "
+                        "ended), the server ends, and its llama-server with it")
     cli = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     path = cli.config or settings.config_file()
@@ -48,6 +52,16 @@ async def main():
     stop = loop.create_future()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: stop.done() or stop.set_result(None))
+    if cli.parent:
+        fd = sys.stdin.fileno()
+
+        def parent_closed():
+            if os.read(fd, 4096):
+                return  # the app writes nothing; its end closes the pipe
+            loop.remove_reader(fd)
+            log.info("the app is gone: the server ends")
+            stop.done() or stop.set_result(None)
+        loop.add_reader(fd, parent_closed)
     watcher = settings.ConfigWatcher(path, models, st, current, stop, follow=not cli.ignore_selection)
     watching = asyncio.create_task(watcher.run())
     async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"],
@@ -55,8 +69,8 @@ async def main():
         log.info("listening on ws://%s:%d, models: %s (default %s), config %s", current["host"], current["port"],
                  ", ".join(current["models"]), next(iter(current["models"])), path)
         await stop
-        # A restart (launchd, a changed host or port) lets the running recordings end: no new connections, the open
-        # ones go on until their text is sent. launchd waits for it (ExitTimeOut, LAUNCHD_EXIT_TIMEOUT_S).
+        # The end (the app's quit, a changed host or port) lets the running recordings end: no new connections, the
+        # open ones go on until their text is sent.
         server.close(close_connections=False)
         try:
             await asyncio.wait_for(server.wait_closed(), constants.STOP_WAIT_S)
@@ -64,6 +78,7 @@ async def main():
             log.warning("recordings still running after %d s: the server ends anyway", constants.STOP_WAIT_S)
         log.info("the server ends")
     watching.cancel()
+    await asyncio.to_thread(models.close)
 
 
 if __name__ == "__main__":

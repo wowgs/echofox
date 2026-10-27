@@ -23,11 +23,13 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private var current: Dictation?
     private var waiting: [Dictation] = []
     private var lastError: String?
+    /// The dictation server, the app's child process (ServerProcess); nil for an app that carries none.
+    private var serverProcess: ServerRunner?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
         if refuseMisplaced() { return }
-        installServerAgent()
+        startServer()
         store.onError = { [weak self] e in
             self?.lastError = e
             self?.menu.update()
@@ -66,6 +68,11 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
             }
         }
         menu.update()
+    }
+
+    /// The server ends with the app, and its llama-server with it: the model leaves memory.
+    func applicationWillTerminate(_ notification: Notification) {
+        serverProcess?.stop()
     }
 
     /// The config changed (a write here, or the file from elsewhere): the hotkeys, the server and the windows follow.
@@ -220,13 +227,13 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }()
 
     /// An app that carries the server but runs from a disk image or App Translocation asks to be moved to
-    /// Applications and quits (ServerAgent.misplaced); true then.
+    /// Applications and quits (ServerProcess.misplaced); true then.
     private func refuseMisplaced() -> Bool {
         let app = Bundle.main.bundleURL
-        guard ServerAgent.bundled(resources: Bundle.main.resourceURL) != nil else { return false }
+        guard ServerProcess.bundled(resources: Bundle.main.resourceURL) != nil else { return false }
         let readOnly = (try? app.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
-        guard let why = ServerAgent.misplaced(app: app.path, readOnlyVolume: readOnly) else { return false }
-        Log.write("not started \(why), \(app.path): the server agent needs the app in one place")
+        guard let why = ServerProcess.misplaced(app: app.path, readOnlyVolume: readOnly) else { return false }
+        Log.write("not started \(why), \(app.path): the server needs the app in one place")
         let alert = NSAlert()
         alert.messageText = "Move EchoFox to Applications"
         alert.informativeText = "EchoFox is running \(why). Its dictation server needs EchoFox to stay in one place. "
@@ -238,30 +245,24 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         return true
     }
 
-    /// The app that carries the server writes its launchd agent and starts it again, if the agent is not the
-    /// bundled server's of this version (ServerAgent). launchctl waits, so this runs off the main thread; the server's
-    /// info is asked again when it is done. An app without a server of its own leaves the agent alone.
-    private func installServerAgent() {
-        guard let (python, serverFolder) = ServerAgent.bundled(resources: Bundle.main.resourceURL) else { return }
-        let home = FileManager.default.homeDirectoryForCurrentUser, url = ServerAgent.url(home: home)
-        let wanted = ServerAgent.plist(python: python, server: serverFolder, home: home, version: App.version)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard ServerAgent.differs(wanted, at: url) else { return }
-            do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Logs/EchoFox"),
-                                                        withIntermediateDirectories: true)
-                let data = try PropertyListSerialization.data(fromPropertyList: wanted, format: .xml, options: 0)
-                try data.write(to: url, options: .atomic)
-                let domain = "gui/\(getuid())"
-                App.launchctl(["bootout", "\(domain)/\(ServerAgent.label)"])
-                for _ in 0..<50 where App.launchctl(["print", "\(domain)/\(ServerAgent.label)"]) == 0 { usleep(200_000) }
-                let code = App.launchctl(["bootstrap", domain, url.path])
-                Log.write("server agent: the bundled server \(App.version), \(url.path); bootstrap exit \(code)")
-            } catch {
-                Log.write("server agent: cannot write \(url.path): \(error)")
+    /// The app that carries the server starts it as its child process (ServerProcess), after it removed the launchd
+    /// agents of the versions that ran the server without the app; launchctl waits, so that runs off the main thread.
+    /// An app without a server of its own starts none: it uses the server at the config's address.
+    private func startServer() {
+        guard let (python, serverFolder) = ServerProcess.bundled(resources: Bundle.main.resourceURL) else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let runner = ServerRunner(launch: ServerProcess.launch(python: python, server: serverFolder, version: App.version),
+                                  log: home.appendingPathComponent(ServerProcess.logInHome))
+        runner.onStart = { [weak self] in self?.askServer() }
+        serverProcess = runner
+        DispatchQueue.global(qos: .userInitiated).async {
+            for (command, file) in ServerProcess.legacyRemoval(domain: "gui/\(getuid())", home: home)
+            where FileManager.default.fileExists(atPath: file.path) {
+                let code = App.launchctl(command)
+                try? FileManager.default.removeItem(at: file)
+                Log.write("server: the launchd agent \(file.lastPathComponent) of an older version removed, bootout exit \(code)")
             }
-            DispatchQueue.main.async { self?.askServer() }
+            DispatchQueue.main.async { runner.start() }
         }
     }
 

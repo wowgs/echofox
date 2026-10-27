@@ -56,7 +56,7 @@ The download goes on if you close the window. While it runs, Settings shows the 
 
 ## The menu and the settings window
 
-The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Check for Updates…**, **Settings…** (⌘,), and Quit. When a new version is out, the first line says **Update to EchoFox …**. Input volume is the same control as in macOS Sound settings.
+The menu contains permissions while any are missing, microphone selection, input volume, **Label Recordings…**, **Check for Updates…**, **Settings…** (⌘,), and Quit. Quit ends the dictation server and the model with the app, so the model leaves memory; when EchoFox opens, the model loads again before the first dictation. When a new version is out, the first line says **Update to EchoFox …**. Input volume is the same control as in macOS Sound settings.
 
 The menu bar icon is a fox face. While you dictate, the fox wears a white headset: the earpiece is red for a recording, a shield with a keyhole for private dictation, and a turning ring while the text is written. If a permission is missing or something fails, the icon is a crossed-out microphone.
 
@@ -89,17 +89,16 @@ See [recordings and labels](5-recordings.md) for file formats and storage paths.
 
 ## Update
 
-When a new version is out, the menu's first line says so; it opens the update window, and **Install and Relaunch** installs it. **Check for Updates…** looks at once. At its second start the app asks whether to check automatically, about once a day. A restart that would cut a running dictation waits until it ends. The downloaded models stay, and the new version restarts the dictation server and `llama-server` by itself. By hand: quit EchoFox, replace it in Applications with the new version, and open it again.
+When a new version is out, the menu's first line says so; it opens the update window, and **Install and Relaunch** installs it. **Check for Updates…** looks at once. At its second start the app asks whether to check automatically, about once a day. A restart that would cut a running dictation waits until it ends. The downloaded models stay; the old version's quit stops the dictation server and `llama-server`, and the new version starts them. By hand: quit EchoFox, replace it in Applications with the new version, and open it again.
 
 ## Uninstall
 
 Settings → General → **Uninstall EchoFox…** asks once, then:
 
 1. The dictation server deletes the downloaded models, the one in use last.
-2. Its launchd agents stop, and their files are deleted.
-3. The settings (`~/.echofox`), `~/Library/Application Support/EchoFox` (models, your adapters), the logs, the caches and the app's preferences are deleted.
-4. If you check the box, the recordings and the labels go to the Trash, but only from folders that hold nothing but EchoFox's day folders.
-5. EchoFox goes to the Trash and quits.
+2. The settings (`~/.echofox`), `~/Library/Application Support/EchoFox` (models, your adapters), the logs, the caches and the app's preferences are deleted.
+3. If you check the box, the recordings and the labels go to the Trash, but only from folders that hold nothing but EchoFox's day folders.
+4. EchoFox goes to the Trash and quits; the dictation server ends with it.
 
 macOS keeps the Microphone and Accessibility permissions; remove EchoFox from them in System Settings → Privacy & Security. To remove only the model, use **Remove** next to it on the Model page; for the one in use, dictation stops until you download one.
 

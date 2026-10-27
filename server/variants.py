@@ -10,7 +10,6 @@ from websockets.exceptions import ConnectionClosed
 import catalog
 import constants
 import downloads
-import llama
 
 DOWNLOAD_PROGRESS_S = 0.5   # at most one "progress" message of a download per this long
 
@@ -54,8 +53,7 @@ async def download(ws, send, m, models, args):
 
 async def remove(ws, send, m, models, args):
     """Deletes a variant's own files. The one in force of the menu's model goes too: after the running recording the
-    model leaves memory and its llama-server's agent is removed (so that no login starts it without its files), and
-    the next dictation has no model until one is downloaded."""
+    model leaves memory (its llama-server ends), and the next dictation has no model until one is downloaded."""
     entries = getattr(models, "entries", None) or {}
     name = getattr(models, "selected", None)
     entry = entries.get(name) if name else None
@@ -66,8 +64,6 @@ async def remove(ws, send, m, models, args):
         if in_force is not None and catalog.variant({"catalog": cat, "variant": variant})[0] == in_force:
             async with models.recording:
                 await models.activate(None)
-                if entry.get("launchd"):
-                    await asyncio.to_thread(llama.drop_agent, entry["launchd"])
                 freed = await asyncio.to_thread(downloads.remove, cat, variant, models_folder(args))
         else:
             freed = await asyncio.to_thread(downloads.remove, cat, variant, models_folder(args), in_force)

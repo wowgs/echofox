@@ -12,15 +12,10 @@ TEST_LLAMA_PORT = 8093     # the test llama-server
 WORKING_URL = f"ws://{HOST}:{WORKING_PORT}"
 TEST_URL = f"ws://{HOST}:{TEST_PORT}"
 
-# launchd agents of this user.
-SERVER_LABEL = "echofox.gemma-voice"
-LLAMA_LABEL = "echofox.llama-server"
-LAUNCH_AGENTS = "~/Library/LaunchAgents"
-
 # Files.
 CONFIG = "~/.echofox/config.json"                         # $ECHOFOX_CONFIG sets another
 LOGS = "~/Library/Logs/EchoFox"
-SERVER_LOG = f"{LOGS}/gemma-voice.log"  # the launchd agent's output
+SERVER_LOG = f"{LOGS}/gemma-voice.log"  # the server's output, which the app writes there
 METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
@@ -28,7 +23,7 @@ MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model file
 # llama.cpp's server for a server that runs from the repository (its tests, test_server.sh): the installed app's
 LLAMA_SERVER = "/Applications/EchoFox.app/Contents/Resources/llama/llama-server"
 ADAPTERS = "~/Library/Application Support/EchoFox/adapters"  # the user's adapters; $ECHOFOX_ADAPTERS sets another
-CONFIG_VERSION = 10
+CONFIG_VERSION = 11
 PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
@@ -40,7 +35,6 @@ ENCODING = "pcm_s16le"
 TEXT_WAIT_S = 180                       # the client waits this long after the stop for each next piece of text
 REQUEST_TIMEOUT_S = TEXT_WAIT_S         # one request to llama-server
 STOP_WAIT_S = TEXT_WAIT_S + 20          # a stopping server waits for its running recordings
-LAUNCHD_EXIT_TIMEOUT_S = STOP_WAIT_S + 10  # launchd waits for the server to stop
 CONFIG_CHECK_S = 2                      # how often the server looks at the config file
 MODEL_START_S = 180                     # a llama-server agent has this long to answer /health
 MAX_PROMPT = 4000                      # characters of a prompt, the model's or a client's

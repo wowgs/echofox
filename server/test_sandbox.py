@@ -32,10 +32,11 @@ class SandboxTest(unittest.TestCase):
             with self.assertRaises(ConnectionRefusedError), socket.socket() as s:
                 s.connect((places.HOST, port))
 
-    def test_launchctl_is_a_fake(self):
+    def test_no_llama_server_starts_or_is_stopped(self):
         import llama
-        self.assertEqual(llama.LAUNCHCTL, sandbox._fake)
-        self.assertFalse(llama.agent_running("echofox.anything"))
+        self.assertIs(llama.spawn, sandbox._spawn)
+        self.assertIsInstance(llama.spawn(["llama-server"]), sandbox.FakeProcess)
+        self.assertIsNone(llama.end_stale(places.WORKING_LLAMA_PORT))
 
 
 if __name__ == "__main__":

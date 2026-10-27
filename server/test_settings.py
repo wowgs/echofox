@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import pathlib
-import plistlib
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -18,26 +19,41 @@ import info
 import variants
 import settings as s
 import tuning
-from fakes import FakeAgents, StubModel
+from fakes import FakeLlama, StubModel, real_wait_healthy
+
+
+A, B = "http://127.0.0.1:1", "http://127.0.0.1:2"  # llama-servers on this Mac, which the server starts
 
 
 class ModelsTest(unittest.IsolatedAsyncioTestCase):
     async def test_one_model_in_memory_at_a_time(self):
-        entries = {"a": {"llamaServer": "http://h:1", "launchd": "x.a"}, "b": {"llamaServer": "http://h:2", "launchd": "x.b"}}
-        with FakeAgents() as agents:
+        entries = {"a": {"llamaServer": A}, "b": {"llamaServer": B}}
+        with FakeLlama() as llamas:
             models = llama.Models(entries, make=StubModel)
             a = await models.get("a")
-            self.assertIs(await models.get("a"), a)  # made once
-            self.assertEqual(agents.calls[:2], [("stop", "x.b"), ("start", "x.a")])
+            self.assertIs(await models.get("a"), a)  # made once, started once
+            self.assertEqual(llamas.calls, [("start", A)])
             await models.get("b")
-            self.assertEqual(agents.calls[-2:], [("stop", "x.a"), ("start", "x.b")])
+            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
+            models.close()  # the server ends: its llama-server too
+            self.assertEqual(llamas.calls[-1], ("stop", B))
 
+    async def test_another_variant_starts_again_and_one_that_ended_starts_again(self):
+        entries = {"a": {"llamaServer": A}}
+        with FakeLlama() as llamas:
+            models = llama.Models(entries, make=StubModel)
+            await models.get("a")
+            models.entries["a"] = {"llamaServer": A, "variant": "q4_0"}  # another variant or models folder
+            await models.get("a")
+            self.assertEqual(llamas.calls, [("start", A), ("stop", A), ("start", A)])
+            llamas.procs[-1].returncode = 1  # it crashed
+            await models.get("a")
+            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", A)])
 
-    async def test_an_agent_written_again_starts_again(self):
-        entries = {"a": {"llamaServer": "http://h:1", "launchd": "x.a"}}
-        with FakeAgents(rewrite={"x.a"}) as agents:  # another variant or models folder
-            await llama.Models(entries, make=StubModel).get("a")
-            self.assertEqual(agents.calls, [("stop", "x.a"), ("start", "x.a")])
+    async def test_a_model_on_another_computer_is_only_asked(self):
+        with FakeLlama() as llamas:
+            await llama.Models({"far": {"llamaServer": "http://ubu.example:8080"}}, make=StubModel).get("far")
+            self.assertEqual(llamas.calls, [])
 
 
 class VariantTest(unittest.TestCase):
@@ -79,25 +95,17 @@ class VariantTest(unittest.TestCase):
                          "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/"
                          "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q4_0.gguf")
 
-    def test_the_agent_runs_the_variants_files_and_is_written_only_when_it_changes(self):
-        entry = {"llamaServer": "http://127.0.0.1:8092", "launchd": "x.test", "catalog": "gemma-4-e4b"}
+    def test_the_command_runs_the_variants_files(self):
+        entry = {"llamaServer": "http://127.0.0.1:8092", "catalog": "gemma-4-e4b"}
         with self.assertRaisesRegex(RuntimeError, "files of variant q8_0 are missing"):
-            llama.agent(entry, self.folder)
+            llama.command(entry, self.folder)
         self.put("gemma-4-E4B-it-Q8_0.gguf", "gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
-        a = llama.agent(entry, self.folder)["ProgramArguments"]
+        a = llama.command(entry, self.folder)
         self.assertEqual(a[:9], [self.binary, "-m", f"{self.folder}/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q8_0.gguf",
                                  "--mmproj", f"{self.folder}/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf",
                                  "--host", "127.0.0.1", "--port", "8092"])
         self.assertEqual(a[9:], catalog.of(entry)["llamaServer"]["args"])
-        self.assertTrue(llama.write_agent(entry, self.folder))
-        self.assertFalse(llama.write_agent(entry, self.folder))  # the same: not written again
-        self.assertTrue(llama.write_agent({**entry, "variant": "q4_0"}, self.folder))
-        with open(constants.path(f"{constants.LAUNCH_AGENTS}/x.test.plist"), "rb") as f:
-            self.assertIn("gemma-4-E4B-it-Q4_0.gguf", plistlib.load(f)["ProgramArguments"][2])
-        self.assertNotIn("EnvironmentVariables", llama.agent(entry, self.folder))  # from the repository: no version
-        with mock.patch.dict(os.environ, {"ECHOFOX_APP_VERSION": "0.2 (180)"}):
-            self.assertEqual(llama.agent(entry, self.folder)["EnvironmentVariables"], {"ECHOFOX_APP_VERSION": "0.2 (180)"})
-            self.assertTrue(llama.write_agent({**entry, "variant": "q4_0"}, self.folder))  # a new app: written again
+        self.assertIn("gemma-4-E4B-it-Q4_0.gguf", llama.command({**entry, "variant": "q4_0"}, self.folder)[2])
 
     def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
         f = os.path.join(self.folder, "config.json")
@@ -127,7 +135,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
     def test_the_file_has_the_registry_at_the_top_and_the_server_in_its_section(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            models = {"a": {"llamaServer": "http://h:1", "launchd": "x.a", "prompt": "P", "options": {"topK": 5}}}
+            models = {"a": {"llamaServer": "http://h:1", "prompt": "P", "options": {"topK": 5}}}
             self.write(f, model="a", models=models, silenceStopSeconds=60, languages={"ru": {"fillers": ["э"]}},
                        server={"maxRecordingSeconds": 25, "port": 9000, "saveRecordings": False})
             self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "maxRecordingSeconds": 25.0,
@@ -229,86 +237,83 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 class SelectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_info_names_the_menus_model_of_the_servers_own_config_file(self):
         # A server started with --config (the test server) reads its own file, not the default one
-        with FakeAgents(), tempfile.TemporaryDirectory() as d:
+        with FakeLlama(), tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "other-config.json")
             pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "big"}))
-            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
-                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
             st = s.recording_settings(s.resolve({}))
             s.ConfigWatcher(f, models, st, {}, None, follow=False)
             self.assertEqual(info.info(st, models)["model"]["name"], "big")
 
     async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
-        with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
+        with FakeLlama() as llamas, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             choose = lambda model: pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION,
                                                                           "model": model}))
-            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
-                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
             w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
             choose("e4b")
             await w.follow_selection()
-            self.assertEqual(agents.calls, [("stop", "x.big"), ("start", "x.e4b")])
+            self.assertEqual(llamas.calls, [("start", A)])
             choose("big")
             await w.follow_selection()
-            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("start", "x.big")])
+            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
             choose("none of them")  # a name not in the registry: no model in memory
             await w.follow_selection()
-            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("stop", "x.big")])
+            self.assertEqual(llamas.calls[-1], ("stop", B))
             os.remove(f)  # no config yet, as at the first start: the server's default model, the registry's first
             await w.follow_selection()
-            self.assertEqual((models.selected, agents.calls[-2:]), ("e4b", [("stop", "x.big"), ("start", "x.e4b")]))
+            self.assertEqual((models.selected, llamas.calls[-1]), ("e4b", ("start", A)))
             # a config without "model": the same
             pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION}))
             await w.follow_selection()
             self.assertEqual(models.selected, "e4b")
-            models.manage = False  # a test server never starts or stops the agents
-            n = len(agents.calls)
+            models.manage = False  # a test server never starts or stops a llama-server
+            n = len(llamas.calls)
             await models.get("big")
-            self.assertEqual(len(agents.calls), n)
+            self.assertEqual(len(llamas.calls), n)
 
-    async def test_a_recording_on_the_active_model_runs_no_launchctl_and_the_menus_model_comes_back(self):
-        with FakeAgents() as agents, tempfile.TemporaryDirectory() as d:
+    async def test_a_recording_on_the_active_model_starts_nothing_and_the_menus_model_comes_back(self):
+        with FakeLlama() as llamas, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "e4b"}))
-            models = llama.Models({"e4b": {"llamaServer": "http://h:1", "launchd": "x.e4b"},
-                                   "big": {"llamaServer": "http://h:2", "launchd": "x.big"}}, make=StubModel)
+            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
             w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
             await w.follow_selection()
-            n = len(agents.calls)
+            n = len(llamas.calls)
             await models.get("e4b")
             await models.get("e4b")
-            self.assertEqual(len(agents.calls), n)  # the active model: no launchctl for each recording
+            self.assertEqual(len(llamas.calls), n)  # the active model: nothing started for each recording
             await models.get("big")  # a client asked for another model
-            self.assertEqual(agents.calls[-2:], [("stop", "x.e4b"), ("start", "x.big")])
+            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
             await w.follow_selection()  # the menu's model is not in memory any more: it comes back
-            self.assertEqual(agents.calls[-2:], [("stop", "x.big"), ("start", "x.e4b")])
+            self.assertEqual(llamas.calls[-2:], [("stop", B), ("start", A)])
 
 
-class LaunchdTest(unittest.TestCase):
-    def test_a_refused_bootstrap_is_an_error_and_bootout_waits_until_the_agent_is_gone(self):
-        state = {"loaded": True, "prints": 0}
+class ProcessTest(unittest.TestCase):
+    def test_a_wait_for_a_loading_model_ends_when_the_server_ends(self):
+        import threading
+        closing = threading.Event()
+        threading.Timer(0.2, closing.set).start()
+        t = time.monotonic()
+        with mock.patch.object(llama.urllib.request, "urlopen", side_effect=OSError("not yet")):
+            self.assertFalse(real_wait_healthy("http://127.0.0.1:9", 60, closing))
+        self.assertLess(time.monotonic() - t, 2)
 
-        def fake(*args):
-            if args[0] == "print":
-                state["prints"] += 1
-                return (0 if state["loaded"] else 113), ""
-            if args[0] == "bootout":
-                return 0, ""  # returns at once; the agent goes a moment later
-            return 5, "Bootstrap failed: 5: Input/output error"
 
-        saved = llama.launchd
-        llama.launchd = fake
+    def test_end_stops_a_child_that_ignores_sigterm(self):
+        saved = llama.STOP_WAIT_S
+        llama.STOP_WAIT_S = 0.5
         try:
-            import threading
-            threading.Timer(0.3, lambda: state.update(loaded=False)).start()
-            llama.stop_agent("x.a")
-            self.assertFalse(state["loaded"])
-            self.assertGreater(state["prints"], 2)  # it waited
-            with self.assertRaisesRegex(RuntimeError, "bootstrap x.b: exit 5"):
-                llama.start_agent("x.b")
+            proc = subprocess.Popen([sys.executable, "-c", "import signal, time; "
+                                     "signal.signal(signal.SIGTERM, signal.SIG_IGN); print(1, flush=True); time.sleep(60)"],
+                                    stdout=subprocess.PIPE)
+            proc.stdout.readline()  # it ignores SIGTERM from now on
+            llama.end(proc)
+            self.assertEqual(proc.returncode, -9)
+            proc.stdout.close()
         finally:
-            llama.launchd = saved
+            llama.STOP_WAIT_S = saved
 
 
 class MigrateTest(unittest.TestCase):
@@ -324,7 +329,7 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)  # a file of this version is not written
             self.assertEqual(os.stat(f).st_mtime_ns, mtime)
 
-    def test_version_3_becomes_10_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_11_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -338,7 +343,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
-            self.assertEqual(c["version"], 10)
+            self.assertEqual(c["version"], 11)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude-code"]["chatHistoryTokenBudget"], 1000)  # its own value stays
@@ -349,7 +354,7 @@ class MigrateTest(unittest.TestCase):
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
 
-    def test_version_4_becomes_10_without_the_second_ways_and_the_order_kept(self):
+    def test_version_4_becomes_11_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v4 = {"model": "m", "version": 4,
@@ -366,7 +371,7 @@ class MigrateTest(unittest.TestCase):
                 s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])
-            self.assertEqual(c["version"], 10)
+            self.assertEqual(c["version"], 11)
             self.assertEqual(c["server"], {"maxRecordingSeconds": 600})
             self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
             self.assertNotIn("options", c["models"]["n"])
@@ -378,7 +383,7 @@ class MigrateTest(unittest.TestCase):
             self.assertEqual(s.file_settings(f)["maxRecordingSeconds"], 600.0)
 
 
-    def test_version_6_becomes_10_with_adapter_defaults_in_each_adapter(self):
+    def test_version_6_becomes_11_with_adapter_defaults_in_each_adapter(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v6 = {"version": 6, "adapters": {"claude": {"enabled": True, "chatTermsTokenBudget": 50},
@@ -389,10 +394,23 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), ["version", "adapters", "model"])
-            self.assertEqual(c["version"], 10)
+            self.assertEqual(c["version"], 11)
             self.assertEqual(c["adapters"], {"claude-code": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "claude-chat": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "telegram": {"enabled": True, "chatTermsTokenBudget": 150, "proseOnly": False}})
+
+    def test_version_10_becomes_11_without_a_models_launchd_agent(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            pathlib.Path(f).write_text(json.dumps({
+                "version": 10, "model": "gemma-e4b",
+                "models": {"gemma-e4b": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
+                                         "launchd": "echofox.llama-server", "variant": "q4_0"}}}))
+            s.migrate(f)
+            c = json.loads(pathlib.Path(f).read_text())
+            self.assertEqual((c["version"], c["models"]),
+                             (11, {"gemma-e4b": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
+                                                 "variant": "q4_0"}}))
 
     def test_version_9_becomes_10_without_the_copies_of_version_9s_defaults(self):
         old = {"version": 9, "models": {"gemma-e4b": {"prompt": s.V9_PROMPT, "variant": "q8_0"},
@@ -427,7 +445,7 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 300)  # copies, not one dict
         self.assertEqual(s.from_7({"version": 7}, None)[0], {"version": 8})  # no adapters: nothing to split
 
-    def test_version_5_becomes_10_without_the_constants_and_with_seconds(self):
+    def test_version_5_becomes_11_without_the_constants_and_with_seconds(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v5 = {"version": 5, "server": {"port": 8090, "pieceSeconds": 15, "cutSearchSeconds": 3,
@@ -440,7 +458,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v5, fh)
             s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
-            self.assertEqual(c["version"], 10)
+            self.assertEqual(c["version"], 11)
             self.assertEqual(c["server"], {"port": 8090, "maxRecordingSeconds": 1800})
             self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})
             self.assertNotIn("options", c["models"]["n"])

@@ -1,16 +1,13 @@
 {
   "about": "The values that the app and the server both use. Each side keeps its own copy in code, and each side's tests check that copy against this file: server/test_contract.py and macos/Sources/echofox-tests.",
   "interface": 2,
-  "configVersion": 10,
+  "configVersion": 11,
   "config": "~/.echofox/config.json",
   "host": "127.0.0.1",
   "workingPort": 8090,
   "sampleRate": 16000,
   "encoding": "pcm_s16le",
-  "serverLabel": "echofox.gemma-voice",
-  "llamaLabel": "echofox.llama-server",
   "serverLog": "~/Library/Logs/EchoFox/gemma-voice.log",
-  "launchdExitTimeoutSeconds": 210,
   "configCheckSeconds": 2,
   "recordings": "~/speech/recordings",
   "labeled": "~/speech/labeled"

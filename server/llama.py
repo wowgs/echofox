@@ -1,6 +1,7 @@
-"""The models: each a llama.cpp llama-server behind its launchd agent, and the registry that keeps only one of them in
-memory. The server writes the agent of a model itself (write_agent): the files of its variant in the models folder
-(catalog.py), its address, and its catalog entry's arguments."""
+"""The models: each a llama.cpp llama-server, and the registry that keeps only one of them in memory. The server starts
+the llama-server of a model on this Mac as its own child process (command): the files of its variant in the models
+folder (catalog.py), its address, and its catalog entry's arguments; it stops it when another model is chosen and when
+the server ends."""
 import abc
 import asyncio
 import base64
@@ -11,7 +12,7 @@ import http.client
 import json
 import logging
 import os
-import plistlib
+import signal
 import subprocess
 import threading
 import time
@@ -26,7 +27,7 @@ from audio import wav
 log = logging.getLogger("gemma_voice")
 SHORT_TIMEOUT_S = 10  # /tokenize, /detokenize, /props, /health, lsof
 HEALTH_POLL_S = 1
-BOOTOUT_WAIT_S = 30   # launchctl bootout returns before the agent is gone; this long for it to go
+STOP_WAIT_S = 30      # a llama-server has this long to end after SIGTERM, then it is killed
 
 
 class Cancelled(Exception):
@@ -210,25 +211,9 @@ class LlamaModel(Model):
         return (r["choices"][0]["message"]["content"] or "").strip(), self._timings(r)
 
 
-LAUNCHCTL = "/bin/launchctl"
-
-
-def launchd(*args):
-    """launchctl … ; (exit code, its output)."""
-    r = subprocess.run([LAUNCHCTL, *args], capture_output=True, text=True)
-    return r.returncode, (r.stdout + r.stderr).strip()
-
-
-def domain():
-    return f"gui/{os.getuid()}"
-
-
-def agent_running(label):
-    return launchd("print", f"{domain()}/{label}")[0] == 0
-
-
-APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the agent that the bundled app writes (macos ServerAgent)
+APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the app that starts the server (macos ServerProcess), for the log
 BUNDLED_LLAMA_SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "llama", "llama-server")
+LOCAL_HOSTS = (constants.HOST, "localhost")
 
 
 def llama_server():
@@ -240,11 +225,16 @@ def llama_server():
     return None
 
 
-def agent(entry, models_folder):
-    """The launchd agent of a registry entry, as a plist's contents: llama-server with the files of the entry's
-    variant, on the address of its llamaServer, with its catalog entry's arguments. The bundled app's version
-    ($ECHOFOX_APP_VERSION, from the server's own agent) is in it too, so that a new version of the app, with its own
-    llama-server, starts it again. Raises RuntimeError if a file of the variant or llama-server is missing."""
+def local(entry):
+    """Whether the entry's llama-server is on this Mac, so that the server starts it; one on another computer is
+    only asked."""
+    return urllib.parse.urlparse(entry["llamaServer"]).hostname in LOCAL_HOSTS
+
+
+def command(entry, models_folder):
+    """The command of a registry entry's llama-server: the files of the entry's variant, the address of its
+    llamaServer, its catalog entry's arguments. Raises RuntimeError if a file of the variant or llama-server is
+    missing."""
     vid, spec = catalog.variant(entry)
     if spec is None:
         raise RuntimeError(f"the catalog has no variant {vid!r} of {entry.get('catalog') or catalog.DEFAULT}")
@@ -256,76 +246,68 @@ def agent(entry, models_folder):
     if not binary:
         raise RuntimeError(f"no llama-server, neither in the app nor at {constants.LLAMA_SERVER}")
     url = urllib.parse.urlparse(entry["llamaServer"])
+    return [binary, "-m", files["model"], "--mmproj", files["mmproj"], "--host", url.hostname,
+            "--port", str(url.port or 80), *catalog.of(entry)["llamaServer"]["args"]]
+
+
+def spawn(argv):
+    """Starts a llama-server as this process's child, its output appended to its log (constants.LOGS)."""
     log_file = constants.path(f"{constants.LOGS}/llama-server.log")
-    version = os.environ.get(APP_VERSION)
-    return {"Label": entry["launchd"],
-            "ProgramArguments": [binary, "-m", files["model"], "--mmproj", files["mmproj"],
-                                 "--host", url.hostname, "--port", str(url.port or 80),
-                                 *catalog.of(entry)["llamaServer"]["args"]],
-            **({"EnvironmentVariables": {APP_VERSION: version}} if version else {}),
-            "RunAtLoad": True, "KeepAlive": True, "ProcessType": "Interactive",
-            "StandardOutPath": log_file, "StandardErrorPath": log_file}
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    with open(log_file, "ab") as out:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+    log.info("started llama-server, pid %d: %s", proc.pid, " ".join(argv[:5]))
+    return proc
 
 
-def write_agent(entry, models_folder):
-    """Writes the launchd agent of a registry entry if it is not what it must be; True if it changed."""
-    plist = constants.path(f"{constants.LAUNCH_AGENTS}/{entry['launchd']}.plist")
-    want = agent(entry, models_folder)
+def end(proc):
+    """Ends a llama-server that this process started: SIGTERM, then SIGKILL after STOP_WAIT_S."""
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(STOP_WAIT_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    log.info("stopped llama-server, pid %d", proc.pid)
+
+
+def end_stale(port):
+    """Ends a llama-server that listens on this port but is not this process's child: one left by a server that was
+    killed before it could stop it. Another program on the port is left alone (the start then fails and says so)."""
+    pid = listening_pid(port)
+    if not pid:
+        return
     try:
-        with open(plist, "rb") as f:
-            if plistlib.load(f) == want:
-                return False
-    except (OSError, plistlib.InvalidFileException):
-        pass
-    os.makedirs(os.path.dirname(plist), exist_ok=True)
-    os.makedirs(os.path.dirname(want["StandardOutPath"]), exist_ok=True)
-    with open(plist + ".tmp", "wb") as f:
-        plistlib.dump(want, f)
-    os.replace(plist + ".tmp", plist)
-    log.info("wrote the launchd agent %s: %s", entry["launchd"], " ".join(want["ProgramArguments"][:5]))
-    return True
-
-
-def start_agent(label):
-    """Starts the launchd agent from its plist; raises RuntimeError if launchctl refuses."""
-    if agent_running(label):
+        name = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True,
+                              timeout=SHORT_TIMEOUT_S).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
         return
-    code, out = launchd("bootstrap", domain(), constants.path(f"{constants.LAUNCH_AGENTS}/{label}.plist"))
-    if code != 0 and not agent_running(label):
-        raise RuntimeError(f"launchctl bootstrap {label}: exit {code}: {out}")
-    log.info("started the launchd agent %s", label)
-
-
-def drop_agent(label):
-    """Removes the agent's plist (stopped before), so that launchd does not start it at the next login."""
-    with contextlib.suppress(FileNotFoundError):
-        os.remove(constants.path(f"{constants.LAUNCH_AGENTS}/{label}.plist"))
-
-
-def stop_agent(label):
-    """Stops the launchd agent and waits until it is gone (bootout returns before that)."""
-    if not agent_running(label):
+    if os.path.basename(name) != "llama-server":
         return
-    code, out = launchd("bootout", f"{domain()}/{label}")
-    end = time.monotonic() + BOOTOUT_WAIT_S
-    while agent_running(label) and time.monotonic() < end:
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGTERM)
+    end_at = time.monotonic() + STOP_WAIT_S
+    while listening_pid(port) == pid and time.monotonic() < end_at:
         time.sleep(HEALTH_POLL_S / 10)
-    if agent_running(label):
-        raise RuntimeError(f"launchctl bootout {label}: exit {code}: {out}; it still runs after {BOOTOUT_WAIT_S} s")
-    log.info("stopped the launchd agent %s", label)
+    log.info("stopped a llama-server left on port %d, pid %d", port, pid)
 
 
-def wait_healthy(url, seconds=constants.MODEL_START_S):
-    """Waits until a llama-server answers /health with 200 (it loads its model first)."""
+def wait_healthy(url, seconds=constants.MODEL_START_S, stop=None):
+    """Waits until a llama-server answers /health with 200 (it loads its model first); False at once when `stop` (a
+    threading.Event) is set: the server ends, and its end must not wait for a model that will not come."""
     end = time.monotonic() + seconds
-    while time.monotonic() < end:
+    while time.monotonic() < end and not (stop and stop.is_set()):
         try:
             with urllib.request.urlopen(url + "/health", timeout=SHORT_TIMEOUT_S) as r:
                 if r.status == 200:
                     return True
         except OSError:
             pass
-        time.sleep(HEALTH_POLL_S)
+        if stop:
+            stop.wait(HEALTH_POLL_S)
+        else:
+            time.sleep(HEALTH_POLL_S)
     return False
 
 
@@ -333,9 +315,9 @@ UNKNOWN = object()  # Models.active before the first activation, and after the r
 
 
 class Models:
-    """The models of the config's registry, by name; the first is the default. Only one is in memory at a time: its
-    llama-server's launchd agent runs, the others' agents are stopped (unless `manage` is off: the test server).
-    `make(name, entry)` makes the model object (tests put a stub here)."""
+    """The models of the config's registry, by name; the first is the default. Only one is in memory at a time: the
+    llama-server of the active model runs as this process's child, and none other (unless `manage` is off: the test
+    server). `make(name, entry)` makes the model object (tests put a stub here)."""
 
     def __init__(self, entries, make=LlamaModel, manage=True, models_folder=None):
         self.entries, self.make, self.models, self.manage = dict(entries), make, {}, manage
@@ -343,9 +325,11 @@ class Models:
         # The model chosen in the menus ("model" in the server's config file), if this server has it: the config
         # watcher keeps it (settings.ConfigWatcher), so that nothing else reads the file
         self.selected = None
-        # The model whose agent this server last made the only one running (None: no model); activating it again
-        # only checks that it answers
+        # The model that this server last made the only one in memory (None: no model); activating it again only
+        # checks that its llama-server still runs and answers
         self.active = UNKNOWN
+        # The running llama-server and its command; `closing` is set when the server ends
+        self.proc, self.argv, self.closing = None, None, threading.Event()
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()
@@ -370,19 +354,38 @@ class Models:
             self.models[name] = self.make(name, self.entries[name])
         return self.models[name]
 
+    def _stop(self):
+        if self.proc is not None:
+            end(self.proc)
+        self.proc, self.argv = None, None
+
+    def _run(self, entry):
+        """The entry's llama-server runs: started if none runs, if the one running ended, or if its command changed
+        (another variant or models folder)."""
+        argv = command(entry, self.models_folder)
+        if self.proc is not None and self.proc.poll() is None and argv == self.argv:
+            return
+        self._stop()
+        end_stale(urllib.parse.urlparse(entry["llamaServer"]).port or 80)
+        self.proc, self.argv = spawn(argv), argv
+
     async def activate(self, name):
-        """Makes `name` the only model in memory; None: no model at all. When it already is, only checks that it
-        answers (launchd restarts a llama-server that stopped)."""
+        """Makes `name` the only model in memory; None: no model at all. When it already is, starts its llama-server
+        again if it ended, and checks that it answers."""
         entry = self.entries.get(name) if name else None
-        if self.manage and name != self.active:
-            for n, e in self.entries.items():
-                if e.get("launchd") and n != name:
-                    await asyncio.to_thread(stop_agent, e["launchd"])
-            if entry is not None and entry.get("launchd"):
-                if await asyncio.to_thread(write_agent, entry, self.models_folder):  # another variant or folder
-                    await asyncio.to_thread(stop_agent, entry["launchd"])
-                await asyncio.to_thread(start_agent, entry["launchd"])
         if self.manage:
+            if entry is not None and local(entry):
+                await asyncio.to_thread(self._run, entry)
+            else:
+                await asyncio.to_thread(self._stop)
             self.active = name
-        if entry is not None and not await asyncio.to_thread(wait_healthy, entry["llamaServer"].rstrip("/")):
+        if entry is not None and not await asyncio.to_thread(wait_healthy, entry["llamaServer"].rstrip("/"),
+                                                             constants.MODEL_START_S, self.closing):
             raise RuntimeError(f"llama-server of {name} at {entry['llamaServer']} does not answer")
+
+    def close(self):
+        """The server ends: its llama-server ends too, and the model leaves memory. A wait for a model that is loading
+        ends at once."""
+        self.closing.set()
+        if self.manage:
+            self._stop()

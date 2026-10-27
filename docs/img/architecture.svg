@@ -25,7 +25,7 @@
 <text x="684" y="176">menu, settings window,</text>
 <text x="684" y="193">labeling window</text>
 <rect x="16" y="290" width="868" height="150" rx="6" fill="#fff4e5" stroke="#c77700" stroke-width="1.5"/>
-<text x="28" y="312" font-size="14" font-weight="600">Dictation server (launchd)</text>
+<text x="28" y="312" font-size="14" font-weight="600">Dictation server (the app's child process)</text>
 <rect x="30" y="324" width="198" height="100" rx="6" fill="#ffffff" stroke="#c77700" stroke-width="1.5"/>
 <text x="42" y="346" font-size="14" font-weight="600">Protocol and cutting</text>
 <text x="42" y="366">WebSocket; pieces</text>
@@ -41,7 +41,7 @@
 <text x="470" y="400">terms</text>
 <rect x="672" y="324" width="198" height="100" rx="6" fill="#ffffff" stroke="#c77700" stroke-width="1.5"/>
 <text x="684" y="346" font-size="14" font-weight="600">Settings, models</text>
-<text x="684" y="366">config.json, launchd,</text>
+<text x="684" y="366">config.json, llama-server,</text>
 <text x="684" y="383">settings described</text>
 <rect x="16" y="480" width="420" height="68" rx="6" fill="#eaf7ee" stroke="#2e8b57" stroke-width="1.5"/>
 <text x="28" y="502" font-size="14" font-weight="600">llama-server: Gemma 4 E4B Q8_0</text>

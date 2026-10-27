@@ -23,7 +23,7 @@ The app includes the server, Python 3.14 and its packages, and a Metal build of 
 
 The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag.
 
-An app writes the server's launchd agent for itself when it starts, so opening a local build takes the dictation server over from the installed app. Open the installed app again to go back.
+An app starts its own dictation server as its child process. Quit the installed app before you open a local build: two servers cannot listen on one port, and the second one is started again and again until the port is free.
 
 ### The package
 
@@ -37,7 +37,7 @@ An app writes the server's launchd agent for itself when it starts, so opening a
 | `Resources/Assets.car`, `EchoFox.icns` | The app icon ([art](../../macos/art/README.md)). |
 | `Resources/licenses/` | The licenses of llama.cpp and Sparkle. Python keeps its license in `Resources/python/lib/python3.14/LICENSE.txt`, each package in its `dist-info`, and Silero VAD in `Resources/server/vad/LICENSE`. |
 
-`macos/pins.sh` pins the versions with their checksums or commits, and the oldest macOS, 26 (the onnxruntime and numpy wheels from PyPI are built for older versions and run on it). Everything in the bundle is built for it, and the build fails if a binary needs a newer macOS or links a library from Homebrew. Python's bytecode is compiled before signing, and the server's agent sets `PYTHONDONTWRITEBYTECODE`, so that nothing is written into the signed bundle. At launch, off the main thread, the app writes the launchd agent of its own server. It does not do that when it runs from the dmg or from an App Translocation path: it asks the user to move it to Applications and quits, because the agent would keep a path that goes away. The agent carries the app's version (`ECHOFOX_APP_VERSION`), which the server passes on to the agent of llama-server, so a new version in the same place restarts both. The model is not in the package: it is several gigabytes, it does not change with each app update, and Q4_0 and Q8_0 are variants of one model in the app, not separate builds.
+`macos/pins.sh` pins the versions with their checksums or commits, and the oldest macOS, 26 (the onnxruntime and numpy wheels from PyPI are built for older versions and run on it). Everything in the bundle is built for it, and the build fails if a binary needs a newer macOS or links a library from Homebrew. Python's bytecode is compiled before signing, and the server's agent sets `PYTHONDONTWRITEBYTECODE`, so that nothing is written into the signed bundle. At launch the app starts its own server as its child process (`ServerProcess`, `ServerRunner`), with the app's version in `ECHOFOX_APP_VERSION` for the server's log. It does not do that when it runs from the dmg or from an App Translocation path: it asks the user to move it to Applications and quits. Before the first start, off the main thread, it stops and deletes the launchd agents of older versions (`echofox.gemma-voice`, `echofox.llama-server`), which ran the server without the app. The model is not in the package: it is several gigabytes, it does not change with each app update, and Q4_0 and Q8_0 are variants of one model in the app, not separate builds.
 
 ### The installer
 
@@ -55,7 +55,7 @@ server/.venv/bin/python -m unittest discover -s server
 
 A test closes every file and socket it opens: the tests workflow fails when the log shows a `ResourceWarning`.
 
-Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the `launchctl` that `llama.py` calls with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
+Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the start of a llama-server in `llama.py` with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
 
 Run app checks with:
 
@@ -126,7 +126,7 @@ The script swaps the colors from its table and stops on a color that the table d
 Between dictations, run:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/echofox.gemma-voice
+pkill -TERM -f "gemma_voice.py --parent"
 ```
 
-During shutdown, the server rejects new recordings and allows up to 200 seconds for the current one to finish. launchd waits 210 seconds (`STOP_WAIT_S` and `LAUNCHD_EXIT_TIMEOUT_S` in `server/constants.py`). Dictation resumes when the server is back.
+During shutdown, the server rejects new recordings, allows up to 200 seconds for the current one to finish (`STOP_WAIT_S` in `server/constants.py`), and stops its llama-server. The app starts the server again a second later. Dictation resumes when the model has loaded.

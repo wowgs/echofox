@@ -47,8 +47,6 @@ enum Uninstaller {
     }
 
     private static func finish(folders: (recordings: URL, labeled: URL), withRecordings: Bool) {
-        let domain = "gui/\(getuid())"
-        for label in [ServerAgent.llamaLabel, ServerAgent.label] { launchctl(["bootout", "\(domain)/\(label)"]) }
         let fm = FileManager.default
         for item in Uninstall.items(home: fm.homeDirectoryForCurrentUser, recordings: folders.recordings,
                                     labeled: folders.labeled, withRecordings: withRecordings) {
@@ -62,17 +60,5 @@ enum Uninstaller {
         NSWorkspace.shared.recycle([Bundle.main.bundleURL]) { _, _ in
             DispatchQueue.main.async { NSApp.terminate(nil) }
         }
-    }
-
-    @discardableResult
-    private static func launchctl(_ args: [String]) -> Int32 {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = args
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return -1 }
-        p.waitUntilExit()
-        return p.terminationStatus
     }
 }

@@ -23,7 +23,7 @@ v0.4.0 (2026-10-26) is the first release with updates through Sparkle; v0.3.x ca
 
 Before the repository opens:
 
-- Installation, permissions, the launchd agents and a restart on a clean Mac.
+- Installation, permissions, the server's start and quit with the app, and a restart on a clean Mac.
 - A full model download from the source, and its recovery after a break.
 - The oldest supported macOS: everything is built for 26, but the app has run only on 27.
 - The terms of use and distribution of the Gemma model.

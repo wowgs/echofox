@@ -3,12 +3,11 @@ test can touch the working setup:
 - HOME and the paths the server reads from the environment ($ECHOFOX_CONFIG, $ECHOFOX_ADAPTERS) point into a new
   temporary folder: the config, the recordings, the metrics, the user's adapters and every file an adapter reads under
   HOME there are empty and the tests' own;
-- launchctl is a fake that only notes its arguments (llama.LAUNCHCTL), so no launchd agent starts or stops;
+- llama.spawn and llama.end_stale are fakes, so no test starts a llama-server or stops one that runs;
 - connections to the ports of the working and the test servers (constants.py) are refused, so a test never reaches a
   real dictation server or llama-server."""
 import os
 import socket
-import stat
 import tempfile
 
 import constants as places
@@ -21,13 +20,7 @@ for var, path in {"ECHOFOX_CONFIG": ".echofox/config.json",
     os.environ[var] = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(os.environ[var]) if var == "ECHOFOX_CONFIG" else os.environ[var], exist_ok=True)
 
-os.environ.pop("ECHOFOX_APP_VERSION", None)  # the agent of a bundled app sets it; the tests set it themselves
-
-LAUNCHCTL_LOG = os.path.join(ROOT, "launchctl.log")
-_fake = os.path.join(ROOT, "launchctl")
-with open(_fake, "w") as f:  # `print` (is the agent loaded?) says no; everything else succeeds
-    f.write(f'#!/bin/sh\necho "$@" >> "{LAUNCHCTL_LOG}"\n[ "$1" = print ] && exit 113\nexit 0\n')
-os.chmod(_fake, os.stat(_fake).st_mode | stat.S_IEXEC)
+os.environ.pop("ECHOFOX_APP_VERSION", None)  # the app that starts the server sets it; the tests set it themselves
 
 BLOCKED = {places.WORKING_PORT, places.WORKING_LLAMA_PORT, places.TEST_PORT, places.TEST_LLAMA_PORT}
 _connect = socket.socket.connect
@@ -43,4 +36,34 @@ socket.socket.connect = _guarded_connect
 
 import llama  # noqa: E402  (after the sandbox's paths: llama reads them when it loads)
 
-llama.LAUNCHCTL = _fake
+
+class FakeProcess:
+    """A llama-server that never runs: what spawn gives in the tests. It runs until it is ended."""
+    pid = 0
+
+    def __init__(self, argv):
+        self.argv, self.returncode = argv, None
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.returncode = 0
+
+    def kill(self):
+        self.returncode = -9
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+SPAWNED = []  # what the tests started
+
+
+def _spawn(argv):
+    SPAWNED.append(FakeProcess(argv))
+    return SPAWNED[-1]
+
+
+llama.spawn = _spawn
+llama.end_stale = lambda port: None

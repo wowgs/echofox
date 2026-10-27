@@ -6,7 +6,7 @@
 import Foundation
 
 public struct Config: Equatable {
-    public static let version = 10
+    public static let version = 11
     public static let defaultHost = "127.0.0.1"
     /// The server's own defaults (shared/constants.json); the app uses them before it can ask the server.
     public static let defaultFile = "~/.echofox/config.json"

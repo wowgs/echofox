@@ -217,7 +217,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 10
+  "version": 11
 }
 
 """
@@ -239,7 +239,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 10,
+  "version": 11,
   "adapters": {"enabled": true}
 }
 
@@ -460,9 +460,7 @@ do {
           && c["recordings"] as? String == Config.defaultRecordings && c["labeled"] as? String == Config.defaultLabeled
           && c["sampleRate"] as? Int == (examples["info"] as! [String: Any])["sampleRate"] as? Int,
           "shared values: the app's copies")
-    check(c["serverLabel"] as? String == ServerAgent.label && c["llamaLabel"] as? String == ServerAgent.llamaLabel
-          && c["launchdExitTimeoutSeconds"] as? Int == ServerAgent.exitTimeoutSeconds
-          && c["serverLog"] as? String == "~/" + ServerAgent.logInHome, "shared values: the server agent's")
+    check(c["serverLog"] as? String == "~/" + ServerProcess.logInHome, "shared values: the server's log")
     check(c["configCheckSeconds"] as? Double == Tuning.configCheckSeconds
           && Tuning.serverConfigApplySeconds > Tuning.configCheckSeconds, "shared values: the config is looked at as often")
 } catch {
@@ -484,20 +482,19 @@ do {
     check(false, "folders: \(error)")
 }
 
-// Uninstall: the agents and the app's folders; recordings only from folders that are EchoFox's own.
+// Uninstall: the app's folders; recordings only from folders that are EchoFox's own.
 do {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-uninstall-\(getpid())")
     let fm = FileManager.default
-    for p in ["Library/LaunchAgents", ".echofox", "Library/Logs/EchoFox", "speech/recordings/2026-10-27/x",
+    for p in [".echofox", "Library/Logs/EchoFox", "speech/recordings/2026-10-27/x",
               "Documents/notes", "Documents/2026-10-27"] {
         try fm.createDirectory(at: home.appendingPathComponent(p), withIntermediateDirectories: true)
     }
-    fm.createFile(atPath: home.appendingPathComponent("Library/LaunchAgents/echofox.gemma-voice.plist").path, contents: nil)
     let rec = home.appendingPathComponent("speech/recordings"), docs = home.appendingPathComponent("Documents")
     let names = { (items: [Uninstall.Item]) in items.map { $0.url.path.replacingOccurrences(of: home.path + "/", with: "") } }
     check(names(Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: false))
-          == ["Library/LaunchAgents/echofox.gemma-voice.plist", ".echofox", "Library/Logs/EchoFox"],
-          "uninstall: what exists of the agents and folders")
+          == [".echofox", "Library/Logs/EchoFox"],
+          "uninstall: what exists of the folders")
     let with = Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: true)
     check(names(with).suffix(1) == ["speech/recordings"] && with.last?.toTrash == true,
           "uninstall: the recordings to the Trash, not a folder that holds other things: \(names(with))")
@@ -506,36 +503,35 @@ do {
     check(false, "uninstall: \(error)")
 }
 
-// The launchd agent of a bundled server.
+// The bundled server, the app's child process.
 do {
-    let home = URL(fileURLWithPath: "/Users/someone"), r = URL(fileURLWithPath: "/Applications/EchoFox.app/Contents/Resources")
-    let agent = { (version: String) in
-        ServerAgent.plist(python: r.appendingPathComponent("python/bin/python3"), server: r.appendingPathComponent("server"),
-                          home: home, version: version)
-    }
-    let p = agent("0.2 (180)")
-    check(p["Label"] as? String == "echofox.gemma-voice"
-          && p["ProgramArguments"] as? [String] == ["/Applications/EchoFox.app/Contents/Resources/python/bin/python3",
-                                                    "/Applications/EchoFox.app/Contents/Resources/server/gemma_voice.py"]
-          && p["ExitTimeOut"] as? Int == 210 && p["KeepAlive"] as? Bool == true, "server agent: its plist")
-    check(p["EnvironmentVariables"] as? [String: String] == ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": "0.2 (180)"],
-          "server agent: no bytecode written, and the app's version")
-    check(ServerAgent.misplaced(app: "/Applications/EchoFox.app", readOnlyVolume: false) == nil
-          && ServerAgent.misplaced(app: "/Users/someone/Applications/EchoFox.app", readOnlyVolume: false) == nil,
-          "server agent: written from Applications")
-    check(ServerAgent.misplaced(app: "/Volumes/EchoFox/EchoFox.app", readOnlyVolume: true) != nil
-          && ServerAgent.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: true) != nil
-          && ServerAgent.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: false) != nil,
-          "server agent: not written from a disk image or App Translocation")
-    check(ServerAgent.bundled(resources: URL(fileURLWithPath: "/nowhere")) == nil, "server agent: none without a bundled server")
-    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-agent-\(getpid()).plist")
-    check(ServerAgent.differs(p, at: tmp), "server agent: a missing file differs")
-    try PropertyListSerialization.data(fromPropertyList: p, format: .xml, options: 0).write(to: tmp)
-    check(!ServerAgent.differs(p, at: tmp), "server agent: the same file does not")
-    check(ServerAgent.differs(agent("0.3 (190)"), at: tmp), "server agent: a new version of the app in the same place differs")
-    try? FileManager.default.removeItem(at: tmp)
-} catch {
-    check(false, "server agent: \(error)")
+    let r = URL(fileURLWithPath: "/Applications/EchoFox.app/Contents/Resources")
+    let l = ServerProcess.launch(python: r.appendingPathComponent("python/bin/python3"),
+                                 server: r.appendingPathComponent("server"), version: "0.2 (180)")
+    check(l.executable.path == "/Applications/EchoFox.app/Contents/Resources/python/bin/python3"
+          && l.arguments == ["/Applications/EchoFox.app/Contents/Resources/server/gemma_voice.py", "--parent"]
+          && l.directory.path == "/Applications/EchoFox.app/Contents/Resources/server",
+          "server: the bundled Python runs the bundled server, which ends with the app (--parent)")
+    check(l.environment == ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": "0.2 (180)"],
+          "server: no bytecode written, and the app's version")
+    check(ServerProcess.misplaced(app: "/Applications/EchoFox.app", readOnlyVolume: false) == nil
+          && ServerProcess.misplaced(app: "/Users/someone/Applications/EchoFox.app", readOnlyVolume: false) == nil,
+          "server: started from Applications")
+    check(ServerProcess.misplaced(app: "/Volumes/EchoFox/EchoFox.app", readOnlyVolume: true) != nil
+          && ServerProcess.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: true) != nil
+          && ServerProcess.misplaced(app: "/private/var/folders/x/T/AppTranslocation/0A1B/d/EchoFox.app", readOnlyVolume: false) != nil,
+          "server: not started from a disk image or App Translocation")
+    check(ServerProcess.bundled(resources: URL(fileURLWithPath: "/nowhere")) == nil, "server: none without a bundled one")
+    var waits: [Double] = [], w = 0.0
+    for _ in 0..<8 { w = ServerProcess.restartDelay(previous: w, ranSeconds: 2); waits.append(w) }
+    check(waits == [1, 2, 4, 8, 16, 32, 60, 60], "server: one that ends at once starts again later each time: \(waits)")
+    check(ServerProcess.restartDelay(previous: 60, ranSeconds: 300) == 1, "server: one that ran a while starts again at once")
+    let home = URL(fileURLWithPath: "/Users/someone")
+    let legacy = ServerProcess.legacyRemoval(domain: "gui/501", home: home)
+    check(legacy.map(\.command) == [["bootout", "gui/501/echofox.gemma-voice"], ["bootout", "gui/501/echofox.llama-server"]]
+          && legacy.map(\.file.path) == ["/Users/someone/Library/LaunchAgents/echofox.gemma-voice.plist",
+                                         "/Users/someone/Library/LaunchAgents/echofox.llama-server.plist"],
+          "server: the launchd agents of older versions are stopped and removed")
 }
 
 // A config that is not there yet gets created at the first value.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds macos/build/EchoFox.app, the app with everything it runs (docs/reference/7-development.md, "The package"): the server's code in
 # Contents/Resources/server, Python with the server's packages in Contents/Resources/python, and llama-server in
-# Contents/Resources/llama, at the versions of pins.sh. The app installs the server's launchd agent itself.
+# Contents/Resources/llama, at the versions of pins.sh. The app starts the server as its child process.
 # Usage: macos/build-app.sh [--dmg]
 #   --dmg  also build/EchoFox.dmg with the app, the installer window.
 # It needs Xcode (actool compiles the icon) and a Developer ID Application identity in the keychains: $ECHOFOX_SIGN
@@ -49,8 +49,8 @@ mkdir -p "$app/Contents/Frameworks"
 ditto .build/release/Sparkle.framework "$app/Contents/Frameworks/Sparkle.framework"
 rm -rf "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$app/Contents/Frameworks/Sparkle.framework/XPCServices"
 cp app/Info.plist "$app/Contents/"
-# The version and the oldest macOS, which app/Info.plist leaves out. The app writes the version into the server's
-# agent, so that a new version starts the server again (ServerAgent).
+# The version and the oldest macOS, which app/Info.plist leaves out. The app gives the version to the server, for its
+# log (ServerProcess).
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $version" -c "Add :CFBundleVersion string $build" \
   -c "Add :LSMinimumSystemVersion string $MACOS_MIN" "$app/Contents/Info.plist"
 # Sparkle starts with the app's update settings, as it must at the app's launch

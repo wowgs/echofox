@@ -36,8 +36,10 @@ Blue is the app, orange is the server, green is the model. Arrows show the data.
 Three processes run:
 
 - **The Mac app.** The interface, the keys, the microphone, Accessibility and insertion. macOS gives the permissions to this process.
-- **The dictation server.** A launchd agent. It receives the audio, chooses an adapter, sends requests to the model and saves the results. The protocol is in the [protocol reference](reference/6-protocol.md).
-- **llama-server.** A launchd agent for the chosen model, which the server writes and starts. Only the chosen model is in memory.
+- **The dictation server.** The app's child process. It receives the audio, chooses an adapter, sends requests to the model and saves the results. The protocol is in the [protocol reference](reference/6-protocol.md).
+- **llama-server.** The dictation server's child process, for the chosen model. Only the chosen model is in memory.
+
+EchoFox is one app: the processes run while it runs. The app starts the server when it opens. Quit ends the server, and the server ends its llama-server, so the model leaves memory. If the app ends in any other way, the server sees its standard input close and ends too. If the server ends while the app runs, the app starts it again: at once after a server that ran a while, and with a wait that doubles up to 60 seconds after one that ended at its start. Nothing starts at login. A llama-server that a killed server left behind is stopped by the next server before it starts its own. Older versions ran the server and the model as launchd agents without the app; the app removes those agents at its start.
 
 In the distributed app, the server, Python and llama-server are inside `EchoFox.app`; see [the package](reference/7-development.md#the-package).
 
@@ -51,7 +53,7 @@ Inside the app, the decisions live in `EchoFoxCore`, which needs no screen and h
 | Dictation server | Speech detection, cutting, the prompt, model requests | [Server](reference/1-server.md) |
 | Adapters | Find the current conversation and its context | [Context](reference/3-context.md) |
 | Insertion | The current text box, the box of the start, or the clipboard | [App](reference/4-app.md#where-the-text-goes) |
-| Models | Catalog, download, removal, launchd agents | [Server](reference/1-server.md#the-catalog-and-the-downloads) |
+| Models | Catalog, download, removal, the llama-server process | [Server](reference/1-server.md#the-catalog-and-the-downloads) |
 | Storage | Config, recordings, labels, logs, metrics | [Recordings](reference/5-recordings.md) |
 
 ### Why the audio is cut into pieces
