@@ -844,29 +844,33 @@ struct AdapterPage: View {
                     LabeledContent("Problem") { Text(e).foregroundStyle(.red).textSelection(.enabled) }
                 }
             }
-            Section("What it reads") {
-                LabeledContent("Apps") {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        ForEach(adapter.apps, id: \.self) { id in AppName(bundleId: id) }
-                    }
-                }
-                if let reads = adapter.reads, !reads.isEmpty {
-                    LabeledContent("Files") { Text(reads.joined(separator: "\n")).textSelection(.enabled) }
-                }
-                if let screen = adapter.screen, !screen.isEmpty {
-                    LabeledContent("Screen") {
-                        Text(screen.map { $0 == "lists" ? "Message lists" : $0 == "outline" ? "Page text" : $0 }
-                            .joined(separator: ", "))
-                            .help("Only for its apps, only when it is on.")
-                    }
-                }
-                if let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : nil), !tree.isEmpty {
-                    LabeledContent("Window content") {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            ForEach(tree, id: \.self) { id in AppName(bundleId: id) }
+            // Each list in a section of its own, one row per item, the icons in one column (as in the sidebar)
+            Section("Apps it reads") {
+                ForEach(adapter.apps, id: \.self) { id in AppRow(bundleId: id) }
+            }
+            if let reads = adapter.reads, !reads.isEmpty {
+                Section("Files it reads") {
+                    ForEach(reads, id: \.self) { path in
+                        Label { Text(path).textSelection(.enabled) } icon: {
+                            SidebarIcon { Image(systemName: "folder").resizable().scaledToFit() }
                         }
                     }
-                    .help("These apps show their window content to Accessibility only when asked; the adapter asks.")
+                }
+            }
+            let screen = adapter.screen ?? []
+            let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : [])
+            if !screen.isEmpty || !tree.isEmpty {
+                Section("From the screen") {
+                    ForEach(screen, id: \.self) { s in
+                        Label { Text(s == "lists" ? "Message lists" : s == "outline" ? "Page text" : s) } icon: {
+                            SidebarIcon {
+                                Image(systemName: s == "lists" ? "list.bullet.rectangle" : "doc.text").resizable().scaledToFit()
+                            }
+                        }
+                    }
+                    ForEach(tree, id: \.self) { id in
+                        AppRow(bundleId: id, note: "window content, asked for")
+                    }
                 }
             }
             AdvancedSection(model: model, id: "adapter." + adapter.name,

@@ -65,9 +65,11 @@ struct AppIcon: View {
     }
 }
 
-/// An app by its icon and name, as Finder shows it; one that is not installed by its bundle id, grey.
-struct AppName: View {
+/// An app in a row of its own: its icon in the icon column, its name as Finder shows it (one that is not installed: its
+/// bundle id, grey), and a grey note after it.
+struct AppRow: View {
     let bundleId: String
+    var note: String? = nil
 
     private var name: String? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
@@ -75,9 +77,13 @@ struct AppName: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            AppIcon(bundleIds: [bundleId])
-            if let name { Text(name) } else { Text(bundleId).foregroundStyle(.secondary) }
+        Label {
+            HStack(spacing: 6) {
+                if let name { Text(name) } else { Text(bundleId).foregroundStyle(.secondary) }
+                if let note { Text(note).foregroundStyle(.secondary) }
+            }
+        } icon: {
+            SidebarIcon { AppIcon(bundleIds: [bundleId]) }
         }
         .help(bundleId)
     }
