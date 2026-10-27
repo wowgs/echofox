@@ -91,12 +91,12 @@ KNOBS = [
     # The adapter's advanced settings: the context it gives (defaults: its manifest's "context"). The adapter's switch
     # ("enabled") turns the context off; a budget does not.
     Knob("chatHistoryTokenBudget", "chat_history_token_budget", int, 1000, "adapter", "context", "advanced",
-         "Chat context", "How much of the chat the model reads: names and terms first, then the newest messages.",
+         "Chat context", "Names and terms first, then the newest messages.",
          low=1, unit="tokens"),
     Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, 100, "adapter", "context", "advanced",
-         "Names and terms", "How much of the chat context goes to names and terms.", low=0, unit="tokens"),
+         "Names and terms", "The part of the chat context for them.", low=0, unit="tokens"),
     Knob("proseOnly", "prose_only", bool, True, "adapter", "context", "advanced", "Only sentences",
-         "Leaves out lines that are mostly digits or symbols, such as tables and paths."),
+         "Skips tables, paths and other lines of symbols."),
 ]
 BY_KEY = {k.key: k for k in KNOBS}
 BY_NAME = {k.name: k for k in KNOBS}

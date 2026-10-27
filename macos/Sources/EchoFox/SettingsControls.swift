@@ -65,6 +65,24 @@ struct AppIcon: View {
     }
 }
 
+/// An app by its icon and name, as Finder shows it; one that is not installed by its bundle id, grey.
+struct AppName: View {
+    let bundleId: String
+
+    private var name: String? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+            .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            AppIcon(bundleIds: [bundleId])
+            if let name { Text(name) } else { Text(bundleId).foregroundStyle(.secondary) }
+        }
+        .help(bundleId)
+    }
+}
+
 /// A text or number field that looks like one. The placeholder shows inside the empty field, grey; the field has no
 /// title of its own: in a grouped Form, SwiftUI shows a TextField's title as a label next to it. What is typed is
 /// applied on Return and when the field loses the focus (Apple HIG, Text fields: validate when people switch to

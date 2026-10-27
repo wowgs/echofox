@@ -613,9 +613,7 @@ struct VariantPicker: View {
 
     var body: some View {
         if let variants = info?.variants, !variants.isEmpty, let name = model.config.model ?? info?.name {
-            Text("A smaller quantization uses less memory and is faster; a larger one makes fewer errors. A change "
-                 + "takes effect after the running recording.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Smaller: less memory, faster. Larger: fewer errors.").foregroundStyle(.secondary)
             ForEach(variants, id: \.id) { v in
                 VariantRow(model: model, name: name, catalog: info?.catalog ?? "", variant: v,
                            inUse: v.id == info?.variant)
@@ -626,8 +624,10 @@ struct VariantPicker: View {
 
 func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
 
-/// One quantization: its state, and Use, Download (with its progress and Cancel) or Remove. While another window
-/// (the first start's) downloads it, the server's info says so and there is no Download.
+/// One quantization in a row: its name, its size on the disk and in memory, then its state and what can be done:
+/// In use; Use and Remove (after a confirmation) for one on the disk; Download, with its progress and Cancel, for one
+/// that is not. While another window (the first start's) downloads it, the server's info says so and there is no
+/// Download.
 struct VariantRow: View {
     @ObservedObject var model: SettingsModel
     let name: String
@@ -636,24 +636,21 @@ struct VariantRow: View {
     let inUse: Bool
 
     private var job: ModelJob? { model.jobs[variant.id] }
+    private var running: Bool { job.map { $0.error == nil && !$0.finished } ?? false }
 
     var body: some View {
-        SettingLine(title: variant.name, note: note, refused: job?.error != nil) {
-            if let job, job.error == nil, !job.finished {
-                ProgressView(value: job.total > 0 ? job.bytes / job.total : 0).frame(width: 140)
-                Button("Cancel") { model.cancel(variant.id) }
-            } else if inUse {
-                Text("In use").foregroundStyle(.secondary)
-            } else if variant.downloaded {
-                Button("Use") {
-                    model.write(SettingStore.variantPath(of: name), variant.id)
-                    model.actions?.refreshServer()
-                }
-                Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
-            } else if variant.canDownload {
-                Button("Download") { model.download(catalog: catalog, variant: variant.id) }
-            } else {
-                ProgressView().controlSize(.small)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 18) {
+                Text(variant.name).frame(width: 64, alignment: .leading)
+                Measure(label: "Disk", value: gigabytes(variant.bytes))
+                if let m = variant.memoryBytes { Measure(label: "RAM", value: gigabytes(m)) }
+                Spacer()
+                actions
+            }
+            if let job, running {
+                Text(job.status).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            } else if let e = job?.error {
+                Text(e).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
         .confirmationDialog("Remove \(variant.name) from this Mac?", isPresented: Binding(
@@ -667,14 +664,38 @@ struct VariantRow: View {
         }
     }
 
-    private var note: String {
-        if let e = job?.error { return e }
-        if let job, !job.finished { return job.status }
-        let memory = variant.memoryBytes.map { ", about \(gigabytes($0)) of memory" } ?? ""
-        if inUse { return "Downloaded, \(gigabytes(variant.bytes))\(memory). Choose another one to remove it." }
-        if variant.downloaded { return "Downloaded, \(gigabytes(variant.bytes))\(memory)." }
-        return variant.canDownload ? "Not downloaded, \(gigabytes(variant.bytes))\(memory)."
-                                   : "Downloading in the EchoFox window."
+    @ViewBuilder private var actions: some View {
+        if let job, running {
+            ProgressView(value: job.total > 0 ? job.bytes / job.total : 0).frame(width: 120)
+            Button("Cancel") { model.cancel(variant.id) }
+        } else if inUse {
+            Label("In use", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                .help("The model in use. Choose another one to remove it.")
+        } else if variant.downloaded {
+            Button("Use") {
+                model.write(SettingStore.variantPath(of: name), variant.id)
+                model.actions?.refreshServer()
+            }
+            Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
+        } else if variant.canDownload {
+            Button("Download") { model.download(catalog: catalog, variant: variant.id) }
+        } else {
+            ProgressView().controlSize(.small).help("Downloading in the EchoFox window.")
+        }
+    }
+}
+
+/// A measure next to a name: its label grey, its value plain ("Disk 5.6 GB").
+struct Measure: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(label).foregroundStyle(.secondary)
+            Text(value).monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -815,25 +836,37 @@ struct AdapterPage: View {
     var body: some View {
         Form {
             Section("Adapter") {
-                SettingLine(title: "On", note: adapter.description) { AdapterSwitch(model: model, adapter: adapter) }
+                if let d = adapter.description, !d.isEmpty {
+                    Text(d).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                LabeledContent("On") { AdapterSwitch(model: model, adapter: adapter) }
                 if let e = adapter.error {
                     LabeledContent("Problem") { Text(e).foregroundStyle(.red).textSelection(.enabled) }
                 }
             }
             Section("What it reads") {
-                LabeledContent("Apps") { Text(adapter.apps.joined(separator: "\n")).textSelection(.enabled) }
+                LabeledContent("Apps") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        ForEach(adapter.apps, id: \.self) { id in AppName(bundleId: id) }
+                    }
+                }
                 if let reads = adapter.reads, !reads.isEmpty {
                     LabeledContent("Files") { Text(reads.joined(separator: "\n")).textSelection(.enabled) }
                 }
                 if let screen = adapter.screen, !screen.isEmpty {
                     LabeledContent("Screen") {
-                        Text(screen.map { $0 == "lists" ? "the rows of the lists in the focused window"
-                                            : $0 == "outline" ? "the text of the focused page or window" : $0 }
-                            .joined(separator: "; "))
+                        Text(screen.map { $0 == "lists" ? "Message lists" : $0 == "outline" ? "Page text" : $0 }
+                            .joined(separator: ", "))
+                            .help("Only for its apps, only when it is on.")
                     }
                 }
-                if adapter.electronTree {
-                    LabeledContent("Accessibility") { Text("Asks the app to expose its window content.") }
+                if let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : nil), !tree.isEmpty {
+                    LabeledContent("Window content") {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            ForEach(tree, id: \.self) { id in AppName(bundleId: id) }
+                        }
+                    }
+                    .help("These apps show their window content to Accessibility only when asked; the adapter asks.")
                 }
             }
             AdvancedSection(model: model, id: "adapter." + adapter.name,
@@ -869,6 +902,6 @@ struct ServerStatus: View {
         }
         .onAppear { model.watchServer(true) }
         .onDisappear { model.watchServer(false) }
-        LabeledContent("Model") { Text(model.config.model ?? "none") }
+        LabeledContent("Model") { Text(model.info?.model?.title ?? model.config.model ?? "not known") }
     }
 }
