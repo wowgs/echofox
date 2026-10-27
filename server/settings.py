@@ -412,7 +412,20 @@ def from_6(c, path):
                                      else "was empty" if shared is not None else "none"))
 
 
-MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6}  # a file's version → its next step
+def from_7(c, path):
+    """Version 7 → 8: the adapter "claude" is split by where its context comes from: "claude-code" (Claude Code
+    transcripts) and "claude-chat" (Claude Desktop's chats, from the screen). Each gets a copy of the "claude" entry, so
+    what was on stays on, with the same settings."""
+    entries = c.get("adapters")
+    old = entries.pop("claude", None) if isinstance(entries, dict) else None
+    if isinstance(old, dict):
+        for name in ("claude-code", "claude-chat"):
+            entries.setdefault(name, dict(old))
+    c["version"] = 8
+    return c, ("adapters.claude became claude-code and claude-chat" if isinstance(old, dict) else "no adapters.claude")
+
+
+MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7}  # a file's version → its next step
 
 
 class ConfigWatcher:

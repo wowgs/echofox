@@ -1,4 +1,4 @@
-"""Claude Desktop's chats (claude.ai conversations, not the Code tab), for the Claude adapter, read from the screen.
+"""Claude Desktop's chats (claude.ai conversations, not the Code tab), for the claude-chat adapter, read from the screen.
 
 A chat has no transcript on the Mac: Desktop keeps only the web app's own cache in IndexedDB, in an undocumented
 binary format (measured 2026-10-25, Claude Desktop 3.6556.2). So the adapter asks the client for the outline of the
@@ -18,7 +18,13 @@ import re
 
 from adapters import bundle
 
-from .desktop import BUNDLE, web_area
+
+BUNDLE = "com.anthropic.claudefordesktop"
+
+
+def web_area(snapshot):
+    return (snapshot or {}).get("webArea") or {}
+
 
 CHAT_URL = re.compile(r"^https://claude\.ai/chat/([0-9a-fA-F-]{36})")
 TITLE_SUFFIX = " - Claude"

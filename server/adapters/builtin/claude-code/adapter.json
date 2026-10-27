@@ -1,0 +1,22 @@
+{
+  "name": "claude-code",
+  "title": "Claude Code",
+  "version": "2.0",
+  "author": "echofox",
+  "source": "https://github.com/wowgs/echofox",
+  "description": "Reads the transcript of the Claude Code session in focus: the Code tab of Claude Desktop.",
+  "interface": 2,
+  "apps": [
+    "com.anthropic.claudefordesktop"
+  ],
+  "electronTree": true,
+  "reads": [
+    "~/Library/Application Support/Claude/claude-code-sessions",
+    "~/.claude/projects"
+  ],
+  "screen": [],
+  "context": {
+    "chatHistoryTokenBudget": 1000,
+    "chatTermsTokenBudget": 200
+  }
+}

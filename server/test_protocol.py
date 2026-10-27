@@ -147,13 +147,15 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any("gemma-e4b piece 1" in line for line in logs.output))
 
     async def test_a_client_asks_what_the_server_offers(self):
-        self.args.adapters = ["claude"]
+        self.args.adapters = ["claude-code", "claude-chat"]
         got = await self.ask_info()
         self.assertEqual((got["type"], got["interface"], got["sampleRate"], got["encoding"], got["textWaitSeconds"]),
                          ("info", constants.PROTOCOL_INTERFACE, 16000, "pcm_s16le", 180))
         by = {a["name"]: a for a in got["adapters"]}
-        self.assertTrue(by["claude"]["enabled"] and by["claude"]["electronTree"] and by["claude"]["builtin"])
-        self.assertEqual(by["claude"]["apps"], ["com.anthropic.claudefordesktop"])
+        code, chat = by["claude-code"], by["claude-chat"]
+        self.assertTrue(code["enabled"] and code["electronTree"] and code["builtin"] and chat["enabled"])
+        self.assertEqual((code["apps"], code["title"], code["screen"], chat["screen"]),
+                         (["com.anthropic.claudefordesktop"], "Claude Code", [], ["outline"]))
         self.args.adapters = []
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
@@ -234,7 +236,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Claude: Готово.", stub.calls[0][1])
         self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
         self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],
-                          a["chat"]["details"]["session"]), ("claude", "desktop store", "local_abc", "s1"))
+                          a["chat"]["details"]["session"]), ("claude-code", "desktop store", "local_abc", "s1"))
         self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the adapter
 
     async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):

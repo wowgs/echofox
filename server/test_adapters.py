@@ -75,7 +75,7 @@ class ClaudeCodeTest(Fixture):
         ], tail="not json\n")
         c = adapters.context({}, {"sessions": ["old", "new", "../x"]})
         d = c["details"]
-        self.assertEqual((c["adapter"], d["session"], d["how"], d["title"]), ("claude", "new", "named sessions", "Тесты"))
+        self.assertEqual((c["adapter"], d["session"], d["how"], d["title"]), ("claude-code", "new", "named sessions", "Тесты"))
         self.assertTrue(c["about"] and c["source"].startswith("named sessions: "))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Запушил в master."},
                                          {"from": "Claude", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
@@ -193,7 +193,7 @@ class UserAdapterTest(Fixture):
         self.install("mine")
         snap = {"app": {"bundleId": "com.example.app"}}
         self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
-        self.assertIsNone(adapters.context(snap, enabled=["claude"]))
+        self.assertIsNone(adapters.context(snap, enabled=["claude-code"]))
         c = adapters.context(snap, enabled=["mine"])
         self.assertEqual((c["adapter"], c["about"], c["messages"][0], c["terms"]),
                          ("mine", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"}, ["Anna", "Kubernetes", "Hello"]))
@@ -207,7 +207,7 @@ class UserAdapterTest(Fixture):
         self.assertIn("interface 0", found["old"].error)
         self.assertIn("0 subclasses", found["twice"].error)
         self.assertIn("boom", found["crash"].error)
-        self.assertIsNotNone(found["claude"].adapter)
+        self.assertIsNotNone(found["claude-code"].adapter)
         self.assertFalse(found["crash"].info({"crash"})["enabled"])
 
     def test_a_adapter_that_fails_stops_only_itself_and_the_error_is_kept(self):
@@ -233,8 +233,8 @@ class UserAdapterTest(Fixture):
         self.assertIn("badclean.clean: ValueError: v", c["errors"])
 
     def test_a_users_adapter_replaces_a_built_in_one_of_the_same_name(self):
-        self.install("claude", {"name": "claude", "interface": 2})
-        self.assertFalse(registry.packages()["claude"].builtin)
+        self.install("claude-code", {"name": "claude-code", "interface": 2})
+        self.assertFalse(registry.packages()["claude-code"].builtin)
 
 
 class ClaudeDesktopTest(Fixture):
@@ -245,7 +245,7 @@ class ClaudeDesktopTest(Fixture):
         c = adapters.context(code_tab("local_abc"))
         d = c["details"]
         self.assertEqual((c["adapter"], c["confidence"], d["how"], d["session"], d["desktopSession"]),
-                         ("claude", 1.0, "desktop store", "cli-1", "local_abc"))
+                         ("claude-code", 1.0, "desktop store", "cli-1", "local_abc"))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Готово."}])
 
     def test_without_a_record_the_title_finds_the_transcript(self):
@@ -257,21 +257,22 @@ class ClaudeDesktopTest(Fixture):
     def test_desktop_without_the_code_tab_in_focus_is_not_claimed(self):
         self.put("b", "newest", [reply("m2", "свежая", entrypoint="claude-desktop")])
         self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}}))  # no Accessibility, another window, …
-        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}}))
+        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}},
+                                           enabled=["claude-code"]))  # a chat is claude-chat's
 
     def test_a_title_that_several_transcripts_share_gives_no_context(self):
         for n in ("t1", "t2"):
             self.put("a", n, [{"type": "custom-title", "customTitle": "Same"}, reply("m", "x")])
         c = adapters.context(code_tab("local_missing", title="Same"))
-        self.assertEqual(c["adapter"], "claude")
+        self.assertEqual(c["adapter"], "claude-code")
         self.assertNotIn("messages", c)
 
     def test_the_surest_adapter_wins(self):
         ranked = adapters.claims(code_tab("local_abc"), {"sessions": ["s1"]})
-        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude", 1.0)])  # one adapter: the Code tab wins over named sessions
+        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude-code", 1.0)])  # one adapter: the Code tab wins over named sessions
 
     def test_a_bad_desktop_id_reads_no_file(self):
-        self.assertIsNone(sys.modules["echofox_adapter_claude.desktop"].record("local_../../etc"))
+        self.assertIsNone(sys.modules["echofox_adapter_claude_code.desktop"].record("local_../../etc"))
 
 
 CHAT = "0f8e2a6c-1b3d-4e5f-8a7b-9c0d1e2f3a4b"
@@ -336,13 +337,13 @@ class ClaudeChatTest(Fixture):
                                          (False, ["Напишите в поддержку.", "Пишите Data Protection Officer"]),
                                          (True, ["А кто уже пробовал?"]),
                                          (False, ["Отчётов нет."])]))
-        self.assertEqual((c["adapter"], c["confidence"], c["details"]["replies"]), ("claude", 1.0, 2))
+        self.assertEqual((c["adapter"], c["confidence"], c["details"]["replies"]), ("claude-chat", 1.0, 2))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Отчётов нет."},
                                          {"from": "Claude", "text": "Напишите в поддержку. • Пишите Data Protection Officer"}])  # clean joins the lines
         self.assertEqual(c["about"], "a chat with Claude, an AI assistant, titled “Выгрузка данных”")
 
     def test_the_speakers_messages_are_read_but_left_out_of_the_context(self):
-        chat = sys.modules["echofox_adapter_claude.chat"]
+        chat = sys.modules["echofox_adapter_claude_chat.chat"]
         found = chat.messages(chat_focus([(True, ["Первая строка", "вторая"]), (False, ["Ответ."])])["outline"])
         self.assertEqual(found, [{"from": "the speaker", "text": "Первая строка\nвторая"}, {"from": "Claude", "text": "Ответ."}])
 
@@ -359,7 +360,7 @@ class ClaudeChatTest(Fixture):
         focus = chat_focus([])
         del focus["outline"]
         c = adapters.context(focus)
-        self.assertEqual((c["adapter"], c["details"]["replies"]), ("claude", 0))
+        self.assertEqual((c["adapter"], c["details"]["replies"]), ("claude-chat", 0))
 
 
 if __name__ == "__main__":
@@ -428,12 +429,12 @@ class TelegramTest(Fixture):
         self.assertIs(desktop.message_list(no_box)["rows"], TG_ROWS)  # the widest list
 
     def test_telegram_claims_its_window_and_gives_the_open_chat_newest_first(self):
-        found = adapters.context(tg_focus(TG_ROWS), {}, ["telegram", "claude"])
+        found = adapters.context(tg_focus(TG_ROWS), {}, ["telegram", "claude-code", "claude-chat"])
         self.assertEqual((found["adapter"], found["about"]), ("telegram", "a Telegram chat with Anna"))
         self.assertEqual([m["text"] for m in found["messages"]][:2], ["Ещё не прочитано", "Первая строка вторая строка"])
         self.assertEqual(found["terms"][:1], ["Anna"])
         self.assertEqual(found["details"]["messages"], 5)
-        self.assertIsNone(adapters.context(tg_focus(TG_ROWS), {}, ["claude"]))  # not enabled: the base mode
+        self.assertIsNone(adapters.context(tg_focus(TG_ROWS), {}, ["claude-code", "claude-chat"]))  # not enabled: the base mode
         self.assertIsNone(adapters.context({"app": {"bundleId": TELEGRAM}}, {}, ["telegram"]))  # no lists sent
         self.assertIsNone(adapters.context({**tg_focus(TG_ROWS), "app": {"bundleId": "com.other"}}, {}, ["telegram"]))
 

@@ -1,18 +1,16 @@
 {
-  "name": "claude",
-  "version": "1.1",
+  "name": "claude-chat",
+  "title": "Claude chats",
+  "version": "2.0",
   "author": "echofox",
   "source": "https://github.com/wowgs/echofox",
-  "description": "Reads the Claude Code session open in the Code tab of Claude Desktop, and the chat open in Claude Desktop.",
+  "description": "Reads the chat open in Claude Desktop, from the outline of the page that the window shows.",
   "interface": 2,
   "apps": [
     "com.anthropic.claudefordesktop"
   ],
   "electronTree": true,
-  "reads": [
-    "~/Library/Application Support/Claude/claude-code-sessions",
-    "~/.claude/projects"
-  ],
+  "reads": [],
   "screen": [
     "outline"
   ],

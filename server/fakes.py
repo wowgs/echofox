@@ -44,10 +44,10 @@ ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"ll
 
 def args(**over):
     """The recording settings protocol.handle() gets: the defaults, with the recordings in the sandbox and the
-    built-in adapter enabled."""
+    built-in Claude adapters enabled."""
     st = settings.recording_settings(settings.resolve({}))
     st.recordings = tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT)
-    st.adapters = ["claude"]
+    st.adapters = ["claude-code", "claude-chat"]
     for k, v in over.items():
         setattr(st, k, v)
     return st

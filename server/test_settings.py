@@ -314,14 +314,14 @@ class MigrateTest(unittest.TestCase):
             f = os.path.join(d, "config.json")
             c, _ = s.from_2({"model": "m", "language": "ru", "models": {}, "version": 2}, f)
             self.assertEqual(list(c), ["model", "language", "adapters", "models", "version"])
-            self.assertEqual((c["version"], c["adapters"]), (3, {}))  # claude and telegram read the screen
+            self.assertEqual((c["version"], c["adapters"]), (3, {"claude-code": {"enabled": True}}))  # the others read the screen
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump({"model": "m", "models": {}, "version": constants.CONFIG_VERSION}, fh, indent=2)
             mtime = os.stat(f).st_mtime_ns
             s.migrate(f)  # a file of this version is not written
             self.assertEqual(os.stat(f).st_mtime_ns, mtime)
 
-    def test_version_3_becomes_7_with_each_setting_at_its_owner(self):
+    def test_version_3_becomes_8_with_each_setting_at_its_owner(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v3 = {"model": "m", "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 1000},
@@ -335,17 +335,18 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v3, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 7)
+            self.assertEqual(c["version"], 8)
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
-            self.assertEqual(c["adapters"]["claude"]["chatHistoryTokenBudget"], 1000)   # its own value stays
+            self.assertEqual(c["adapters"]["claude-code"]["chatHistoryTokenBudget"], 1000)  # its own value stays
+            self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 1000)  # in both of claude's
             self.assertEqual(c["adapters"]["telegram"]["chatHistoryTokenBudget"], 2000)  # the model's was its value
             self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l"})  # pieceSeconds: a constant
             self.assertEqual(c["languages"], {"ru": {"fillers": ["э"]}})
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
 
-    def test_version_4_becomes_7_without_the_second_ways_and_the_order_kept(self):
+    def test_version_4_becomes_8_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v4 = {"model": "m", "version": 4,
@@ -362,18 +363,19 @@ class MigrateTest(unittest.TestCase):
                 s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
             self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])
-            self.assertEqual(c["version"], 7)
+            self.assertEqual(c["version"], 8)
             self.assertEqual(c["server"], {"maxRecordingMinutes": 10})
             self.assertEqual(c["models"]["m"]["options"], {"topK": 5})
             self.assertNotIn("options", c["models"]["n"])
             # a budget of 0 was the switch; adapterDefaults' proseOnly went to every adapter
-            self.assertEqual(c["adapters"], {"claude": {"enabled": False, "proseOnly": False},
+            self.assertEqual(c["adapters"], {"claude-code": {"enabled": False, "proseOnly": False},
+                                             "claude-chat": {"enabled": False, "proseOnly": False},
                                              "telegram": {"enabled": True, "proseOnly": False}})
             self.assertIn("thresholdDb=-45", logs.output[0])
             self.assertEqual(s.file_settings(f)["maxRecordingMinutes"], 10.0)
 
 
-    def test_version_6_becomes_7_with_adapter_defaults_in_each_adapter(self):
+    def test_version_6_becomes_8_with_adapter_defaults_in_each_adapter(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v6 = {"version": 6, "adapters": {"claude": {"enabled": True, "chatTermsTokenBudget": 50},
@@ -384,11 +386,23 @@ class MigrateTest(unittest.TestCase):
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
             self.assertEqual(list(c), ["version", "adapters", "model"])
-            self.assertEqual(c["version"], 7)
-            self.assertEqual(c["adapters"], {"claude": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
+            self.assertEqual(c["version"], 8)
+            self.assertEqual(c["adapters"], {"claude-code": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
+                                             "claude-chat": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "telegram": {"enabled": True, "chatTermsTokenBudget": 150, "proseOnly": False}})
 
-    def test_version_5_becomes_7_without_the_constants_and_with_minutes(self):
+    def test_version_7_becomes_8_with_claude_split_into_claude_code_and_claude_chat(self):
+        c, what = s.from_7({"version": 7, "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 300},
+                                                      "telegram": {"enabled": False}}}, None)
+        self.assertEqual((c["version"], c["adapters"]),
+                         (8, {"telegram": {"enabled": False},
+                              "claude-code": {"enabled": True, "chatHistoryTokenBudget": 300},
+                              "claude-chat": {"enabled": True, "chatHistoryTokenBudget": 300}}))
+        c["adapters"]["claude-code"]["chatHistoryTokenBudget"] = 1
+        self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 300)  # copies, not one dict
+        self.assertEqual(s.from_7({"version": 7}, None)[0], {"version": 8})  # no adapters: nothing to split
+
+    def test_version_5_becomes_8_without_the_constants_and_with_minutes(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             v5 = {"version": 5, "server": {"port": 8090, "pieceSeconds": 15, "cutSearchSeconds": 3,
@@ -401,7 +415,7 @@ class MigrateTest(unittest.TestCase):
                 json.dump(v5, fh)
             s.migrate(f)
             c = json.load(open(f, encoding="utf-8"))
-            self.assertEqual(c["version"], 7)
+            self.assertEqual(c["version"], 8)
             self.assertEqual(c["server"], {"port": 8090, "maxRecordingMinutes": 30})
             self.assertEqual(c["models"]["m"]["options"], {"temperature": 1})
             self.assertNotIn("options", c["models"]["n"])

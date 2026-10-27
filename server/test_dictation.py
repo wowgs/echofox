@@ -125,14 +125,14 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
     def test_an_adapters_settings_come_from_its_manifest_then_the_config_then_the_client(self):
         server = args()
         budget = "chat_history_token_budget"
-        server.adapter_options = {"claude": {budget: 2}}
+        server.adapter_options = {"claude-code": {budget: 2}}
         plain = d.Dictation(self.fake.model(), "PROMPT", {}, server, {})
-        self.assertEqual(plain.adapter_options("claude")[budget], 2)                          # the user's entry
-        self.assertEqual(plain.adapter_options("claude")["chat_terms_token_budget"], 200)    # the manifest's
+        self.assertEqual(plain.adapter_options("claude-code")[budget], 2)                          # the user's entry
+        self.assertEqual(plain.adapter_options("claude-code")["chat_terms_token_budget"], 200)    # the manifest's
         client = d.Dictation(self.fake.model(), "PROMPT", {}, server, {}, client_options={budget: 3})
-        self.assertEqual(client.adapter_options("claude")[budget], 3)                         # the client's wins
+        self.assertEqual(client.adapter_options("claude-code")[budget], 3)                         # the client's wins
         server.adapter_options = {}
-        self.assertEqual(plain.adapter_options("claude")[budget], 1000)                       # the manifest's
+        self.assertEqual(plain.adapter_options("claude-code")[budget], 1000)                       # the manifest's
 
     async def test_an_adapter_may_keep_the_lines_that_are_not_prose(self):
         context = {"messages": [{"from": "A", "text": "Готово.\n20–40 с: 4,38 / 5,70"}], "terms": []}
@@ -160,7 +160,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Anna: hello there", on.text)
         self.assertEqual(on.meta["chat_budget"], 500)
         other = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
-        await other.prepare({**chat, "adapter": "claude"})
+        await other.prepare({**chat, "adapter": "claude-code"})
         self.assertIn("Anna: hello there", other.text)  # another adapter keeps the model's budget
 
     async def test_the_text_is_limited_by_the_length_of_the_speech(self):

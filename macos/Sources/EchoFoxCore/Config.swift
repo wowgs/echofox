@@ -1,12 +1,12 @@
 // The config file the app shares with the dictation server, ~/.echofox/config.json ($ECHOFOX_CONFIG),
-// version 7 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
+// version 8 (server/settings.py has its fields: each setting at its owner). The app reads the model registry, the chosen model, the language,
 // the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
 // recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
 // value out to go back to its default.
 import Foundation
 
 public struct Config: Equatable {
-    public static let version = 7
+    public static let version = 8
     public static let defaultHost = "127.0.0.1"
     /// The server's own defaults (shared/constants.json); the app uses them before it can ask the server.
     public static let defaultFile = "~/.echofox/config.json"

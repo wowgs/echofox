@@ -8,14 +8,14 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "model": "Gemma E4B llama.cpp",
   "language": "ru",
   "microphone": "builtin",
   "dictationKey": "rightOption",
   "privateDictationKey": "rightCommand",
   "silenceStopSeconds": 60,
-  "adapters": {"claude": {"enabled": true}, "telegram": {"enabled": true, "chatHistoryTokenBudget": 600}},
+  "adapters": {"claude-code": {"enabled": true}, "claude-chat": {"enabled": true}, "telegram": {"enabled": true, "chatHistoryTokenBudget": 600}},
   "models": {
     "Gemma E4B llama.cpp": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
                             "launchd": "echofox.llama-server", "options": {"topK": 40}}
@@ -25,13 +25,13 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 }
 ```
 
-This example enables both adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON or has another `version`, the server ignores the whole file and keeps its current settings; the app ignores an invalid value without a log.
+This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON or has another `version`, the server ignores the whole file and keeps its current settings; the app ignores an invalid value without a log.
 
 ## Settings reference
 
 | Key | Purpose |
 |---|---|
-| `version` | Config format version. The server migrates supported older versions to version 7 at startup, preserving field order. |
+| `version` | Config format version. The server migrates supported older versions to version 8 at startup, preserving field order. Version 8 split the adapter `claude` into `claude-code` and `claude-chat`; each gets the entry that `claude` had. |
 | `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |

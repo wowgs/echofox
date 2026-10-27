@@ -1,6 +1,6 @@
 """The adapters: the built-in ones in server/adapters/builtin/, the user's in ~/Library/Application Support/EchoFox/
 adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
-  adapter.json  its manifest: {"name", "version", "author", "source", "description", "interface": 2,
+  adapter.json  its manifest: {"name", "title" (optional, for people), "version", "author", "source", "description", "interface": 2,
                 "apps": [bundle ids it reads the focus of], "electronTree": the app builds its accessibility tree only
                 on request (Electron), "reads": [the files it reads],
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
@@ -50,7 +50,7 @@ class Package:
     def info(self, enabled):
         """For the app: what the adapter is, says about itself, and whether it works."""
         m = self.manifest
-        return {"name": self.name, "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
+        return {"name": self.name, "title": m.get("title"), "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
                 "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
                 "description": m.get("description"), "apps": m.get("apps") or [],
                 "electronTree": bool(m.get("electronTree")), "reads": m.get("reads") or [],

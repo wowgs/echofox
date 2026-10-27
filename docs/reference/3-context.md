@@ -39,12 +39,15 @@ Use `enabled` to turn an adapter on or off; both built-in adapters are off in a 
 
 ## The built-in adapters
 
+The built-in adapters are split by where their context comes from, not by the company or the app: one Claude app can be served by two of them. Each one is enabled, set up and failing on its own, and the client takes the screen data that only the enabled ones ask for (the outline of a Claude Desktop chat only for `claude-chat`). A manifest may give a `title` for people ("Claude Code"); without one the app shows the name.
+
 | Adapter | Supported app | Context source |
 |---|---|---|
-| `claude` | Claude Desktop: the Code tab and chats | In the Code tab, the local transcript of the open session. In a chat, the messages that the window shows, read from the accessibility tree. Only Claude's completed responses are used. |
+| `claude-code` | Claude Code sessions: the Code tab of Claude Desktop, and (planned) a terminal's tab | The local transcript of the session in focus. Only Claude's completed responses are used. |
+| `claude-chat` | Claude Desktop's chats (claude.ai) | The messages that the window shows, read from the outline of the page. Only Claude's replies are used. |
 | `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. |
 
-### Claude session matching
+### Claude Code session matching (`claude-code`)
 
 The Code tab exposes a URL of the form `https://claude.ai/epitaxy/local_<id>`. The adapter uses it to find a session record in `~/Library/Application Support/Claude/claude-code-sessions/`, which identifies the transcript.
 
@@ -52,7 +55,7 @@ If the record is missing, the adapter uses the web-area title only when exactly 
 
 User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
 
-### Claude Code in a terminal, planned
+### Claude Code in a terminal (`claude-code`), planned
 
 Decided: Claude Code in a terminal's tab is supported where its session is found for sure; inside tmux or screen it is not, for now, and such a dictation gets no context. The rest of this section is a proposal.
 
@@ -64,7 +67,7 @@ Decided: Claude Code in a terminal's tab is supported where its session is found
 
 The measurements behind it are in [observations](../observations.md#target-apps-and-accessibility): the title found the focused tab's session in 20 of 20 steps in the four terminals; the words of the visible text chose a wrong pane in tmux, so the text is not used.
 
-### Claude chats
+### Claude chats (`claude-chat`)
 
 A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So the manifest requests `"screen": ["outline"]`, and the adapter reads the messages from the outline of the page.
 
@@ -85,6 +88,7 @@ An adapter is a Python package with two required files.
 | Fields | Purpose |
 |---|---|
 | `name`, `version`, `author`, `source`, `description` | Identity and source information. |
+| `title` | Optional: the adapter's name for people ("Claude Code"); the app shows `name` without it. |
 | `interface` | Adapter API version; currently `2`. |
 | `apps` | Bundle IDs of supported apps. |
 | `electronTree` | Whether the app needs to enable the Electron accessibility tree. |

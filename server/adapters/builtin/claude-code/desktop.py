@@ -1,4 +1,4 @@
-"""Claude Desktop (bundle id com.anthropic.claudefordesktop), its Code tab, for the Claude adapter.
+"""Claude Desktop (bundle id com.anthropic.claudefordesktop), its Code tab, for the claude-code adapter.
 
 The Code tab is a web page in the app. Its web area, above the input box, has the URL
 https://claude.ai/epitaxy/local_<id>; <id> is the Desktop session. Desktop keeps a record of each session in

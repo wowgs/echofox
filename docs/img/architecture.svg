@@ -36,8 +36,9 @@
 <text x="256" y="383">0.3 s of speech</text>
 <rect x="458" y="324" width="198" height="100" rx="6" fill="#ffffff" stroke="#c77700" stroke-width="1.5"/>
 <text x="470" y="346" font-size="14" font-weight="600">Context</text>
-<text x="470" y="366">adapters claude,</text>
-<text x="470" y="383">telegram; terms</text>
+<text x="470" y="366">adapters claude-code,</text>
+<text x="470" y="383">claude-chat, telegram;</text>
+<text x="470" y="400">terms</text>
 <rect x="672" y="324" width="198" height="100" rx="6" fill="#ffffff" stroke="#c77700" stroke-width="1.5"/>
 <text x="684" y="346" font-size="14" font-weight="600">Settings, models</text>
 <text x="684" y="366">config.json, launchd,</text>

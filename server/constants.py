@@ -28,7 +28,7 @@ MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model file
 # llama.cpp's server for a server that runs from the repository (its tests, test_server.sh): the installed app's
 LLAMA_SERVER = "/Applications/EchoFox.app/Contents/Resources/llama/llama-server"
 ADAPTERS = "~/Library/Application Support/EchoFox/adapters"  # the user's adapters; $ECHOFOX_ADAPTERS sets another
-CONFIG_VERSION = 7
+CONFIG_VERSION = 8
 PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.

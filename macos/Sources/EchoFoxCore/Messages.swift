@@ -11,6 +11,8 @@ public let audioEncoding = "pcm_s16le"
 public struct ServerInfo: Decodable, Equatable {
     public struct Adapter: Decodable, Equatable {
         public let name: String
+        /// Its name for people, from its manifest; an older server or a manifest without one sends none.
+        public let title: String?
         public let enabled: Bool
         public let apps: [String]
         public let electronTree: Bool
@@ -99,6 +101,12 @@ public struct ServerInfo: Decodable, Equatable {
     public func folder(_ key: String) -> URL? {
         guard case .string(let p)? = settings?.first(where: { $0.key == key })?.value, !p.isEmpty else { return nil }
         return Config.path(p)
+    }
+
+    /// An adapter's name for people: its manifest's title in `info`, else its name with a capital ("telegram" →
+    /// "Telegram").
+    public static func adapterTitle(_ name: String, in info: ServerInfo?) -> String {
+        info?.adapters.first { $0.name == name }?.title ?? name.prefix(1).uppercased() + name.dropFirst()
     }
 
     /// The language the first start proposes: `current` (the config's, macOS's own until one is chosen) if the model

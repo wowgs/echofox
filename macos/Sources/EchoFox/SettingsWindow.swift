@@ -153,7 +153,13 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func serverChanged() { (info, problem) = actions?.serverState() ?? (nil, nil) }
+    /// The server's last info, for the names of the adapters (adapterTitle).
+    static var lastInfo: ServerInfo?
+
+    func serverChanged() {
+        (info, problem) = actions?.serverState() ?? (nil, nil)
+        if let info { Self.lastInfo = info }
+    }
 
     /// The downloads and removals of model variants that the app started, by variant (ModelDownloads).
     var jobs: [String: ModelJob] { downloads.jobs }
@@ -241,8 +247,8 @@ enum SidebarItem: Hashable {
     }
 }
 
-/// An adapter's name for people: "claude" → "Claude".
-func adapterTitle(_ name: String) -> String { name.prefix(1).uppercased() + name.dropFirst() }
+/// An adapter's name for people (ServerInfo.adapterTitle), from the server's last info.
+func adapterTitle(_ name: String) -> String { ServerInfo.adapterTitle(name, in: SettingsModel.lastInfo) }
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel

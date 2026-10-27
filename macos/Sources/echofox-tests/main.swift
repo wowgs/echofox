@@ -216,7 +216,7 @@ let text = """
   },
   "silenceStopSeconds": 30,
   "server": {"port": 8099, "labeled": "~/elsewhere"},
-  "version": 7
+  "version": 8
 }
 
 """
@@ -238,7 +238,7 @@ check(c.model == "b", "config: the new model reads back")
 try Config.set(["adapters", "chat"], to: ["enabled": true], in: file)
 after = try String(contentsOf: file, encoding: .utf8)
 check(after.hasSuffix("""
-  "version": 7,
+  "version": 8,
   "adapters": {"enabled": true}
 }
 
