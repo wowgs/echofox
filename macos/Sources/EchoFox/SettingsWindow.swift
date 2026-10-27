@@ -161,6 +161,9 @@ final class SettingsModel: ObservableObject {
         if let info { Self.lastInfo = info }
     }
 
+    /// The variant whose removal waits for the user's confirmation (the window keeps no view state of its own).
+    @Published var confirmRemoval: String?
+
     /// The downloads and removals of model variants that the app started, by variant (ModelDownloads).
     var jobs: [String: ModelJob] { downloads.jobs }
 
@@ -583,15 +586,19 @@ struct ModelPicker: View {
     var body: some View {
         Picker("Model", selection: Binding(get: { model.config.model ?? model.info?.model?.name ?? "" },
                                            set: { model.write(["model"], $0) })) {
-            ForEach(model.info?.models ?? model.config.models, id: \.self) { Text($0).tag($0) }
+            // the model in force by its name for people (Gemma 4 E4B), the others by their registry name
+            ForEach(model.info?.models ?? model.config.models, id: \.self) { name in
+                Text(name == model.info?.model?.name ? model.info?.model?.title ?? name : name).tag(name)
+            }
         }
         if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
     }
 }
 
-/// The variants of the menu's model: one quantization of it each, with the size of its files. Only a variant whose
-/// files are in the models folder can be chosen; another one has Download, with its progress; one that is there and
-/// not in force has Remove.
+/// The quantizations of the menu's model, one row each: its size on disk and in memory, whether it is in use,
+/// downloaded or downloading, and what can be done with it: Use (only one whose files are on the disk), Download
+/// with its progress and Cancel, or Remove, which deletes its files after a confirmation. The one in use cannot be
+/// removed (the server refuses it): another one is chosen first.
 struct VariantPicker: View {
     @ObservedObject var model: SettingsModel
 
@@ -599,23 +606,12 @@ struct VariantPicker: View {
 
     var body: some View {
         if let variants = info?.variants, !variants.isEmpty, let name = model.config.model ?? info?.name {
-            SettingLine(title: "Quantization",
-                        note: "A smaller one uses less memory and is faster. The model starts again after the recording.") {
-                Picker("Quantization", selection: Binding(get: { info?.variant ?? "" }, set: { v in
-                    guard variants.first(where: { $0.id == v })?.downloaded == true else { return }  // its files first
-                    model.write(SettingStore.variantPath(of: name), v)
-                    model.actions?.refreshServer()
-                })) {
-                    ForEach(variants, id: \.id) { v in
-                        Text("\(v.name), \(gigabytes(v.bytes))"
-                             + (v.downloaded ? "" : v.downloading == true ? " (downloading)" : " (not downloaded)")).tag(v.id)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-            }
-            ForEach(variants.filter { $0.id != info?.variant }, id: \.id) { v in
-                VariantFiles(model: model, catalog: info?.catalog ?? "", variant: v)
+            Text("A smaller quantization uses less memory and is faster; a larger one makes fewer errors. A change "
+                 + "takes effect after the running recording.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(variants, id: \.id) { v in
+                VariantRow(model: model, name: name, catalog: info?.catalog ?? "", variant: v,
+                           inUse: v.id == info?.variant)
             }
         }
     }
@@ -623,12 +619,14 @@ struct VariantPicker: View {
 
 func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
 
-/// The files of a variant not in force: Download with its progress, or Remove. While another window (the first
-/// start's) downloads it, the server's info says so and there is no Download.
-struct VariantFiles: View {
+/// One quantization: its state, and Use, Download (with its progress and Cancel) or Remove. While another window
+/// (the first start's) downloads it, the server's info says so and there is no Download.
+struct VariantRow: View {
     @ObservedObject var model: SettingsModel
+    let name: String
     let catalog: String
     let variant: ServerInfo.Variant
+    let inUse: Bool
 
     private var job: ModelJob? { model.jobs[variant.id] }
 
@@ -637,21 +635,39 @@ struct VariantFiles: View {
             if let job, job.error == nil, !job.finished {
                 ProgressView(value: job.total > 0 ? job.bytes / job.total : 0).frame(width: 140)
                 Button("Cancel") { model.cancel(variant.id) }
+            } else if inUse {
+                Text("In use").foregroundStyle(.secondary)
             } else if variant.downloaded {
-                Button("Remove") { model.remove(catalog: catalog, variant: variant.id) }
+                Button("Use") {
+                    model.write(SettingStore.variantPath(of: name), variant.id)
+                    model.actions?.refreshServer()
+                }
+                Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
             } else if variant.canDownload {
                 Button("Download") { model.download(catalog: catalog, variant: variant.id) }
             } else {
                 ProgressView().controlSize(.small)
             }
         }
+        .confirmationDialog("Remove \(variant.name) from this Mac?", isPresented: Binding(
+            get: { model.confirmRemoval == variant.id }, set: { if !$0 { model.confirmRemoval = nil } })) {
+            Button("Remove \(gigabytes(variant.bytes))", role: .destructive) {
+                model.remove(catalog: catalog, variant: variant.id)
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("Its files are deleted from the disk. You can download it again later.")
+        }
     }
 
     private var note: String {
         if let e = job?.error { return e }
         if let job, !job.finished { return job.status }
-        if variant.downloaded { return "Downloaded, \(gigabytes(variant.bytes))." }
-        return variant.canDownload ? "Not downloaded, \(gigabytes(variant.bytes))." : "Downloading in the EchoFox window."
+        let memory = variant.memoryBytes.map { ", about \(gigabytes($0)) of memory" } ?? ""
+        if inUse { return "Downloaded, \(gigabytes(variant.bytes))\(memory). Choose another one to remove it." }
+        if variant.downloaded { return "Downloaded, \(gigabytes(variant.bytes))\(memory)." }
+        return variant.canDownload ? "Not downloaded, \(gigabytes(variant.bytes))\(memory)."
+                                   : "Downloading in the EchoFox window."
     }
 }
 

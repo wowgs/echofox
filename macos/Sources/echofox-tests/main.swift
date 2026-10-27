@@ -410,6 +410,9 @@ do {
           "settings: the server's settings on General \(general)")
     check(model.first?.section == "Model" && model.last?.section == "Advanced" && model.last?.ids == ["topK"],
           "settings: the model's page, its sampler in Advanced \(model)")
+    check(Array(model.map(\.section).prefix(3)) == ["Model", "Quantization", "Prompt"]
+          && model.first { $0.section == "Quantization" }?.ids == ["variant"],
+          "settings: the model, then its quantizations, then its prompt \(model.map(\.section))")
     check(SettingsLayout.sidebar.contains(.adapters) && !SettingsLayout.places.keys.contains { $0.hasPrefix("adapter") },
           "settings: Adapters is a heading of the sidebar, not a page")
 } catch {

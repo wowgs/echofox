@@ -65,7 +65,7 @@ The menu bar icon is a fox face. While you dictate, the fox wears a white headse
 | General | Choose dictation keys and recording limits. |
 | Microphone | Select the input device. |
 | Language | Choose the language and edit language-specific prompt notes or hesitation sounds. |
-| Model | Choose a downloaded variant, edit the prompt, change the model folder, or download and remove variants. |
+| Model | The model, then its quantizations, one row each with its size on disk and in memory: **Use** a downloaded one, **Download** one, or **Remove** one to delete its files from the disk (after a confirmation; the one in use cannot be removed, choose another first). Then the prompt and the model folder. |
 | Individual adapters | Enable conversation context for a supported app and adjust its limits. |
 | Recordings & Labels | Choose whether and where to save recordings and labels. |
 | Diagnostics | Inspect server status and diagnostic information. |
