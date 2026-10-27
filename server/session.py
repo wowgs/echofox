@@ -203,13 +203,16 @@ class Session:
         if self.models.recording.locked():
             log.info("recording %s waits for the recording before it", self.id)
         async with self.models.recording:  # one recording at a time on the model
-            dictation, warming, tasks = None, None, []
+            dictation, warming, tasks, context = None, None, [], None
             try:
+                # The context is read now, while the model loads if it left memory (Models.unload_when_idle); the
+                # audio keeps coming meanwhile, and its pieces wait for the model
+                context = asyncio.ensure_future(self.context())
                 try:
                     dictation = Dictation(await self.models.get(self.start.model), self.start.text_prompt,
                                           self.start.options, self.args, self.meta, self.rec,
                                           client_options=self.start.client_options)
-                    await dictation.prepare(await self.context())
+                    await dictation.prepare(await context)
                 except Exception as e:
                     log.exception("recording %s: preparing failed", self.id)
                     await self.fail(str(e))
@@ -235,9 +238,10 @@ class Session:
                         self.texts.append(text)
                         await self.send(type="text", text=text)
             finally:
-                for t in tasks + ([warming] if warming else []):
+                others = [t for t in (warming, context) if t]
+                for t in tasks + others:
                     t.cancel()
-                for t in tasks + ([warming] if warming else []):
+                for t in tasks + others:
                     with contextlib.suppress(BaseException):
                         await t
 

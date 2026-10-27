@@ -39,7 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. The server starts the llama-server of the selected model when its `llamaServer` is on this Mac (`127.0.0.1` or `localhost`); a model on another computer is only asked. Only the selected model runs, and a llama-server that ended is started again at the next recording. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
+The model registry is stored in the config file. The server starts the llama-server of the selected model when its `llamaServer` is on this Mac (`127.0.0.1` or `localhost`); a model on another computer is only asked. Only the selected model runs, and a llama-server that ended is started again at the next recording. After `server.modelIdleSeconds` without a recording (600 s by default; 0 keeps the model in memory), the server ends the llama-server, and the model stays the selected one. A recording that finds it gone starts it first: the audio keeps coming and is cut into pieces, the context is read, and once the model answers the server sends the text before the audio and then the pieces. The log says how long the model took to load. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 

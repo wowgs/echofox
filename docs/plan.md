@@ -44,7 +44,7 @@ Before the repository opens:
 
 ## Experiments without a chosen answer
 
-- Unloading the model on idle: free memory against the delay of the next dictation.
+- The default of `modelIdleSeconds` (600 s): measure the model's load at a dictation, with the file in macOS's cache and without, to weigh the memory against the delay.
 - Other quantizations and the MLX engine: compatibility, speed and errors.
 - Speculative decoding E2B → E4B and MTP: first check that the engine version supports audio with it.
 - Long tails of a recording: does one more cut help the latency and transliteration?

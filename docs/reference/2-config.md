@@ -40,7 +40,7 @@ This example enables the three built-in adapters and overrides several defaults.
 | `silenceStopSeconds` | The app stops a recording after this many seconds without speech. It must be more than 0. |
 | `adapters` | Adapter enablement (`enabled`) and context settings. See [the chat context](3-context.md). |
 | `languages` | Your changes to a language: `notes`, the lines added to the prompt, and `fillers`, hesitation sounds to remove. `"*"` holds the notes of every language; `{LANGUAGE}` in them is replaced with the language's name, and English speech gets none of them. An empty list turns one off. The defaults are in `server/languages.json`. |
-| `server` | The settings of the server: `maxRecordingSeconds` (1800 by default), `saveRecordings`, `recordings`, `labeled`, `modelsFolder` (the model files, by default `~/Library/Application Support/EchoFox/models`), `metrics`, `host`, `port`. |
+| `server` | The settings of the server: `maxRecordingSeconds` (1800 by default), `modelIdleSeconds` (600 by default: the model leaves memory after that long without a dictation; 0 keeps it), `saveRecordings`, `recordings`, `labeled`, `modelsFolder` (the model files, by default `~/Library/Application Support/EchoFox/models`), `metrics`, `host`, `port`. |
 
 ## Model entries
 

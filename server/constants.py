@@ -36,7 +36,9 @@ TEXT_WAIT_S = 180                       # the client waits this long after the s
 REQUEST_TIMEOUT_S = TEXT_WAIT_S         # one request to llama-server
 STOP_WAIT_S = TEXT_WAIT_S + 20          # a stopping server waits for its running recordings
 CONFIG_CHECK_S = 2                      # how often the server looks at the config file
-MODEL_START_S = 180                     # a llama-server agent has this long to answer /health
+MODEL_START_S = 180                     # a llama-server has this long to answer /health
+MODEL_IDLE_S = 600                      # the model leaves memory after this long without a recording; the config can change it, 0 keeps it
+IDLE_POLL_S = 5                         # how often the server looks whether the model has been idle that long
 MAX_PROMPT = 4000                      # characters of a prompt, the model's or a client's
 MAX_RECORDING_S = 1800                 # the longest recording the server takes, in seconds; the config can change it
 

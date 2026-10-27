@@ -330,6 +330,8 @@ class Models:
         self.active = UNKNOWN
         # The running llama-server and its command; `closing` is set when the server ends
         self.proc, self.argv, self.closing = None, None, threading.Event()
+        # When a recording last asked for a model (get), or was seen running: the idle time counts from here
+        self.used = time.monotonic()
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
         self.recording = asyncio.Lock()
@@ -348,7 +350,8 @@ class Models:
         return name if name in self.entries else None
 
     async def get(self, name):
-        """The model, the only one in memory."""
+        """The model, the only one in memory; loaded first if it left memory."""
+        self.used = time.monotonic()
         await self.activate(name)
         if name not in self.models:
             self.models[name] = self.make(name, self.entries[name])
@@ -367,7 +370,7 @@ class Models:
             return
         self._stop()
         end_stale(urllib.parse.urlparse(entry["llamaServer"]).port or 80)
-        self.proc, self.argv = spawn(argv), argv
+        self.proc, self.argv, self.loading = spawn(argv), argv, time.monotonic()
 
     async def activate(self, name):
         """Makes `name` the only model in memory; None: no model at all. When it already is, starts its llama-server
@@ -382,6 +385,26 @@ class Models:
         if entry is not None and not await asyncio.to_thread(wait_healthy, entry["llamaServer"].rstrip("/"),
                                                              constants.MODEL_START_S, self.closing):
             raise RuntimeError(f"llama-server of {name} at {entry['llamaServer']} does not answer")
+        if getattr(self, "loading", None) is not None:
+            log.info("model %s: loaded in %.1f s", name, time.monotonic() - self.loading)
+            self.loading = None
+
+    async def unload_when_idle(self, seconds):
+        """Ends the llama-server when no recording asked for the model for `seconds()` (the setting
+        modelIdleSeconds; 0: never), after the running recording. The model stays the active one, so the menu's
+        choice does not load it again; the next recording's get() starts its llama-server first."""
+        while True:
+            await asyncio.sleep(constants.IDLE_POLL_S)
+            if self.recording.locked() or self.proc is None or self.proc.poll() is not None:
+                self.used = max(self.used, time.monotonic()) if self.recording.locked() else self.used
+                continue
+            idle = seconds()
+            if not idle or time.monotonic() - self.used < idle:
+                continue
+            async with self.recording:
+                if self.proc is not None and time.monotonic() - self.used >= idle:
+                    await asyncio.to_thread(self._stop)
+                    log.info("model %s: left memory after %.0f s without a recording", self.active, idle)
 
     def close(self):
         """The server ends: its llama-server ends too, and the model leaves memory. A wait for a model that is loading

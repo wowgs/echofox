@@ -50,6 +50,27 @@ class ModelsTest(unittest.IsolatedAsyncioTestCase):
             await models.get("a")
             self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", A)])
 
+    async def test_an_idle_model_leaves_memory_and_the_next_recording_loads_it_first(self):
+        saved = constants.IDLE_POLL_S
+        constants.IDLE_POLL_S = 0.01
+        try:
+            with FakeLlama() as llamas:
+                models = llama.Models({"a": {"llamaServer": A}}, make=StubModel)
+                await models.get("a")
+                idle = asyncio.create_task(models.unload_when_idle(lambda: 0.05))
+                await asyncio.sleep(0.2)
+                self.assertEqual(llamas.calls, [("start", A), ("stop", A)])
+                self.assertEqual(models.active, "a")  # still the chosen one: the menu's choice loads nothing again
+                await models.get("a")  # a recording: the model loads first
+                self.assertEqual(llamas.calls[-1], ("start", A))
+                idle.cancel()
+                never = asyncio.create_task(models.unload_when_idle(lambda: 0))  # 0: it stays
+                await asyncio.sleep(0.1)
+                never.cancel()
+                self.assertEqual(llamas.calls[-1], ("start", A))
+        finally:
+            constants.IDLE_POLL_S = saved
+
     async def test_a_model_on_another_computer_is_only_asked(self):
         with FakeLlama() as llamas:
             await llama.Models({"far": {"llamaServer": "http://ubu.example:8080"}}, make=StubModel).get("far")

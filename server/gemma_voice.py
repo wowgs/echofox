@@ -64,6 +64,7 @@ async def main():
         loop.add_reader(fd, parent_closed)
     watcher = settings.ConfigWatcher(path, models, st, current, stop, follow=not cli.ignore_selection)
     watching = asyncio.create_task(watcher.run())
+    idle = asyncio.create_task(models.unload_when_idle(lambda: st.model_idle_seconds)) if models.manage else None
     async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"],
                      max_size=None) as server:
         log.info("listening on ws://%s:%d, models: %s (default %s), config %s", current["host"], current["port"],
@@ -78,6 +79,8 @@ async def main():
             log.warning("recordings still running after %d s: the server ends anyway", constants.STOP_WAIT_S)
         log.info("the server ends")
     watching.cancel()
+    if idle:
+        idle.cancel()
     await asyncio.to_thread(models.close)
 
 

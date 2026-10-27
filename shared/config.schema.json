@@ -73,7 +73,8 @@
         "labeled": {"type": "string"},
         "modelsFolder": {"type": "string"},
         "metrics": {"type": "string"},
-        "maxRecordingSeconds": {"type": "number"}
+        "maxRecordingSeconds": {"type": "number"},
+        "modelIdleSeconds": {"type": "number", "description": "Without a recording for this long, the model leaves memory; 0 keeps it."}
       }
     }
   }

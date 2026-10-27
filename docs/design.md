@@ -37,7 +37,7 @@ Three processes run:
 
 - **The Mac app.** The interface, the keys, the microphone, Accessibility and insertion. macOS gives the permissions to this process.
 - **The dictation server.** The app's child process. It receives the audio, chooses an adapter, sends requests to the model and saves the results. The protocol is in the [protocol reference](reference/6-protocol.md).
-- **llama-server.** The dictation server's child process, for the chosen model. Only the chosen model is in memory.
+- **llama-server.** The dictation server's child process, for the chosen model. Only the chosen model is in memory, and only while it is used: after `modelIdleSeconds` without a dictation (600 s by default, 0 keeps it) the server ends it. The next dictation records at once; the server reads the conversation and loads the model meanwhile, then sends the text before the audio (prefill), then the pieces of audio that waited.
 
 EchoFox is one app: the processes run while it runs. The app starts the server when it opens. Quit ends the server, and the server ends its llama-server, so the model leaves memory. If the app ends in any other way, the server sees its standard input close and ends too. If the server ends while the app runs, the app starts it again: at once after a server that ran a while, and with a wait that doubles up to 60 seconds after one that ended at its start. Nothing starts at login. A llama-server that a killed server left behind is stopped by the next server before it starts its own. Older versions ran the server and the model as launchd agents without the app; the app removes those agents at its start.
 
