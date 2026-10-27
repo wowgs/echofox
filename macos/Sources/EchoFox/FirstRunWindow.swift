@@ -1,7 +1,9 @@
-// The window of the first start (docs/reference/1-server.md, "The catalog and the downloads"): when no variant of the menu's model is
-// downloaded, it asks which one to download, shows the download, and then names the variant in the config. The
+// The window of the first start (docs/reference/4-app.md, "First start"): when no variant of the menu's model is
+// downloaded, it asks for the language, which variant to download and which adapters may read the conversation,
+// shows the download, and then names the variant in the config. An adapter's switch writes the config at once. The
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
-// only place of the full character in the app (macos/art/README.md).
+// only place of the full character in the app (macos/art/README.md). `--render-first-run` draws the window into a PNG
+// from a server info in a file, for checking its look without a server (main.swift).
 import AppKit
 import Combine
 import EchoFoxCore
@@ -31,7 +33,8 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         let languages = info?.languages ?? []
         let model = FirstRunModel(name: name, catalog: catalog, title: m.title ?? name, variants: variants,
                                   inForce: m.variant, languages: languages,
-                                  language: info?.proposedLanguage(config.language) ?? "en", store: store,
+                                  language: info?.proposedLanguage(config.language) ?? "en",
+                                  adapters: info?.adapters ?? [], enabled: config.adapters, store: store,
                                   downloads: downloads)
         model.done = { [weak self] in
             self?.askServer()
@@ -39,6 +42,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         }
         self.model = model
         let view = NSHostingView(rootView: FirstRunView(model: model))
+        view.layoutSubtreeIfNeeded()
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
         w.title = "EchoFox"
@@ -55,11 +59,38 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         window = nil
         model = nil
     }
+
+    /// Draws the window's content, as the first start shows it for this server info, into a PNG at the screen's
+    /// scale, in the light or the dark appearance; nothing is written to the config.
+    static func render(info file: String, to out: String, dark: Bool) {
+        guard let data = FileManager.default.contents(atPath: file), let info = try? ServerInfo.decode(data),
+              let m = info.model, let variants = m.variants, let name = m.name, let catalog = m.catalog else {
+            FileHandle.standardError.write(Data("render: no server info with a model in \(file)\n".utf8))
+            exit(1)
+        }
+        let model = FirstRunModel(name: name, catalog: catalog, title: m.title ?? name, variants: variants,
+                                  inForce: m.variant, languages: info.languages, language: "ru",
+                                  adapters: info.adapters, enabled: [:], store: nil, downloads: ModelDownloads())
+        // The window's own background: an offscreen view draws on nothing
+        let view = NSHostingView(rootView: FirstRunView(model: model).background(Color(nsColor: .windowBackgroundColor)))
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled],
+                         backing: .buffered, defer: false)
+        w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        w.contentView = view
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+        exit(0)
+    }
 }
 
 final class FirstRunModel: ObservableObject {
     let name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?
     let languages: [ServerInfo.Language]
+    /// The adapters the server has, and which of them the config turns on.
+    let adapters: [ServerInfo.Adapter]
+    @Published var enabled: [String: Bool]
     @Published var choice: String
     /// The speaker's main language, written to the config when the download starts.
     @Published var language: String
@@ -72,7 +103,8 @@ final class FirstRunModel: ObservableObject {
     private var downloadsChanged: AnyCancellable?
 
     init(name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?,
-         languages: [ServerInfo.Language], language: String, store: ConfigStore?, downloads: ModelDownloads) {
+         languages: [ServerInfo.Language], language: String, adapters: [ServerInfo.Adapter], enabled: [String: Bool],
+         store: ConfigStore?, downloads: ModelDownloads) {
         self.store = store
         self.downloads = downloads
         self.name = name
@@ -82,6 +114,8 @@ final class FirstRunModel: ObservableObject {
         self.inForce = inForce
         self.languages = languages
         self.language = language
+        self.adapters = adapters
+        self.enabled = enabled
         choice = ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
         downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         downloads.onEnd { [weak self] variant, job, isDownload in
@@ -94,6 +128,12 @@ final class FirstRunModel: ObservableObject {
         }
     }
 
+    /// An adapter's switch: the config changes at once, as in Settings.
+    func setAdapter(_ name: String, _ on: Bool) {
+        enabled[name] = on
+        store?.set(["adapters", name, "enabled"], to: on, "first start: adapter \(name) \(on ? "on" : "off")")
+    }
+
     func download() {
         store?.set(["language"], to: language, "first start: language \(language)")
         downloads.download(catalog: catalog, variant: choice, url: (store?.config ?? Config()).serverURL)
@@ -104,57 +144,71 @@ struct FirstRunView: View {
     @ObservedObject var model: FirstRunModel
     /// The fox, from the app's Resources (build-app.sh); without it, the window shows the text alone.
     private let fox = Bundle.main.image(forResource: "echofox-welcome")
+    private var busy: Bool { model.job != nil && model.job?.error == nil }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .center, spacing: 0) {
             if let fox {
                 Image(nsImage: fox).resizable().scaledToFit()
-                    .frame(width: 160)
-                    .padding(.leading, 20)
+                    .frame(width: 170)
+                    .padding(.leading, 24)
                     .accessibilityHidden(true)  // a picture only; the text says what the window is for
             }
-            choice.frame(width: 520)
+            content.frame(width: 500)
         }
-        .frame(height: 400)
     }
 
-    private var choice: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Download the speech model").font(.title2.bold())
-            Text("EchoFox turns your speech into text with \(model.title), a model that runs on this Mac. The audio "
-                 + "never leaves it. Choose the language you speak most and the model to download.")
-                .fixedSize(horizontal: false, vertical: true)
-            Picker("Language", selection: $model.language) {
-                ForEach(model.languages, id: \.code) { l in Text(l.name).tag(l.code) }
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Set up EchoFox").font(.title2.bold())
+                Text("\(model.title) runs on this Mac. Nothing leaves it.").foregroundStyle(.secondary)
             }
-            .fixedSize()
-            .disabled(model.job != nil && model.job?.error == nil)
-            Picker("", selection: $model.choice) {
-                ForEach(model.variants, id: \.id) { v in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(model.title), " + v.name + (v.id == ServerInfo.Variant.recommended(model.variants, memory: ProcessInfo.processInfo.physicalMemory)
-                                       ? ", recommended for this Mac" : ""))
-                        Text("Download \(gigabytes(v.bytes))" + (v.memoryBytes.map { ", uses about \(gigabytes($0)) of memory" } ?? ""))
-                            .font(.caption).foregroundStyle(.secondary)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 14) {
+                GridRow {
+                    label("Language")
+                    Picker("Language", selection: $model.language) {
+                        ForEach(model.languages, id: \.code) { l in Text(l.name).tag(l.code) }
                     }
-                    .tag(v.id)
+                    .labelsHidden().fixedSize().disabled(busy)
+                }
+                GridRow {
+                    label("Model")
+                    Picker("Model", selection: $model.choice) {
+                        ForEach(model.variants, id: \.id) { v in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(v.name + (v.id == recommended ? "  ·  recommended for this Mac" : ""))
+                                Text("\(gigabytes(v.bytes)) download" + (v.memoryBytes.map { ", about \(gigabytes($0)) of memory" } ?? ""))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.bottom, 4)
+                            .tag(v.id)
+                        }
+                    }
+                    .pickerStyle(.radioGroup).labelsHidden().disabled(busy)
+                }
+                if !model.adapters.isEmpty {
+                    GridRow {
+                        label("Conversation")
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(model.adapters, id: \.name) { a in adapterRow(a) }
+                        }
+                    }
                 }
             }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
-            .disabled(model.job != nil && model.job?.error == nil)
             if let job = model.job {
                 if let e = job.error {
                     Text(e).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ProgressView(value: job.total > 0 ? job.bytes / job.total : 0)
-                    Text(job.status).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    VStack(alignment: .leading, spacing: 4) {
+                        ProgressView(value: job.total > 0 ? job.bytes / job.total : 0)
+                        Text(job.status).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
                 }
             }
-            Spacer()
             HStack {
-                Text("A smaller model uses less memory and is faster. You can change it later in Settings.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("You can change all of this later in Settings.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if let job = model.job, job.error == nil, !job.finished {
                     Button("Cancel") { job.cancel() }
@@ -164,6 +218,28 @@ struct FirstRunView: View {
                 }
             }
         }
-        .padding(20)
+        .padding(24)
+    }
+
+    private var recommended: String {
+        ServerInfo.Variant.recommended(model.variants, memory: ProcessInfo.processInfo.physicalMemory)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+    }
+
+    /// An adapter: the icon of its app, its name, its switch; what it reads is in the tooltip.
+    private func adapterRow(_ a: ServerInfo.Adapter) -> some View {
+        HStack(spacing: 8) {
+            AppIcon(bundleIds: a.apps)
+            Text(a.title ?? a.name.capitalized)
+            Spacer(minLength: 12)
+            Toggle(a.title ?? a.name, isOn: Binding(get: { model.enabled[a.name] == true },
+                                                     set: { model.setAdapter(a.name, $0) }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+        }
+        .frame(width: 240)
+        .help(a.description ?? "")
     }
 }

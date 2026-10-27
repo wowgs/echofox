@@ -46,7 +46,7 @@ Memory figures are approximate. A systematic comparison of recognition quality a
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications. If you open it from the dmg, it asks you to move it to Applications and quits: its server must not depend on a disk image that goes away.
 
-If no model is downloaded, a window asks for the language you speak most (it proposes macOS's language, or English) and the variant of Gemma 4 E4B to download, and recommends one for your Mac's memory. The language goes into the config when the download starts; Settings can change both later.
+If no model is downloaded, one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once; the language goes into the config when the download starts. Settings can change all of it later.
 
 Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
 
