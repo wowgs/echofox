@@ -1,6 +1,6 @@
 <h1><img src="macos/art/echofox-master.png" alt="EchoFox fox wearing a headset" width="72" align="absmiddle">&nbsp;EchoFox</h1>
 
-**Speak your language. Keep your English terms.**
+**Speak your language. Keep English terms.**
 
 [Download for Mac](https://github.com/wowgs/echofox/releases) · [User guide](docs/reference/4-app.md) · [Docs](docs/README.md)
 
@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/b573130d-cc80-477f-b3e1-12d9b6582cc6
 
 *«Посмотри этот pull request и проверь, почему падает build».* Sound familiar?
 
-| 💬 Conversation first | 🌍 Your language | ✦ Your English terms |
+| 💬 Conversation first | 🌍 Your language | ✦ English terms |
 | :--- | :--- | :--- |
 | Recent messages come **before your audio**, so the model has context before it transcribes. | Your chosen language is part of the prompt. The conversation gives the model more examples of how you speak. | Names, tools, and identifiers get a **separate term list**, helping the model recognize the words you use. |
 
