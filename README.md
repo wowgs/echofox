@@ -8,7 +8,7 @@ Private, on-device dictation for Mac, built for conversations where your languag
 
 **Offline after a one-time model download · No account · No cloud · No telemetry**
 
-<p align="center"><a href="https://youtu.be/J3Wz1c_nNis"><img src="img/demo-cover.jpg" width="900" alt="EchoFox demo on YouTube: one dictation into Claude Code, 31 seconds, sound on"></a></p>
+<p align="center"><a href="https://youtu.be/Cb5VOnisPvM"><img src="img/demo-cover.jpg" width="900" alt="EchoFox demo on YouTube: one dictation into Claude Code, 31 seconds, sound on"></a></p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/how-it-works-dark.svg">
