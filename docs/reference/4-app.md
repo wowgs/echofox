@@ -46,13 +46,15 @@ Memory figures are approximate. A systematic comparison of recognition quality a
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications. If you open it from the dmg, it asks you to move it to Applications and quits: its server must not depend on a disk image that goes away.
 
-If no model is downloaded, one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once; the language goes into the config when the download starts. Settings can change all of it later.
+At the first start one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, the two permissions, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once. **Download** fetches the model; the window stays open, and once the model is on the disk the button becomes **Done**, which writes the language and the variant into the config and ends the setup. Settings can change all of it later.
+
+The window opens at each start until you click **Done**, and again whenever no variant of the model is on the disk; a model kept from an earlier install does not skip it (the setup is a preference of the app, `setupDone`, which an uninstall removes). An update from a version before this keeps its setup: a config and a downloaded model count as done.
 
 EchoFox needs the **Microphone** and **Accessibility** permissions; Accessibility supports the dictation keys, conversation snapshots, and text insertion. The app asks for neither by itself: the first start's window shows both, with **Allow** next to each that is missing, and a click brings the system's prompt. Missing permissions also appear in the menu; clicking one opens its page in System Settings. A dictation without the Microphone permission asks for it.
 
 While one of its windows is open (the first start, Settings, labeling), also minimized, EchoFox is in the Dock and in ⌘Tab, with its own menu bar; a click on its Dock icon brings a minimized window back. With no window open, it lives only in the menu bar.
 
-If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.
+The model's row shows each variant's download size and estimated memory use, and recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB; a variant already on the disk says so. While the download runs, the window shows its speed and the time left.
 
 The download goes on if you close the window. While it runs, Settings shows the variant as downloading, without a Download button.
 

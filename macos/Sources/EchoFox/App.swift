@@ -29,6 +29,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
         if refuseMisplaced() { return }
+        firstRun.configExisted = FileManager.default.fileExists(atPath: Config.url.path)  // before anything writes it
         MainMenu.install(settings: #selector(openSettingsFromMenu), target: self)
         MainMenu.watch()
         startServer()

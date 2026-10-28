@@ -1,7 +1,8 @@
-// The window of the first start (docs/reference/4-app.md, "First start"): when no variant of the menu's model is
-// downloaded, it asks for the language, which variant to download and which adapters may read the conversation,
+// The window of the first start (docs/reference/4-app.md, "The first start"): until the setup is done (Done, which sets
+// setupDone in the app's preferences) or while no variant of the menu's model is downloaded, it asks for the language, which variant to download and which adapters may read the conversation,
 // shows the two permissions with a button each (the app asks for none by itself), shows the download, and then names
-// the variant in the config. An adapter's switch writes the config at once. The
+// the variant in the config; it stays open after the download, until Done. An adapter's switch writes the config at
+// once. The
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
 // only place of the full character in the app (macos/art/README.md). `--render-first-run` draws the window into a PNG
 // from a server info in a file, for checking its look without a server (main.swift).
@@ -34,12 +35,25 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     /// The variant in use was removed: the window may open again (showIfNeeded).
     func allowAgain() { shown = false }
 
-    /// Opens the window once in a run of the app, when the server's info says that no variant of the menu's model is
-    /// downloaded or downloading.
+    /// The app's preference that the first start's window was finished with Done; absent before its first start.
+    static let setupDone = "setupDone"
+    /// Whether the config file was there when the app started: then an earlier version set EchoFox up.
+    var configExisted = false
+
+    /// Opens the window once in a run of the app, when the setup is not done or the server's info says that no variant
+    /// of the menu's model is downloaded or downloading. An earlier version's setup (no preference yet, but a config
+    /// and a downloaded model) counts as done.
     func showIfNeeded(_ info: ServerInfo?) {
         guard !shown, let m = info?.model, let variants = m.variants, !variants.isEmpty,
-              !variants.contains(where: { $0.downloaded || $0.downloading == true }),
               let name = m.name, let catalog = m.catalog else { return }
+        let prefs = UserDefaults.standard
+        let hasModel = variants.contains(where: { $0.downloaded || $0.downloading == true })
+        if prefs.object(forKey: Self.setupDone) == nil && configExisted && hasModel {
+            prefs.set(true, forKey: Self.setupDone)
+            Log.write("first start: set up by an earlier version (a config and a downloaded model)")
+        }
+        guard !prefs.bool(forKey: Self.setupDone) || !hasModel else { return }
+        prefs.set(false, forKey: Self.setupDone)
         shown = true
         let config = store?.config ?? Config()
         let languages = info?.languages ?? []
@@ -52,6 +66,8 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         model.allowMicrophone = { [weak self] in self?.allowMicrophone() }
         model.allowAccessibility = { [weak self] in self?.allowAccessibility() }
         model.done = { [weak self] in
+            UserDefaults.standard.set(true, forKey: Self.setupDone)
+            Log.write("first start: done")
             self?.askServer()
             self?.window?.close()
         }
@@ -106,6 +122,8 @@ final class FirstRunModel: ObservableObject {
     /// The adapters the server has, and which of them the config turns on.
     let adapters: [ServerInfo.Adapter]
     @Published var enabled: [String: Bool]
+    /// The variants whose files are on the disk: choosing one makes the window's button Done.
+    @Published var downloaded: Set<String>
     @Published var microphone = false
     @Published var accessibility = false
     var allowMicrophone: () -> Void = {}
@@ -135,15 +153,13 @@ final class FirstRunModel: ObservableObject {
         self.language = language
         self.adapters = adapters
         self.enabled = enabled
-        choice = ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
+        downloaded = Set(variants.filter(\.downloaded).map(\.id))
+        choice = variants.first(where: \.downloaded)?.id ?? ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
         downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         downloads.onEnd { [weak self] variant, job, isDownload in
             guard let self, isDownload, variant == self.choice, job.error == nil else { return }
-            if self.choice != self.inForce {  // the catalog's default needs no line in the config
-                self.store?.set(["models", self.name, "variant"], to: self.choice,
-                                "first start: \(self.name) variant \(self.choice)")
-            }
-            self.done()
+            self.downloaded.insert(variant)
+            self.useChoice()  // the window stays: the permissions and the adapters may still be open
         }
     }
 
@@ -156,6 +172,20 @@ final class FirstRunModel: ObservableObject {
     func download() {
         store?.set(["language"], to: language, "first start: language \(language)")
         downloads.download(catalog: catalog, variant: choice, url: (store?.config ?? Config()).serverURL)
+    }
+
+    /// The chosen variant, downloaded, is the menu model's (the catalog's default needs no line in the config).
+    private func useChoice() {
+        if choice != inForce {
+            store?.set(["models", name, "variant"], to: choice, "first start: \(name) variant \(choice)")
+        }
+    }
+
+    /// Done: the language and the chosen variant go into the config, and the setup is done.
+    func finish() {
+        store?.set(["language"], to: language, "first start: language \(language)")
+        useChoice()
+        done()
     }
 }
 
@@ -196,7 +226,8 @@ struct FirstRunView: View {
                     Picker("Model", selection: $model.choice) {
                         ForEach(model.variants, id: \.id) { v in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(v.name + (v.id == recommended ? "  ·  recommended for this Mac" : ""))
+                                Text(v.name + (v.id == recommended ? "  ·  recommended for this Mac" : "")
+                                     + (model.downloaded.contains(v.id) ? "  ·  downloaded" : ""))
                                 Text("\(gigabytes(v.bytes)) download" + (v.memoryBytes.map { ", about \(gigabytes($0)) of memory" } ?? ""))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -237,7 +268,9 @@ struct FirstRunView: View {
                 Text("You can change all of this later in Settings.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if let job = model.job, job.error == nil, !job.finished {
+                if model.downloaded.contains(model.choice) {
+                    Button("Done") { model.finish() }.keyboardShortcut(.defaultAction)
+                } else if let job = model.job, job.error == nil, !job.finished {
                     Button("Cancel") { job.cancel() }
                 } else {
                     Button(model.job?.error == nil ? "Download" : "Try Again") { model.download() }
