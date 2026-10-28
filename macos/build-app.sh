@@ -66,16 +66,15 @@ DEVELOPER_DIR=$xcode xcrun actool app/EchoFox.icon --compile "$app/Contents/Reso
 rm -f "$partial"
 [ -f "$app/Contents/Resources/Assets.car" ] || { echo "actool made no Assets.car" >&2; exit 1; }
 
+# Python, llama-server and dmgbuild, from the cache (cache-deps.sh makes what is missing)
+./cache-deps.sh
 cache=.cache
 res=$app/Contents/Resources
-mkdir -p "$cache" "$res"
+mkdir -p "$res"
 
-# Python, checked against its pinned SHA-256, with the server's packages: wheels only, each checked against its
-# SHA-256 in requirements.txt, as nothing else may run while the signing key is in the keychain
-tarball=$cache/$PYTHON_FILE
-[ -f "$tarball" ] || { curl -fL --retry 3 -o "$tarball.tmp" "$PYTHON_URL" && mv "$tarball.tmp" "$tarball"; }
-echo "$PYTHON_SHA256  $tarball" | shasum -a 256 -c - >/dev/null
-tar -xzf "$tarball" -C "$res"
+# Python, with the server's packages: wheels only, each checked against its SHA-256 in requirements.txt, as nothing
+# else may run while the signing key is in the keychain
+tar -xzf "$cache/$PYTHON_FILE" -C "$res"
 "$res/python/bin/python3" -m pip install --quiet --no-cache-dir --disable-pip-version-check \
   --require-hashes --only-binary :all: -r ../server/requirements.txt
 # pip, which comes with this Python, only installs the packages: the app never installs anything, so pip leaves,
@@ -96,22 +95,8 @@ rsync -a --exclude '__pycache__' --exclude '.venv' --exclude 'test_*.py' --exclu
 # that a copy may change.
 "$res/python/bin/python3" -m compileall -q -j 0 --invalidation-mode checked-hash "$res/python/lib" "$res/server"
 
-# llama-server from its pinned commit, with Metal, as one binary, for the oldest macOS
-# (the build's flags are kept beside it, so that other flags build it again). No HTTPS (LLAMA_OPENSSL): it serves
-# 127.0.0.1 only, and OpenSSL would come from Homebrew, not from macOS.
+# llama-server from its pinned commit (cache-deps.sh)
 src=$cache/llama.cpp-$LLAMA_COMMIT-macos$MACOS_MIN
-flags="-DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOS_MIN \
--DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF"
-if [ ! -x "$src/build/bin/llama-server" ] || [ "$(cat "$src/build/echofox-flags" 2>/dev/null)" != "$flags" ]; then
-  rm -rf "$src"
-  git init -q "$src"
-  git -C "$src" fetch -q --depth 1 "$LLAMA_REPO" "$LLAMA_COMMIT"
-  git -C "$src" checkout -q FETCH_HEAD
-  # shellcheck disable=SC2086  # the flags, split into arguments on purpose
-  cmake -S "$src" -B "$src/build" $flags >/dev/null
-  cmake --build "$src/build" --target llama-server -j >/dev/null
-  echo "$flags" > "$src/build/echofox-flags"
-fi
 mkdir -p "$res/llama"
 cp "$src/build/bin/llama-server" "$res/llama/"
 
@@ -152,17 +137,9 @@ codesign -dr - "$app" 2>&1 | tail -1
 echo "version $version ($build), macOS $MACOS_MIN or later"
 
 if $dmg; then
-  # The installer window (dmg/settings.py): the app, a link to Applications and the background, by dmgbuild, which
-  # runs from its own environment, pinned with hashes (dmg/requirements.txt; the environment keeps the SHA-256 of the
-  # file it was made from, so that a change of the file makes it again)
+  # The installer window (dmg/settings.py): the app, a link to Applications and the background, by dmgbuild, from its
+  # own environment in the cache (cache-deps.sh)
   tools=.cache/dmgtools
-  wanted=$(shasum -a 256 dmg/requirements.txt | cut -d' ' -f1)
-  if [ "$(cat "$tools/requirements.sha256" 2>/dev/null)" != "$wanted" ] || ! "$tools/bin/python" -c "import dmgbuild" 2>/dev/null; then
-    rm -rf "$tools"
-    python3 -m venv "$tools"
-    "$tools/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary :all: -r dmg/requirements.txt
-    echo "$wanted" > "$tools/requirements.sha256"
-  fi
   rm -f build/EchoFox.dmg
   "$tools/bin/dmgbuild" -s dmg/settings.py -D app="$app" -D icon="$app/Contents/Resources/EchoFox.icns" \
     -D background=dmg/background.tiff EchoFox build/EchoFox.dmg >/dev/null

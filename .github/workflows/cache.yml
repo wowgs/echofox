@@ -1,0 +1,36 @@
+# The cache of the pinned Python, llama-server and dmgbuild (macos/cache-deps.sh) on the default branch, where the
+# release's runs on tags find it: a run can restore a cache of its own ref or of the default branch, and a tag's own
+# cache is never found again by the next tag, so without this each release built llama.cpp from its source. It runs
+# when what decides the cache changes, by the button, and once a week, as GitHub removes a cache that no run used for
+# seven days. It needs no secret and signs nothing.
+name: Cache
+on:
+  push:
+    branches: [master]
+    paths:
+      - macos/pins.sh
+      - macos/cache-deps.sh
+      - macos/dmg/requirements.txt
+      - .github/workflows/cache.yml
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cache:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The cache of the pinned Python, llama-server and dmgbuild
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: macos/.cache
+          # The same key as release.yml
+          key: bundle-${{ hashFiles('macos/pins.sh', 'macos/cache-deps.sh', 'macos/dmg/requirements.txt') }}
+      - name: What is missing of it, made
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: macos/cache-deps.sh

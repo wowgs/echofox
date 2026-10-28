@@ -43,7 +43,8 @@ jobs:
         with:
           path: macos/.cache
           # everything that decides what the cache holds; a cache is never saved again under the same key
-          key: bundle-${{ hashFiles('macos/pins.sh', 'macos/build-app.sh', 'macos/dmg/requirements.txt') }}
+          # The same key as cache.yml, which fills this cache on the default branch, where a tag's run finds it
+          key: bundle-${{ hashFiles('macos/pins.sh', 'macos/cache-deps.sh', 'macos/dmg/requirements.txt') }}
       - name: The Developer ID certificate, in a keychain of this run
         env:
           P12: ${{ secrets.DEVELOPER_ID_P12 }}
