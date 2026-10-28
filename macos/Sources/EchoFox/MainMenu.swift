@@ -36,11 +36,10 @@ enum MainMenu {
         NSApp.windowsMenu = window
     }
 
-    /// Whether one of the app's windows is open: a titled window, shown or minimized (not a panel, such as an alert).
+    /// Whether one of the app's windows is open: a titled window, shown or minimized, Sparkle's and alerts included (the
+    /// menu bar's menus have no title bar).
     static var hasWindow: Bool {
-        NSApp.windows.contains { w in
-            w.styleMask.contains(.titled) && !(w is NSPanel) && (w.isVisible || w.isMiniaturized)
-        }
+        NSApp.windows.contains { w in w.styleMask.contains(.titled) && (w.isVisible || w.isMiniaturized) }
     }
 
     /// Shows one of the app's windows: the app becomes regular first, then the window comes forward and the app is
@@ -58,10 +57,24 @@ enum MainMenu {
         }
     }
 
-    /// In the Dock while a window is open, a menu bar app otherwise; called after each window change.
+    /// The last window change: a later one cancels a pending return to the menu bar.
+    private static var change = 0
+
+    /// In the Dock while a window is open, a menu bar app otherwise; called after each window change. The return to the
+    /// menu bar waits half a second for a window that follows the one that closed (Install in Sparkle's window closes
+    /// it and opens the progress window): leaving at once took the focus away, and the progress window opened behind
+    /// the other apps.
     static func follow() {
-        let want: NSApplication.ActivationPolicy = hasWindow ? .regular : .accessory
-        if NSApp.activationPolicy() != want { NSApp.setActivationPolicy(want) }
+        change += 1
+        if hasWindow {
+            if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+            return
+        }
+        let mine = change
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard mine == change, !hasWindow, NSApp.activationPolicy() != .accessory else { return }
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     /// Watches the windows' changes: one that opens, closes, minimizes or comes back.
