@@ -1,6 +1,7 @@
 // The window of the first start (docs/reference/4-app.md, "First start"): when no variant of the menu's model is
 // downloaded, it asks for the language, which variant to download and which adapters may read the conversation,
-// shows the download, and then names the variant in the config. An adapter's switch writes the config at once. The
+// shows the two permissions with a button each (the app asks for none by itself), shows the download, and then names
+// the variant in the config. An adapter's switch writes the config at once. The
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
 // only place of the full character in the app (macos/art/README.md). `--render-first-run` draws the window into a PNG
 // from a server info in a file, for checking its look without a server (main.swift).
@@ -18,6 +19,17 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     var store: ConfigStore?
     /// The app's model downloads, which the settings window shares.
     var downloads = ModelDownloads()
+    /// The permissions now (microphone, Accessibility), and the buttons' actions: the system's prompt.
+    var permissions: () -> (microphone: Bool, accessibility: Bool) = { (false, false) }
+    var allowMicrophone: () -> Void = {}
+    var allowAccessibility: () -> Void = {}
+
+    /// A permission changed: the window shows it.
+    func permissionsChanged() {
+        let p = permissions()
+        model?.microphone = p.microphone
+        model?.accessibility = p.accessibility
+    }
 
     /// The variant in use was removed: the window may open again (showIfNeeded).
     func allowAgain() { shown = false }
@@ -36,6 +48,9 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
                                   language: info?.proposedLanguage(config.language) ?? "en",
                                   adapters: info?.adapters ?? [], enabled: config.adapters, store: store,
                                   downloads: downloads)
+        (model.microphone, model.accessibility) = permissions()
+        model.allowMicrophone = { [weak self] in self?.allowMicrophone() }
+        model.allowAccessibility = { [weak self] in self?.allowAccessibility() }
         model.done = { [weak self] in
             self?.askServer()
             self?.window?.close()
@@ -91,6 +106,10 @@ final class FirstRunModel: ObservableObject {
     /// The adapters the server has, and which of them the config turns on.
     let adapters: [ServerInfo.Adapter]
     @Published var enabled: [String: Bool]
+    @Published var microphone = false
+    @Published var accessibility = false
+    var allowMicrophone: () -> Void = {}
+    var allowAccessibility: () -> Void = {}
     @Published var choice: String
     /// The speaker's main language, written to the config when the download starts.
     @Published var language: String
@@ -187,6 +206,14 @@ struct FirstRunView: View {
                     }
                     .pickerStyle(.radioGroup).labelsHidden().disabled(busy)
                 }
+                GridRow {
+                    label("Permissions")
+                    VStack(alignment: .leading, spacing: 10) {
+                        permissionRow("mic", "Microphone", granted: model.microphone, allow: model.allowMicrophone)
+                        permissionRow("accessibility", "Accessibility", granted: model.accessibility,
+                                      allow: model.allowAccessibility)
+                    }
+                }
                 if !model.adapters.isEmpty {
                     GridRow {
                         label("Conversation")
@@ -227,6 +254,22 @@ struct FirstRunView: View {
 
     private func label(_ text: String) -> some View {
         Text(text).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+    }
+
+    /// A permission: its symbol, its name, and Allow (the system's prompt) or a check mark.
+    private func permissionRow(_ symbol: String, _ name: String, granted: Bool, allow: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).frame(width: 18)
+            Text(name)
+            Spacer(minLength: 12)
+            if granted {
+                Label("Allowed", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
+                    .foregroundStyle(.green).help("Allowed")
+            } else {
+                Button("Allow", action: allow).controlSize(.small)
+            }
+        }
+        .frame(width: 240)
     }
 
     /// An adapter: the icon of its app, its name, its switch; what it reads is in the tooltip.

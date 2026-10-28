@@ -48,7 +48,9 @@ Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/rele
 
 If no model is downloaded, one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once; the language goes into the config when the download starts. Settings can change all of it later.
 
-Grant **Microphone** and **Accessibility** permissions in macOS. Accessibility supports the dictation keys, conversation snapshots, and text insertion. Missing permissions appear in the menu; clicking one opens its page in System Settings.
+EchoFox needs the **Microphone** and **Accessibility** permissions; Accessibility supports the dictation keys, conversation snapshots, and text insertion. The app asks for neither by itself: the first start's window shows both, with **Allow** next to each that is missing, and a click brings the system's prompt. Missing permissions also appear in the menu; clicking one opens its page in System Settings. A dictation without the Microphone permission asks for it.
+
+While one of its windows is open (the first start, Settings, labeling), also minimized, EchoFox is in the Dock and in ⌘Tab, with its own menu bar; a click on its Dock icon brings a minimized window back. With no window open, it lives only in the menu bar.
 
 If no model variant is downloaded, a setup window shows the download sizes and estimated memory use. It recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB. Choose a variant and click **Download**. The window shows the download's speed and the time left.
 

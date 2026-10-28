@@ -23,7 +23,7 @@ protocol SettingsActions: AnyObject {
     func setInputVolume(_ value: Float)
     func openLabeling()
     func openLog()
-    /// Uninstall EchoFox…: asks, then removes the models, the agents, the app's files and the app (Uninstaller).
+    /// Uninstall EchoFox…: asks, then removes the models, the app's files and the app (Uninstaller).
     func uninstall()
 }
 

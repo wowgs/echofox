@@ -1,5 +1,5 @@
 // "Uninstall EchoFox…" (docs/reference/4-app.md, "Uninstall"): after a confirmation, the dictation server removes the
-// downloaded models (it knows their files), then the agents stop and go, the app's folders, caches, logs and settings
+// downloaded models (it knows their files), then the app's folders, caches, logs and settings
 // go (Uninstall.items), the recordings and labels go to the Trash if asked, the app goes to the Trash and quits. macOS
 // keeps the Microphone and Accessibility permissions; the confirmation says where to remove them.
 import AppKit

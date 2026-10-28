@@ -29,6 +29,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
         if refuseMisplaced() { return }
+        MainMenu.install(settings: #selector(openSettingsFromMenu), target: self)
+        MainMenu.watch()
         startServer()
         store.onError = { [weak self] e in
             self?.lastError = e
@@ -39,6 +41,11 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         store.start()
         firstRun.store = store
         firstRun.downloads = downloads
+        firstRun.permissions = { [unowned self] in
+            (self.permissions.microphone == .authorized, self.permissions.accessibility)
+        }
+        firstRun.allowMicrophone = { [weak self] in self?.allowMicrophone() }
+        firstRun.allowAccessibility = { [weak self] in self?.allowAccessibility() }
         settings.downloads = downloads
         downloads.askServer = { [weak self] in self?.askServer() }
         menu.state = { [unowned self] in self.state() }
@@ -69,6 +76,14 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         }
         menu.update()
     }
+
+    /// A click on the Dock icon (shown while a window is open, MainMenu): a minimized window comes back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        for w in NSApp.windows where w.isMiniaturized { w.deminiaturize(nil) }
+        return true
+    }
+
+    @objc private func openSettingsFromMenu() { openSettings() }
 
     /// The server ends with the app, and its llama-server with it: the model leaves memory.
     func applicationWillTerminate(_ notification: Notification) {
@@ -101,6 +116,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         } else {
             key.stop()  // the monitors would stay silent anyway
         }
+        firstRun.permissionsChanged()
         menu.update()
     }
 

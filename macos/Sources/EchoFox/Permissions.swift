@@ -1,9 +1,8 @@
-// The two permissions the app needs: Accessibility (the hotkey, the focus, the insertion) and the Microphone.
-// One system prompt at a time, Accessibility first. The Accessibility prompt is an ordinary window: any window clicked
-// goes over it (macOS 27.0.1, 2026-10-15). Two prompts at once showed on top of each other, and after the Microphone
-// one was answered, the Accessibility one stayed open under the other windows. So the Microphone is asked once
-// Accessibility is granted, or when the speaker taps the hotkey's menu item without it. The app keeps looking: a
-// permission taken away in System Settings is noticed, and one given again too.
+// The two permissions the app needs: Accessibility (the hotkey, the focus, the insertion) and the Microphone. The app
+// asks for neither at its start: the first start's window and the menu show what is missing, and a click there brings
+// the system's prompt, one at a time (two prompts at once showed on top of each other, and the Accessibility one, an
+// ordinary window, stayed under the others; macOS 27.0.1, 2026-10-15). A dictation without the Microphone asks for it.
+// The app keeps looking: a permission taken away in System Settings is noticed, and one given again too.
 import AppKit
 import AVFoundation
 import EchoFoxCore
@@ -16,18 +15,20 @@ final class Permissions {
     var microphone: AVAuthorizationStatus { AVCaptureDevice.authorizationStatus(for: .audio) }
 
     func start() {
-        askAccessibility()
         timer = Timer.scheduledTimer(withTimeInterval: Tuning.permissionPollSeconds, repeats: true) { [weak self] _ in
             self?.check()
         }
     }
 
+    private lazy var lastMicrophone = microphone
+
     private func check() {
-        let now = AXIsProcessTrusted()
-        guard now != accessibility else { return }
+        let now = AXIsProcessTrusted(), mic = microphone
+        guard now != accessibility || mic != lastMicrophone else { return }
+        if now != accessibility { Log.write("Accessibility permission \(now ? "granted" : "taken away")") }
+        if mic != lastMicrophone { Log.write("microphone permission: \(mic == .authorized ? "granted" : "not granted")") }
         accessibility = now
-        Log.write("Accessibility permission \(now ? "granted" : "taken away")")
-        if now { askMicrophone() }
+        lastMicrophone = mic
         onChange()
     }
 
@@ -36,7 +37,6 @@ final class Permissions {
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         accessibility = AXIsProcessTrustedWithOptions(prompt)
         Log.write(accessibility ? "Accessibility permission granted" : "asked for the Accessibility permission")
-        if accessibility { askMicrophone() }
         onChange()
     }
 
