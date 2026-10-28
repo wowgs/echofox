@@ -5,7 +5,7 @@
 // once. The
 // dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
 // only place of the full character in the app (macos/art/README.md). `--render-first-run` draws the window into a PNG
-// from a server info in a file, for checking its look without a server (main.swift).
+// from a server info in a file, for checking its look without a server (Snapshots).
 import AppKit
 import Combine
 import EchoFoxCore

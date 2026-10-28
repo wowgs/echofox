@@ -280,6 +280,7 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.sidebar)
+            .safeAreaInset(edge: .bottom) { SidebarFooter(model: model) }
             .frame(width: 210)
             Divider()
             Group {
@@ -330,6 +331,22 @@ struct AdapterSidebarRow: View {
             SidebarIcon { AppIcon(bundleIds: adapter.apps) }
         }
         .help(adapter.error.map { "It does not work: \($0)" } ?? (on ? "On" : "Off"))
+    }
+}
+
+/// The bottom of the sidebar: About, and Uninstall, which asks first (Uninstaller).
+struct SidebarFooter: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider().padding(.bottom, 4)
+            Button { NSApp.orderFrontStandardAboutPanel(nil) } label: { Label("About EchoFox", systemImage: "info.circle") }
+            Button(role: .destructive) { model.actions?.uninstall() } label: { Label("Uninstall…", systemImage: "trash") }
+                .foregroundStyle(.red)
+        }
+        .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
+        .padding(.horizontal, 16).padding(.bottom, 12)
     }
 }
 
@@ -395,7 +412,6 @@ struct ItemView: View {
         case "labelRecordings": Button("Label Recordings…") { model.actions?.openLabeling() }
         case "serverStatus": ServerStatus(model: model)
         case "openLog": Button("Open the Log") { model.actions?.openLog() }
-        case "uninstall": Button("Uninstall EchoFox…", role: .destructive) { model.actions?.uninstall() }
         default:
             if let s = model.setting(id) { SettingRow(model: model, setting: s, scope: .owner) }
         }

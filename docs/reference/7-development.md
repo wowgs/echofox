@@ -63,7 +63,7 @@ Run app checks with:
 swift run --package-path macos echofox-tests
 ```
 
-To check the look of the first start's window without a server, run `macos/build/EchoFox.app/Contents/MacOS/EchoFox --render-first-run INFO.json OUT.png [dark]`: it draws the window for a server's info (the `info` message, as JSON) into a PNG and quits.
+To check the look of a window without a server, run `macos/build/EchoFox.app/Contents/MacOS/EchoFox --render KIND INFO.json OUT.png [dark]`, with KIND `first-run`, `settings`, `uninstall` or `update` (Sparkle's progress window): it draws the window for a server's info (the `info` message, as JSON) into a PNG and quits.
 
 `echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode. Both suites read the protocol examples (`shared/protocol-examples.json`) and the values both sides use (`shared/constants.json`), so a change on one side that the other does not follow fails a test.
 

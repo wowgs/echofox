@@ -9,19 +9,7 @@ enum Uninstaller {
     /// Asks, then uninstalls. `info`: the server's info, for the models to remove; `folders`: the recordings and labels.
     static func confirmAndRun(info: ServerInfo?, serverURL: URL, folders: (recordings: URL, labeled: URL)) {
         let downloaded = info?.model?.variants?.filter(\.downloaded) ?? []
-        let size = downloaded.reduce(0) { $0 + $1.bytes }
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Uninstall EchoFox?"
-        alert.informativeText = "The dictation server, its models" + (size > 0 ? " (\(gigabytes(size)))" : "")
-            + ", the settings and the logs are deleted, and EchoFox goes to the Trash.\n\n"
-            + "macOS keeps the Microphone and Accessibility permissions: remove them in System Settings → "
-            + "Privacy & Security."
-        let keep = NSButton(checkboxWithTitle: "Also move the recordings and labels to the Trash", target: nil, action: nil)
-        keep.state = .off
-        alert.accessoryView = keep
-        alert.addButton(withTitle: "Uninstall").hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
+        let (alert, keep) = confirmation(info: info)
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let withRecordings = keep.state == .on
@@ -31,6 +19,22 @@ enum Uninstaller {
         removeModels(order.map(\.id), catalog: info?.model?.catalog ?? "", url: serverURL) {
             finish(folders: folders, withRecordings: withRecordings)
         }
+    }
+
+    /// The question: what goes, the recordings' checkbox, Uninstall and Cancel.
+    static func confirmation(info: ServerInfo?) -> (NSAlert, NSButton) {
+        let size = (info?.model?.variants?.filter(\.downloaded) ?? []).reduce(0) { $0 + $1.bytes }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Uninstall EchoFox?"
+        alert.informativeText = "Deletes the model" + (size > 0 ? " (\(gigabytes(size)))" : "")
+            + ", settings and logs, and moves EchoFox to the Trash."
+        let keep = NSButton(checkboxWithTitle: "Also move recordings and labels to the Trash", target: nil, action: nil)
+        keep.state = .off
+        alert.accessoryView = keep
+        alert.addButton(withTitle: "Uninstall").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        return (alert, keep)
     }
 
     /// The server removes the variants one after another; then `done`, also when one fails (its files stay, said in
