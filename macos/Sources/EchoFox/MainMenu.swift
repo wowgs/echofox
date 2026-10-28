@@ -43,6 +43,21 @@ enum MainMenu {
         }
     }
 
+    /// Shows one of the app's windows: the app becomes regular first, then the window comes forward and the app is
+    /// activated, so that the main menu answers clicks. A menu bar app that turns regular while it is active keeps a
+    /// menu bar that does not answer until it is activated again; then the Dock gets the focus for a moment.
+    static func bringForward(_ window: NSWindow) {
+        let wasActive = NSApp.isActive
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+        window.makeKeyAndOrderFront(nil)
+        if wasActive, let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first {
+            dock.activate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { NSApp.activate(ignoringOtherApps: true) }
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     /// In the Dock while a window is open, a menu bar app otherwise; called after each window change.
     static func follow() {
         let want: NSApplication.ActivationPolicy = hasWindow ? .regular : .accessory

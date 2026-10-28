@@ -67,6 +67,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         updater.onChange = { [weak self] in self?.menu.update() }
         updater.start()
         permissions.start()
+        permissionsChanged()  // the permissions the app already has: the dictation keys start now
         server.refresh(store.config.serverURL)
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in

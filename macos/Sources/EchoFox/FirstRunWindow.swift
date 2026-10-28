@@ -82,8 +82,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         w.center()
         w.delegate = self
         window = w
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        MainMenu.bringForward(w)
     }
 
     func windowWillClose(_ notification: Notification) {

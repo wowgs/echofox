@@ -55,8 +55,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             titles = model.$selection.sink { [weak w] item in w?.title = item?.title ?? "Settings" }
             window = w
         }
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let window { MainMenu.bringForward(window) }
     }
 
     /// The server's info changed: the window shows it.

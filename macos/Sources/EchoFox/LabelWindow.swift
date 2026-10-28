@@ -13,8 +13,7 @@ final class LabelWindow: NSObject, NSWindowDelegate {
 
     func show(recordings: URL, labeled: URL) {
         if let window {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            MainMenu.bringForward(window)
             return
         }
         let model = LabelModel(recordings: recordings, labeled: labeled)
@@ -30,8 +29,7 @@ final class LabelWindow: NSObject, NSWindowDelegate {
         w.delegate = self
         self.window = w
         self.model = model
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        MainMenu.bringForward(w)
         model.load()
     }
 
