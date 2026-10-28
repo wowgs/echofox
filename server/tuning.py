@@ -75,8 +75,7 @@ KNOBS = [
          "recording", "basic", "Recording time limit", "Stops a recording if you forget to stop it.",
          low=0, open_low=True, client=False, unit="s"),
     Knob("modelIdleSeconds", "model_idle_seconds", float, float(constants.MODEL_IDLE_S), "server", "recording", "basic",
-         "Unload the model after", "Without a dictation for this long, the model leaves memory; the next dictation "
-         "loads it again first. 0 keeps it in memory.", low=0, client=False, unit="s"),
+         "Unload the model after", "Idle time. 0: never.", low=0, client=False, unit="s"),
     # The model's constant: the longest text of a piece, in tokens; the value is the catalog entry's (catalog.json), as
     # tokens are the model's. The model stops there and its text stays: without a limit, a model that never ends its
     # text decodes until its slot's context is full.

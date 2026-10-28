@@ -87,7 +87,7 @@ public struct Config: Equatable {
             return c
         }
         if let v = d["version"] as? Int, v > version {
-            c.note = "The settings file was written by a newer EchoFox (format \(v)); settings it added are not used here."
+            c.note = "Written by a newer EchoFox: some settings are ignored."
         }
         c.models = ((d["models"] as? [String: Any]) ?? [:]).keys.sorted()
         c.model = d["model"] as? String
