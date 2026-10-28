@@ -52,7 +52,7 @@ The window opens at each start until you click **Done**, and again whenever no v
 
 EchoFox needs the **Microphone** and **Accessibility** permissions; Accessibility supports the dictation keys, conversation snapshots, and text insertion. The app asks for neither by itself: the first start's window shows both, with **Allow** next to each that is missing, and a click brings the system's prompt. Missing permissions also appear in the menu; clicking one opens its page in System Settings. A dictation without the Microphone permission asks for it.
 
-While one of its windows is open (the first start, Settings, labeling), also minimized, EchoFox is in the Dock and in ⌘Tab, with its own menu bar; a click on its Dock icon brings a minimized window back. With no window open, it lives only in the menu bar.
+While one of its windows is open (the first start, Settings, labeling), also minimized, EchoFox is in the Dock and in ⌘Tab, with its own menu bar; a click on its Dock icon brings a minimized window back. With no window open, it lives only in the menu bar; a click on its icon in the Dock's recent apps, or opening it again from Finder, opens Settings.
 
 The model's row shows each variant's download size and estimated memory use, and recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB; a variant already on the disk says so. While the download runs, the window shows its speed and the time left.
 

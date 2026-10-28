@@ -78,9 +78,15 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         menu.update()
     }
 
-    /// A click on the Dock icon (shown while a window is open, MainMenu): a minimized window comes back.
+    /// A click on the app's Dock icon (the one shown while a window is open, MainMenu, or the Dock's recent apps), or
+    /// opening the app again from Finder: a minimized window comes back; with no window, Settings opens.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        for w in NSApp.windows where w.isMiniaturized { w.deminiaturize(nil) }
+        let minimized = NSApp.windows.filter(\.isMiniaturized)
+        if !minimized.isEmpty {
+            minimized.forEach { $0.deminiaturize(nil) }
+        } else if !MainMenu.hasWindow {
+            openSettings()
+        }
         return true
     }
 
