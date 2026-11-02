@@ -46,7 +46,7 @@ Q4_0 QAT is Google's quantization-aware trained Q4_0: the model was trained for 
 
 Download `EchoFox.dmg` from the [releases](https://github.com/wowgs/echofox/releases), open it, and drag EchoFox to Applications. Then open EchoFox from Applications. If you open it from the dmg, it asks you to move it to Applications and quits: its server must not depend on a disk image that goes away.
 
-At the first start one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, the two permissions, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once. **Download** fetches the model; the window stays open, and once the model is on the disk the button becomes **Done**, which writes the language and the variant into the config and ends the setup. Settings can change all of it later.
+At the first start one window sets EchoFox up: the language you speak most (it proposes macOS's language, or English), the variant of Gemma 4 E4B to download, with one recommended for your Mac's memory, the two permissions, and which adapters may read the conversation, all off at first. An adapter's switch takes effect at once. **Download** fetches the model; the window stays open, and once the model is on the disk the button becomes **Done**, which writes the language and the variant into the config and ends the setup. A language equal to macOS's and the catalog's default variant need no line in the config, so they are not written. Settings can change all of it later.
 
 The window opens at each start until you click **Done**, and again whenever no variant of the model is on the disk; a model kept from an earlier install does not skip it (the setup is a preference of the app, `setupDone`, which an uninstall removes). An update from a version before this keeps its setup: a config and a downloaded model count as done.
 
@@ -97,7 +97,7 @@ When a new version is out, the menu's first line says so; it opens the update wi
 
 ## Uninstall
 
-Settings → General → **Uninstall EchoFox…** asks once, then:
+**Uninstall…** at the bottom of the Settings sidebar asks once, then:
 
 1. The dictation server deletes the downloaded models, the one in use last.
 2. The settings (`~/.echofox`), `~/Library/Application Support/EchoFox` (models, your adapters), the logs, the caches and the app's preferences are deleted.
@@ -115,7 +115,7 @@ The app log is `~/Library/Logs/EchoFox/app.log`. It records text lengths, not tr
 | Folder in `macos/Sources` | Purpose |
 |---|---|
 | `EchoFox/` | App lifecycle, permissions, menu, windows, microphone, dictation, model downloads (`ModelDownloads`), and the Mac side of insertion (`Inserter`, through Accessibility). |
-| `EchoFoxCore/` | The decisions that need no screen access, each with checks: the config and its one owner (`ConfigStore`), the protocol, the server agent, key handling, the settings logic (`SettingStore`), which snapshot an app gets (`ServerInfo.snapshotPlan`), which microphone the config means (`MicrophoneChoice`), and where the text goes (`InsertionRule`). |
+| `EchoFoxCore/` | The decisions that need no screen access, each with checks: the config and its one owner (`ConfigStore`), the protocol, the dictation server as the app's child process (`ServerProcess`), key handling, the settings logic (`SettingStore`: what is in force and what each choice writes; `SettingText`: the words for values; `SettingsLayout`: where each item goes), when the first start's window opens (`FirstRun`), which snapshot an app gets (`ServerInfo.snapshotPlan`), which microphone the config means (`MicrophoneChoice`), and where the text goes (`InsertionRule`). |
 | `FocusSnapshot/` | Capture the focused app and input field. |
 | `echofox-snapshot/` | Command-line snapshot inspection tool. |
 | `echofox-tests/` | Checks for `EchoFoxCore`. |

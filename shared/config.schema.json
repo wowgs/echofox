@@ -9,8 +9,8 @@
     "model": {"type": "string", "description": "The model chosen in the menu, a name in models.", "x-owner": "app"},
     "language": {"type": "string", "description": "The speech's language code; empty: the server's default.", "x-owner": "app"},
     "microphone": {"type": "string", "description": "\"builtin\", \"system\", or a device's UID.", "x-owner": "app"},
-    "dictationKey": {"type": "string", "x-owner": "app"},
-    "privateDictationKey": {"type": "string", "x-owner": "app"},
+    "dictationKey": {"type": "string", "enum": ["rightOption", "rightCommand", "rightShift", "rightControl", "none"], "description": "The key to tap for a dictation, rightOption by default; \"none\": no key. Another value is the default.", "x-owner": "app"},
+    "privateDictationKey": {"type": "string", "enum": ["rightOption", "rightCommand", "rightShift", "rightControl", "none"], "description": "The key to tap for a private dictation, rightCommand by default; \"none\": no key. Another value is the default.", "x-owner": "app"},
     "silenceStopSeconds": {"type": "number", "x-owner": "app"},
     "models": {
       "type": "object",

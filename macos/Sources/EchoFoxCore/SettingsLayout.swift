@@ -1,5 +1,5 @@
 // Where each setting is shown: in the menu bar's menu, on a page of the settings window, or both (docs/design.md,
-// "Как устроены настройки"). What a setting is (its owner, kind, range, default, help) comes from the server's info
+// "Settings"). What a setting is (its owner, kind, range, default, help) comes from the server's info
 // for the server's, the models' and the adapters' settings (SettingInfo), and from the app for its own. Where it is
 // shown is the app's alone, here: to move a setting between the menu and the window, change its line in `places`. A
 // server setting without a line goes to its owner's page, in its group's section, so a new one always shows up; an
@@ -34,6 +34,9 @@ public enum SettingsPage: String, CaseIterable, Identifiable {
         case .diagnostics: return "stethoscope"
         }
     }
+
+    /// The pages that show the server's settings: without its info they say that it does not answer.
+    public var showsServerSettings: Bool { [.general, .model, .recordings].contains(self) }
 }
 
 public enum SidebarEntry: Hashable {
@@ -42,6 +45,37 @@ public enum SidebarEntry: Hashable {
     case adapters
 
     public static let adaptersTitle = "Adapters"
+}
+
+/// A row of the sidebar that can be selected: a page, or one adapter under the heading Adapters.
+public enum SidebarItem: Hashable {
+    case page(SettingsPage)
+    case adapter(String)
+
+    /// The window's title while it is shown; an adapter's is its name for people among the server's `adapters`.
+    public func title(adapters: [ServerInfo.Adapter]) -> String {
+        switch self {
+        case let .page(p): return p.title
+        case let .adapter(name): return ServerInfo.adapterTitle(name, in: adapters)
+        }
+    }
+
+    /// As the app's preferences keep it for the next launch: "page.model", "adapter.claude-code".
+    public var saved: String {
+        switch self {
+        case let .page(p): return "page." + p.rawValue
+        case let .adapter(name): return "adapter." + name
+        }
+    }
+
+    /// The row from its saved form; nil for none, or for a form this version does not know (a page gone).
+    public init?(saved: String?) {
+        guard let saved, let dot = saved.firstIndex(of: ".") else { return nil }
+        let kind = saved[..<dot], name = String(saved[saved.index(after: dot)...])
+        if kind == "page", let p = SettingsPage(rawValue: name) { self = .page(p) }
+        else if kind == "adapter", !name.isEmpty { self = .adapter(name) }
+        else { return nil }
+    }
 }
 
 public enum SettingPlace: Equatable {

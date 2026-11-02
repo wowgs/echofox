@@ -14,7 +14,15 @@ enum Snapshots {
             fail("no server info in \(file)")
         }
         switch kind {
-        case "first-run": FirstRunWindow.render(info: file, to: out, dark: dark)
+        case "first-run":
+            // As the first start shows it for a Russian speaker; nothing is written (no store)
+            var config = Config()
+            config.language = "ru"
+            guard let model = FirstRunModel(info: info, config: config, store: nil, downloads: ModelDownloads()) else {
+                fail("no model with variants in \(file)")
+            }
+            draw(NSHostingView(rootView: FirstRunView(model: model).background(Color(nsColor: .windowBackgroundColor))),
+                 to: out)
         case "settings":
             let model = SettingsModel(actions: nil, downloads: ModelDownloads())
             model.info = info

@@ -137,10 +137,10 @@ public struct ServerInfo: Decodable, Equatable {
         return Config.path(p)
     }
 
-    /// An adapter's name for people: its manifest's title in `info`, else its name with a capital ("telegram" →
-    /// "Telegram").
-    public static func adapterTitle(_ name: String, in info: ServerInfo?) -> String {
-        info?.adapters.first { $0.name == name }?.title ?? name.prefix(1).uppercased() + name.dropFirst()
+    /// An adapter's name for people, the one rule of every window: its manifest's title among `adapters` (the
+    /// server's), else its name with a capital first letter ("telegram" → "Telegram", "my-notes" → "My-notes").
+    public static func adapterTitle(_ name: String, in adapters: [Adapter]) -> String {
+        adapters.first { $0.name == name }?.title ?? name.prefix(1).uppercased() + name.dropFirst()
     }
 
     /// The language the first start proposes: `current` (the config's, macOS's own until one is chosen) if the model

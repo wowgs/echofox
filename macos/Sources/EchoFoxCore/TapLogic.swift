@@ -5,8 +5,15 @@ import Foundation
 
 /// A modifier key a hotkey may be: the right-hand ones, which shortcuts use less. The codes are from Carbon's
 /// Events.h (kVK_…), the masks from IOKit's IOLLEvent.h (NX_DEVICE…KEYMASK for the key itself, NX_…MASK for its kind).
+/// The config holds a hotkey as a key's name, or as `off` for an action without a key.
 public enum TapKeyChoice: String, CaseIterable {
     case rightOption, rightCommand, rightShift, rightControl
+
+    /// The config's value of a hotkey that is off: the action has no key.
+    public static let off = "none"
+
+    /// A hotkey as the config holds it: the key's name, or `off` for none.
+    public static func configValue(_ key: TapKeyChoice?) -> String { key?.rawValue ?? off }
 
     public var keyCode: UInt16 {
         switch self {
