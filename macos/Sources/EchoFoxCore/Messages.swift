@@ -21,6 +21,9 @@ public struct ServerInfo: Decodable, Equatable {
         public let electronApps: [String]?
         /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
         public let screen: [String]?
+        /// The names (an AX role or a DOM class) of the outline's elements whose children it does not need; an older
+        /// server sends none.
+        public let outlineSkip: [String]?
         /// The files it reads.
         public let reads: [String]?
         public let description: String?
@@ -102,9 +105,13 @@ public struct ServerInfo: Decodable, Equatable {
     }
 
     /// What the focus snapshot takes of the app `bundleId` at the start of a dictation, as the enabled adapters ask.
+    /// The outline leaves out the children of the elements that an enabled adapter of the app names in outlineSkip.
     public func snapshotPlan(for bundleId: String) -> SnapshotPlan {
-        SnapshotPlan(full: snapshotApps.contains(bundleId), tree: treeApps.contains(bundleId),
-                     lists: listApps.contains(bundleId), outline: outlineApps.contains(bundleId))
+        let outline = outlineApps.contains(bundleId)
+        let skip = outline ? adapters.filter { $0.enabled && $0.apps.contains(bundleId) && ($0.screen ?? []).contains("outline") }
+            .flatMap { $0.outlineSkip ?? [] } : []
+        return SnapshotPlan(full: snapshotApps.contains(bundleId), tree: treeApps.contains(bundleId),
+                            lists: listApps.contains(bundleId), outline: outline, outlineSkip: Set(skip))
     }
 
     /// A folder setting's value as the server has it (its config's, else its default), nil from an older server.
@@ -283,8 +290,10 @@ public struct SettingInfo: Decodable, Equatable {
 /// `outline`, the tree of its page or window. An app that no enabled adapter reads gets none of these.
 public struct SnapshotPlan: Equatable {
     public let full, tree, lists, outline: Bool
+    /// The names (an AX role or a DOM class) of the outline's elements that go in without their children.
+    public let outlineSkip: Set<String>
     public static let none = SnapshotPlan(full: false, tree: false, lists: false, outline: false)
-    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool) {
-        (self.full, self.tree, self.lists, self.outline) = (full, tree, lists, outline)
+    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool, outlineSkip: Set<String> = []) {
+        (self.full, self.tree, self.lists, self.outline, self.outlineSkip) = (full, tree, lists, outline, outlineSkip)
     }
 }

@@ -156,8 +156,9 @@ do {
 // What the focus snapshot takes of an app, as the example's enabled adapters ask.
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
-    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop") == SnapshotPlan(full: true, tree: true, lists: false, outline: true),
-          "plan: Claude Desktop, its tree and its outline")
+    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop") == SnapshotPlan(full: true, tree: true, lists: false, outline: true,
+                                                                                         outlineSkip: ["AXButton", "sr-only"]),
+          "plan: Claude Desktop, its tree and its outline, without the children of the adapter's outlineSkip")
     check(info.snapshotPlan(for: "com.tdesktop.Telegram") == SnapshotPlan(full: true, tree: false, lists: true, outline: false),
           "plan: Telegram, its lists")
     check(info.snapshotPlan(for: "com.apple.TextEdit") == .none, "plan: an app no adapter reads gets nothing")

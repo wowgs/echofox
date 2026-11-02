@@ -70,7 +70,7 @@ The measurements behind it are in [observations](../observations.md#target-apps-
 
 A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So the manifest requests `"screen": ["outline"]`, and the adapter reads the messages from the outline of the page.
 
-In the outline, each message is a group labelled "Message N of M". Claude's replies are in a container with the DOM class `group/message-row`. The adapter keeps their paragraphs, list items and link texts. It leaves out hidden headings, buttons, the status rows of tools such as "Searched the web", and the source chips after sentences. It can use only the messages that the window has loaded. This page structure is not documented and may change.
+In the outline, each message is a group labelled "Message N of M". Claude's replies are in a container with the DOM class `group/message-row`. The adapter keeps their paragraphs, list items and link texts. It leaves out hidden headings, buttons, the status rows of tools such as "Searched the web", and the source chips after sentences. Its `outlineSkip` names them (`AXButton`, `sr-only`, `group/morph`, `group/tag`), so their text does not enter the snapshot at all. It can use only the messages that the window has loaded. This page structure is not documented and may change.
 
 ### Telegram screen access
 
@@ -95,6 +95,7 @@ An adapter is a Python package with two required files.
 For these apps of an enabled adapter (the info's `electronApps`), and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a snapshot that finds no focused element.
 | `reads` | Declared file access. |
 | `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
+| `outlineSkip` | Names of the outline's elements that go in without their children: an element whose AX role (`AXButton`) or one of whose DOM classes (`sr-only`) is a name. The client never reads the children, so their text is not in the snapshot. The app gives the names of the enabled adapters of the app to the snapshot (`SnapshotPlan.outlineSkip`). The element itself is marked `"skipped": true`. |
 | `context` | This adapter's default context settings. |
 
 `adapter.py` contains a subclass of `adapters.Adapter`:
@@ -122,4 +123,4 @@ swift build -c release --package-path macos
 macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
 
-`--electron` asks an Electron app for its accessibility tree, as the app does for an enabled adapter's Electron apps; without it the tool sets no attribute of the app. For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.
+`--electron` asks an Electron app for its accessibility tree, as the app does for an enabled adapter's Electron apps; without it the tool sets no attribute of the app. For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--outline-skip AXButton,sr-only` takes the outline as the app does for an adapter with that `outlineSkip`. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

@@ -519,6 +519,11 @@ class TelegramTest(Fixture):
             f.write("from adapters import Adapter\nclass P(Adapter):\n    def claim(self, f, h): pass\n"
                     "    def context(self, f, h): pass\n    def clean(self, t): return t\n")
         self.assertIn("screen", registry.packages()["peek"].error)
+        with open(os.path.join(d, "adapter.json"), "w") as f:
+            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["outline"], "outlineSkip": "AXButton"}, f)
+        self.assertIn("outlineSkip", registry.packages()["peek"].error)
+        chat = registry.packages()["claude-chat"].info({"claude-chat"})
+        self.assertEqual(chat["outlineSkip"], ["AXButton", "sr-only", "group/morph", "group/tag"])
 
 
 class HungAdapterTest(unittest.IsolatedAsyncioTestCase):

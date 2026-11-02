@@ -26,7 +26,9 @@ apps of an enabled adapter whose manifest asks for it in "screen"):
              first, within the client's limits),
    "outline": {"root": "webArea" or "window", "complete": whether it has the whole tree under the root,
                "nodes": [{"depth": under the root (the root is 0), "role", "subrole", "title", "description",
-                          "domClasses", "text": the shown text of a static text or a list marker}, ...]}
+                          "domClasses", "text": the shown text of a static text or a list marker,
+                          "skipped": true for an element of the manifest's outlineSkip, whose children are left out},
+                         ...]}
             (screen "outline": the tree under the web area of the focused element, or under the focused window
              without one, in the tree's order, flat with depths; when it is too big, its end: a chat's newest
              messages are there. Never the text of input fields.)}

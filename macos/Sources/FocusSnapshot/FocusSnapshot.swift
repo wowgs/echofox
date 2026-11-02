@@ -46,8 +46,9 @@ public enum FocusSnapshot {
 
     /// The snapshot of the frontmost app (or of `app`), as a JSON-ready dictionary.
     public static func take(enableElectron: Bool = false, lists: Bool = false, outline: Bool = false,
-                            of app: NSRunningApplication? = nil) -> [String: Any] {
-        capture(full: true, enableElectron: enableElectron, lists: lists, outline: outline, of: app).snapshot
+                            outlineSkip: Set<String> = [], of app: NSRunningApplication? = nil) -> [String: Any] {
+        capture(full: true, enableElectron: enableElectron, lists: lists, outline: outline, outlineSkip: outlineSkip,
+                of: app).snapshot
     }
 
     /// The snapshot of the frontmost app (or of `target`, any running app: for tools), with its focused element and
@@ -55,7 +56,8 @@ public enum FocusSnapshot {
     /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
     /// the text goes into later.
     public static func capture(full: Bool = true, enableElectron: Bool = false, lists: Bool = false,
-                               outline: Bool = false, of target: NSRunningApplication? = nil) -> Capture {
+                               outline: Bool = false, outlineSkip: Set<String> = [],
+                               of target: NSRunningApplication? = nil) -> Capture {
         let started = Date()
         guard let front = target ?? NSWorkspace.shared.frontmostApplication else {
             return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
@@ -105,7 +107,7 @@ public enum FocusSnapshot {
             out["ancestors"] = ancestors
         }
         if outline, let root = webArea ?? window {
-            out["outline"] = self.outline(root, root: webArea == nil ? "window" : "webArea")
+            out["outline"] = self.outline(root, root: webArea == nil ? "window" : "webArea", skip: outlineSkip)
         }
         out["processes"] = descendants(of: pid)
         out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
@@ -188,11 +190,16 @@ public enum FocusSnapshot {
 
     /// The tree under `root`, flat in the tree's order: each element's depth under the root, its service fields, and
     /// the shown text of a static text or a list marker. It is walked from the end, last child first, so that when a
-    /// limit stops the walk the outline keeps the end of the tree; "complete" says whether it has all of it.
-    static func outline(_ root: AXUIElement, root name: String) -> [String: Any] {
+    /// limit stops the walk the outline keeps the end of the tree; "complete" says whether it has all of it. An element
+    /// whose role or one of whose DOM classes is in `skip` goes in alone, marked "skipped": its children are not read.
+    static func outline(_ root: AXUIElement, root name: String, skip: Set<String> = []) -> [String: Any] {
         var nodes: [[String: Any]] = [], chars = 0, stopped = false, complete = true
         func visit(_ e: AXUIElement, _ depth: Int) {
-            if depth < maxOutlineDepth {
+            var d = describe(e)
+            let skipped = !skip.isEmpty && !skip.isDisjoint(with: [d["role"] as? String ?? ""] + (d["domClasses"] as? [String] ?? []))
+            if skipped {
+                d["skipped"] = true  // its children are never read: their text stays out of the snapshot
+            } else if depth < maxOutlineDepth {
                 for c in children(e).reversed() {
                     visit(c, depth + 1)
                     if stopped { return }
@@ -200,7 +207,6 @@ public enum FocusSnapshot {
             } else if !children(e).isEmpty {
                 complete = false
             }
-            var d = describe(e)
             d["depth"] = depth
             if let role = d["role"] as? String, shownTextRoles.contains(role), let text = string(e, "AXValue") {
                 d["text"] = text

@@ -9,7 +9,8 @@ In the outline, each message is a group labelled "Message <n> of <m>"; its first
 ("You said: …", "Claude responded: …"). Claude's reply is in a container with the DOM class "group/message-row":
 paragraphs, lists with their markers ("• ", "◦ "), links. Left out: what is hidden from the eye (DOM class "sr-only":
 the heading, a copy of a tool's status), buttons, a tool's status row ("Searched the web", class "group/morph"), and
-the source chips after a sentence (links with class "group/tag"). The labels are in the app's language, so this reads
+the source chips after a sentence (links with class "group/tag"). The manifest's outlineSkip names these, so the
+client leaves out their children and their text never enters the snapshot; the parser drops them anyway. The labels are in the app's language, so this reads
 the structure: a message is a group whose label has two numbers and which has a hidden heading near its top; Claude's
 has the message-row container (measured 2026-10-25, Claude Desktop 3.6556.2; the page is Anthropic's and not
 documented).

@@ -7,6 +7,9 @@ adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
                 focused window (a messenger's messages); "outline", the tree of the focused web page or window, for
                 messages that are not in lists (a chat in a web app); see FOCUS in adapters/__init__.py],
+                "outlineSkip": [names of the outline's elements whose subtree the client leaves out: an element
+                whose AX role or one of whose DOM classes is a name goes in alone, without its children, whose text
+                never enters the snapshot],
                 "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
                 chatHistoryTokenBudget; the user's entry in the config changes them}}
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
@@ -61,7 +64,8 @@ class Package:
                 "description": m.get("description"), "apps": m.get("apps") or [],
                 "electronTree": bool(self.electron_apps()), "electronApps": self.electron_apps(),
                 "reads": m.get("reads") or [],
-                "screen": m.get("screen") or [], "context": m.get("context") or {}, "error": self.error}
+                "screen": m.get("screen") or [], "outlineSkip": m.get("outlineSkip") or [],
+                "context": m.get("context") or {}, "error": self.error}
 
 
 def load(folder, builtin):
@@ -83,6 +87,9 @@ def load(folder, builtin):
         unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
+        skip = m.get("outlineSkip", [])
+        if not (isinstance(skip, list) and all(isinstance(s, str) and s for s in skip)):
+            raise ValueError("\"outlineSkip\" is not a list of names")
         tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
         package = f"echofox_adapter_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),

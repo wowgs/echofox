@@ -1,7 +1,7 @@
 {
   "name": "claude-chat",
   "title": "Claude chats",
-  "version": "2.0",
+  "version": "2.1",
   "author": "echofox",
   "source": "https://github.com/wowgs/echofox",
   "description": "Reads the chat open in Claude Desktop, from the outline of the page that the window shows.",
@@ -13,6 +13,12 @@
   "reads": [],
   "screen": [
     "outline"
+  ],
+  "outlineSkip": [
+    "AXButton",
+    "sr-only",
+    "group/morph",
+    "group/tag"
   ],
   "context": {
     "chatHistoryTokenBudget": 1000,
