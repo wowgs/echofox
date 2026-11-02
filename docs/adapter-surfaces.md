@@ -1,6 +1,6 @@
 # Adapter surfaces
 
-This page is the design of the next adapter interface (interface 3): an adapter is a product, and its surfaces say where the product is on the screen and what is read there. It is not built yet. The current adapters are in [the context reference](reference/3-context.md), and the decisions of the whole app are in [Design](design.md#adapters). The work is in [the plan](plan.md#structure).
+This page is the design of the next adapter interface (interface 3): an adapter is a product, and its surfaces say where the product is on the screen and what is read there. The app's side is built: the identity, the read request's content, the outline's fixes and the settings window. The server's side is not built yet. The current adapters are in [the context reference](reference/3-context.md), and the decisions of the whole app are in [Design](design.md#adapters). The work is in [the plan](plan.md#structure).
 
 ## Why
 

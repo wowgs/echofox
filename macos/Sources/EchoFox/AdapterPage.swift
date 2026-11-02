@@ -1,4 +1,5 @@
-// An adapter's page in the settings window: whether it is on and works, what it reads, and its settings in Advanced.
+// An adapter's page in the settings window: whether it is on and works, a section per surface (its apps, where in them
+// it works, and what it reads there), and its settings in Advanced.
 import EchoFoxCore
 import SwiftUI
 
@@ -15,14 +16,19 @@ struct AdapterSwitch: View {
     }
 }
 
-/// One adapter's page: whether it works, what it reads, its settings.
+/// One adapter's page: whether it works, its surfaces, its settings.
 struct AdapterPage: View {
     @ObservedObject var model: SettingsModel
     let adapter: ServerInfo.Adapter
 
+    /// The identity: what the app reads at every dictation in an app of an enabled adapter, before the server
+    /// matches a surface (FocusSnapshot.capture). The same for every adapter, so it is said once, here.
+    static let identityNote = "When it is on, EchoFox reads the app's name, the window title, and the page's address "
+        + "and title whenever you dictate in one of the apps below."
+
     var body: some View {
         Form {
-            Section("Adapter") {
+            Section {
                 if let d = adapter.description, !d.isEmpty {
                     Text(d).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -30,43 +36,12 @@ struct AdapterPage: View {
                 if let e = adapter.error {
                     LabeledContent("Problem") { Text(e).foregroundStyle(.red).textSelection(.enabled) }
                 }
+            } header: {
+                Text("Adapter")
+            } footer: {
+                Text(Self.identityNote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            // Each list in a section of its own, one row per item, the icons in one column (as in the sidebar)
-            Section("Apps it reads") {
-                ForEach(adapter.apps, id: \.self) { id in AppRow(bundleId: id) }
-            }
-            if let reads = adapter.reads, !reads.isEmpty {
-                Section("Files it reads") {
-                    ForEach(reads, id: \.self) { path in
-                        Label { Text(path).textSelection(.enabled) } icon: {
-                            SidebarIcon { Image(systemName: "folder").resizable().scaledToFit() }
-                        }
-                    }
-                }
-            }
-            let screen = adapter.screen ?? []
-            let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : [])
-            if !screen.isEmpty || !tree.isEmpty {
-                Section("From the screen") {
-                    // Its kinds of screen text; for an adapter that reads the screen of only some of its apps, one row per app
-                    let some = adapter.screenApps.flatMap { Set($0) == Set(adapter.apps) ? nil : $0 }
-                    ForEach(screen, id: \.self) { s in
-                        let kind = s == "lists" ? "Message lists" : s == "outline" ? "Page text" : s
-                        if let some {
-                            ForEach(some, id: \.self) { id in AppRow(bundleId: id, note: kind.lowercased()) }
-                        } else {
-                            Label { Text(kind) } icon: {
-                                SidebarIcon {
-                                    Image(systemName: s == "lists" ? "list.bullet.rectangle" : "doc.text").resizable().scaledToFit()
-                                }
-                            }
-                        }
-                    }
-                    ForEach(tree, id: \.self) { id in
-                        AppRow(bundleId: id, note: "window content, asked for")
-                    }
-                }
-            }
+            ForEach(adapter.surfaces, id: \.id) { s in SurfaceSection(surface: s) }
             AdvancedSection(model: model, id: "adapter." + adapter.name,
                             changed: model.changed(model.adapterSettings.map { ($0, .adapter(adapter)) })) {
                 ForEach(model.adapterSettings, id: \.key) { s in
@@ -75,5 +50,42 @@ struct AdapterPage: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// A surface of an adapter: its apps, one row each (as in the sidebar, the icons in one column), the pages or
+/// windows in them where it works, what it reads from the screen, and the files it reads.
+struct SurfaceSection: View {
+    let surface: ServerInfo.Surface
+
+    var body: some View {
+        Section(surface.title) {
+            ForEach(surface.apps, id: \.self) { id in AppRow(bundleId: id) }
+            if let url = surface.match?.url {
+                LabeledContent("Only on pages") { Text(ServerInfo.Surface.Match.shown(url)).textSelection(.enabled) }
+            }
+            if let title = surface.match?.title {
+                LabeledContent("Only in windows titled") {
+                    Text(ServerInfo.Surface.Match.shown(title)).textSelection(.enabled)
+                }
+            }
+            let kinds = surface.screen?.kinds ?? []
+            if !kinds.isEmpty {
+                LabeledContent("From the screen") { Text(kinds.joined(separator: ", ")) }
+            }
+            // A folder for a fixed place on the disk; a file named only in words gets a page
+            ForEach(surface.reads ?? [], id: \.self) { read in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(read.what).fixedSize(horizontal: false, vertical: true)
+                        if let path = read.path { Text(path).foregroundStyle(.secondary).textSelection(.enabled) }
+                    }
+                } icon: {
+                    SidebarIcon {
+                        Image(systemName: read.path == nil ? "doc" : "folder").resizable().scaledToFit()
+                    }
+                }
+            }
+        }
     }
 }
