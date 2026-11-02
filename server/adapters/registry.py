@@ -212,9 +212,3 @@ def packages():
 def enabled(names):
     """The working packages among `names` (the config's enabled ones), in the order of the packages."""
     return [p for n, p in packages().items() if n in set(names or ()) and p.adapter is not None]
-
-
-def context_defaults(name):
-    """The defaults of adapter `name`'s context settings, from its manifest, by name ({} for none or no adapter)."""
-    p = packages().get(name) if name else None
-    return tuning.parse((p.manifest if p else {}).get("context"), "adapter", "\"context\"") if p and not p.error else {}

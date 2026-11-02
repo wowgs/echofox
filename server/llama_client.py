@@ -85,7 +85,7 @@ class LlamaModel(Model):
         """Stops the recording's requests: closing a request's connection makes llama-server stop decoding it
         (llama-server 0.6.0, build 11429: with the connection closed after 1 s, the next request got its answer 0.2 s
         later; without, 136 s later). A request that has not connected yet does not start (_request). One recording
-        at a time uses the model (Models.recording), so these are all its requests."""
+        at a time uses the model (Models.in_use), so these are all its requests."""
         with self.lock:
             self.cancelled = True
             conns = list(self.connections)

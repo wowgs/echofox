@@ -1,4 +1,4 @@
-"""Tests of dictation.py against a fake llama-server. Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of dictation.py and prompt.py's context against a fake llama-server. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import base64
@@ -9,42 +9,14 @@ import tempfile
 import time
 import unittest
 
-import catalog
 import dictation as d
 import metrics
 import recordings
+import resolve
 from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 
 ONE_A_CHAR = dict.fromkeys(("cyrillic", "latin", "digit", "space", "other"), 1.0)
-
-
-class PromptTest(unittest.TestCase):
-    def test_the_catalogs_template_with_the_language(self):
-        # Google's ASR prompt and the speech of software engineers; the English terms are in the notes
-        self.assertTrue(d.prompt("ru").startswith("Transcribe the following speech segment in Russian into Russian "
-                                                  "text."))
-        self.assertIn("* The speech is Russian with English technical terms.", d.prompt("ru"))
-        self.assertIn("write the digits", d.prompt("ru"))
-        self.assertIn("You transcribe speech of software engineers.", d.prompt("ru"))
-
-    def test_the_clients_prompt_with_the_language_filled_in(self):
-        self.assertEqual(d.prompt("en", "Say it in {LANGUAGE}."), "Say it in English.")
-        self.assertEqual(d.prompt("ru", "Say it in {LANGUAGE}."),  # the notes follow any template
-                         "Say it in Russian.\n* The speech is Russian with English technical terms.\n"
-                         "* Keep Russian words in the Russian script, also those made from English words with Russian "
-                         "endings.\n* The speaker often uses the imperative mood (сделай, посмотри, проверь): keep it "
-                         "as spoken.\n* Russian words made from English ones stay in Cyrillic, for example задеплоить, "
-                         "закоммитил.")
-        self.assertEqual(d.prompt("ru", "Say it.", configured={"*": {"notes": []}, "ru": {"notes": []}}),
-                         "Say it.")  # the config's
-        self.assertEqual(d.prompt("de", "Say it.", configured={"*": {"notes": ["Mind {LANGUAGE} names."]}}),
-                         "Say it.\n* Mind German names.")  # the config's notes of every language, filled in
-        self.assertEqual(d.prompt("en", "Say it."), "Say it.")  # English speech: no notes of English terms
-        self.assertEqual(d.prompt("xx", "Say it in {LANGUAGE}."), "Say it in its original language.")
-
-    def test_unknown_language_uses_the_original_language_form(self):
-        self.assertTrue(d.prompt("xx").startswith("Transcribe the following speech segment in its original language."))
 
 
 class DictationTest(unittest.IsolatedAsyncioTestCase):
@@ -63,10 +35,10 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         lines = pathlib.Path(self.file).read_text(encoding="utf-8").splitlines()
         return [m for m in map(json.loads, lines) if m["event"] == event]
 
-    def dictation(self, options=None, model=None, recording=None, weights=None):
+    def dictation(self, options=None, model=None, files=None, weights=None):
         # the model's options as a start message gives them: its catalog entry's, then these
-        return d.Dictation(model or self.fake.model(), "PROMPT", {**catalog.model_defaults({}), **(options or {})},
-                           args(), {}, recording, token_weights=weights)
+        return d.Dictation(model or self.fake.model(), "PROMPT", {**resolve.model_defaults({}), **(options or {})},
+                           args(), {}, files, token_weights=weights)
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
         d = self.dictation({"chat_history_token_budget": 20, "seed": 3})
@@ -131,7 +103,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
     async def test_english_speech_gets_no_terms_since_every_word_of_it_is_one(self):
         chat = {"messages": [{"from": "Anna", "text": "hello there"}], "terms": ["GitHub"]}
         for language, terms in (("en-GB", False), ("ru", True)):
-            dictation = d.Dictation(self.fake.model(), "PROMPT", catalog.model_defaults({}), args(),
+            dictation = d.Dictation(self.fake.model(), "PROMPT", resolve.model_defaults({}), args(),
                                     {"language": language})
             await dictation.prepare(chat)
             self.assertEqual("Terms: GitHub" in dictation.text, terms, language)
@@ -143,18 +115,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.completions(), [])
         self.assertEqual(self.metrics("piece_skipped")[0]["speech_seconds"], 0.05)
 
-    def test_an_adapters_settings_come_from_its_manifest_then_the_config_then_the_client(self):
-        server = args()
-        budget = "chat_history_token_budget"
-        server.adapter_options = {"claude-code": {budget: 2}}
-        plain = d.Dictation(self.fake.model(), "PROMPT", {}, server, {})
-        self.assertEqual(plain.adapter_options("claude-code")[budget], 2)                          # the user's entry
-        self.assertEqual(plain.adapter_options("claude-code")["chat_terms_token_budget"], 200)    # the manifest's
-        client = d.Dictation(self.fake.model(), "PROMPT", {}, server, {}, client_options={budget: 3})
-        self.assertEqual(client.adapter_options("claude-code")[budget], 3)                         # the client's wins
-        server.adapter_options = {}
-        self.assertEqual(plain.adapter_options("claude-code")[budget], 1000)                       # the manifest's
-
     async def test_an_adapter_may_keep_the_lines_that_are_not_prose(self):
         context = {"messages": [{"from": "A", "text": "Готово.\n20–40 с: 4,38 / 5,70"}], "terms": []}
         prose = self.dictation({"chat_history_token_budget": 100})
@@ -164,22 +124,17 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         await everything.prepare(context)
         self.assertIn("4,38", everything.text)
 
-    def test_the_default_prompt_asks_for_punctuation_and_keeps_russian_imperatives(self):
-        self.assertIn("punctuation and capital letters", d.prompt("en"))
-        self.assertIn("imperative mood", d.prompt("ru"))
-        self.assertNotIn("imperative mood", d.prompt("en"))
-
     async def test_an_adapters_entry_sets_the_budget_of_its_own_context(self):
         chat = {"adapter": "telegram", "terms": [],
                 "messages": [{"from": "Anna", "text": "hello there"}, {"from": "Bob", "text": "older message"}]}
-        server = args(adapter_options={"telegram": {"chat_history_token_budget": 2}})
+        server = args(adapter_config={"telegram": {"chat_history_token_budget": 2}})
         small = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
         await small.prepare(chat)
         self.assertEqual(small.meta["chat_budget"], 2)  # the adapter's 2 wins over the model's 500
         self.assertIn("Anna: hello there", small.text)  # the newest reaches the 2: whole, and the last
         self.assertNotIn("older message", small.text)
         on = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 2},
-                         args(adapter_options={"telegram": {"chat_history_token_budget": 500}}), {})
+                         args(adapter_config={"telegram": {"chat_history_token_budget": 500}}), {})
         await on.prepare(chat)
         self.assertIn("older message", on.text)
         self.assertEqual(on.meta["chat_budget"], 500)
@@ -205,9 +160,9 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((m["max_tokens_hit"], m["text_chars"]), (True, 15))
 
     async def test_a_named_recording_keeps_the_text_each_piece_and_its_text(self):
-        rec = recordings.Recording(self.dir.name)
+        rec = recordings.Folder(self.dir.name)
         self.addCleanup(rec.wav.close)  # the test does not finish() it
-        d = self.dictation(recording=rec)
+        d = self.dictation(files=rec)
         await d.prepare()
         await d.piece(LOUD * 2, 1, 2)
         await d.piece(LOUD, 2, 1)
@@ -222,14 +177,14 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         class Hesitant(StubModel):
             def complete(self, text, pcm, limit, options, slot=None):
                 return "Э, привет, мм, мир", {}
-        rec = recordings.Recording(self.dir.name)
+        rec = recordings.Folder(self.dir.name)
         self.addCleanup(rec.wav.close)  # the test does not finish() it
-        dict_ = d.Dictation(Hesitant(), "PROMPT", catalog.model_defaults({}), args(), {"language": "ru"}, rec)
+        dict_ = d.Dictation(Hesitant(), "PROMPT", resolve.model_defaults({}), args(), {"language": "ru"}, rec)
         await dict_.prepare()
         self.assertEqual(await dict_.piece(LOUD, 1, 1), "Привет, мир")
         line = json.loads(pathlib.Path(rec.dir, "pieces.jsonl").read_text(encoding="utf-8"))
         self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
-        other = d.Dictation(Hesitant(), "PROMPT", catalog.model_defaults({}), args(languages={"ru": {"fillers": []}}),
+        other = d.Dictation(Hesitant(), "PROMPT", resolve.model_defaults({}), args(languages={"ru": {"fillers": []}}),
                             {"language": "ru"})
         await other.prepare()
         self.assertEqual(await other.piece(LOUD, 1, 1), "Э, привет, мм, мир")  # the config turned it off

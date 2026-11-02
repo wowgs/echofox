@@ -40,9 +40,9 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
 
     def test_the_file_wins_then_the_defaults(self):
         models = {"a": {"llamaServer": "http://h:1"}}
-        now = s.resolve({"port": 9000, "maxRecordingSeconds": 25.0, "models": models})
+        now = s.in_force({"port": 9000, "maxRecordingSeconds": 25.0, "models": models})
         self.assertEqual((now["port"], now["maxRecordingSeconds"], now["saveRecordings"], now["models"]), (9000, 25.0, True, models))
-        self.assertEqual((s.resolve({})["models"], s.resolve({})["saveRecordings"]), (s.MODEL_DEFAULT, True))
+        self.assertEqual((s.in_force({})["models"], s.in_force({})["saveRecordings"]), (s.MODEL_DEFAULT, True))
 
     def test_the_file_has_the_registry_at_the_top_and_the_server_in_its_section(self):
         with tempfile.TemporaryDirectory() as d:
@@ -55,10 +55,10 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                                                   "languages": {"ru": {"fillers": ["э"]}}})
 
     def test_an_adapters_entry_may_set_its_context_budgets_and_nothing_else(self):
-        now = s.resolve({"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
+        now = s.in_force({"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
                                                   "claude": {"enabled": False}}})
         st = s.recording_settings(now)
-        self.assertEqual((st.adapters, st.adapter_options), (["telegram"], {"telegram": {"chat_history_token_budget": 600},
+        self.assertEqual((st.adapters, st.adapter_config), (["telegram"], {"telegram": {"chat_history_token_budget": 600},
                                                                             "claude": {}}))
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
@@ -108,7 +108,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         class FakeModels:
-            recording = asyncio.Lock()
+            in_use = asyncio.Lock()
 
             def configure(self, entries, models_folder, chosen):
                 calls.append(("configure", entries, models_folder, chosen))
@@ -118,7 +118,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as d:
                 f = os.path.join(d, "config.json")
                 self.write(f)
-                current = s.resolve({})
+                current = s.in_force({})
                 st = s.recording_settings(current)
                 stop = asyncio.get_running_loop().create_future()
                 w = s.ConfigWatcher(f, FakeModels(), st, current, stop)
@@ -150,7 +150,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             f = os.path.join(d, "config.json")
             entries = {"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}
             self.write(f, model="e4b", models=entries)
-            current = s.resolve(s.file_settings(f))
+            current = s.in_force(s.file_settings(f))
             models = Models(current["models"], make=StubModel, chosen=current["model"])
             w = s.ConfigWatcher(f, models, s.recording_settings(current), current, None)
             await models.follow_menu()
@@ -204,6 +204,17 @@ class MigrateTest(unittest.TestCase):
             self.assertEqual(c["languages"], {"ru": {"fillers": ["э"]}})
             self.assertNotIn("fillers", c)
             self.assertEqual(s.file_settings(f)["languages"], {"ru": {"fillers": ["э"]}})  # the server reads it
+
+    def test_the_step_from_version_3_moves_each_knob_to_its_owner_of_version_4_not_of_today(self):
+        # contextAsSystem was a model's knob in version 4 and chatHistoryMessages an adapter's; neither is a knob today
+        v3 = {"version": 3, "adapters": {"telegram": {"enabled": True}},
+              "models": {"m": {"llamaServer": "http://h:1", "options": {"contextAsSystem": True, "chatHistoryMessages": 5}}},
+              "server": {"outputTokensBase": 40}}
+        c, _ = s.from_3(v3, "config.json")
+        self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "catalog": "gemma-4-e4b",
+                                            "options": {"contextAsSystem": True, "outputTokensBase": 40}})
+        self.assertEqual(c["adapters"], {"telegram": {"enabled": True, "chatHistoryMessages": 5}})
+        self.assertEqual(c["server"], {})
 
     def test_version_4_becomes_11_without_the_second_ways_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
@@ -318,7 +329,7 @@ class MigrateTest(unittest.TestCase):
 
 class SchemaTest(unittest.TestCase):
     def test_the_constants_are_not_settings_and_the_tuning_ones_are_advanced(self):
-        st = s.recording_settings(s.resolve({}))
+        st = s.recording_settings(s.in_force({}))
         info = {e["key"]: e for e in s.schema(st, {"catalog": "gemma-4-e4b"})}
         for constant in ("pieceSeconds", "minSpeechSeconds", "warmText", "maxTokensPerPiece"):
             self.assertNotIn(constant, info)
@@ -331,7 +342,7 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(tuning.parse({"pieceSeconds": 12}), {"piece_seconds": 12.0})  # an experiment's
 
     def test_the_models_folder_in_force_is_the_registrys(self):
-        st = s.recording_settings(s.resolve({}))
+        st = s.recording_settings(s.in_force({}))
         folder = {e["key"]: e for e in s.schema(st)}["modelsFolder"]
         self.assertEqual((folder["default"], "value" in folder), (constants.MODELS_FOLDER, False))
         folder = {e["key"]: e for e in s.schema(st, models_folder="/elsewhere")}["modelsFolder"]

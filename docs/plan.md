@@ -34,7 +34,7 @@ The code is moved to a clean structure before new features. The order:
 
 1. **A safety net.** CI builds the app's target, not only its checks. Shared examples tie the Swift and Python copies of the token estimate and of the budgets. Recorded snapshots become fixtures of the adapters' tests.
 2. **Adapter surfaces.** Interface 3 is built in the app and in the server ([Adapter surfaces](adapter-surfaces.md)). Left: the checks of that page's assumptions and open questions, among them the round trip of the read request, and the later surface `web` of `claude-code`.
-3. **The server's modules.** One responsibility each: the model's client, its process and the registry of models apart; one owner of the recording's files, of the options' resolution and of the models' folder; what is specific to one model goes into the catalog. The entry point, the logger and the logs are renamed from `gemma_voice` to `echofox-server`.
+3. **The server's modules.** One responsibility each. Built: the model's client, its process and the registry of models are apart; one owner of the recording's files (`recordings.py`), of the options' resolution (`resolve.py`) and of the models' folder; the entry point, the logger and the logs are named `echofox-server`. Left: what is specific to one model goes into the catalog.
 4. **The app's targets.** The decisions that are still in the `EchoFox` target move to `EchoFoxCore` with checks. The settings window and `App.swift` are split. One WebSocket client. Every write of the config goes through `SettingStore`, so a value equal to the default is never written.
 
 ## Next features

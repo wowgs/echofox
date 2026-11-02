@@ -23,6 +23,7 @@ import catalog
 import constants
 import languages
 import metrics
+import resolve
 import tuning
 
 log = logging.getLogger("echofox-server")
@@ -174,8 +175,8 @@ def schema(st, model_entry=None, models_folder=None):
     `models_folder`); the settings of `model_entry` (the menu's model), its catalog's defaults and its options; the
     adapters' settings with their fallbacks (each adapter's own defaults are in info's adapters, "context"). The
     constants are not settings and are not here."""
-    defaults = catalog.model_defaults(model_entry) if model_entry else {}
-    own = tuning.parse((model_entry or {}).get("options"), "model") if model_entry else {}
+    defaults = resolve.model_defaults(model_entry) if model_entry else {}
+    own = resolve.model_config(model_entry) if model_entry else {}
     out = []
     for k in (k for k in tuning.KNOBS if k.user):
         if k.owner == "server":
@@ -268,7 +269,7 @@ def file_settings(path):
     return out
 
 
-def resolve(from_file):
+def in_force(from_file):
     """The settings in force: the file's, then the defaults: {key: value}."""
     return {s.key: from_file.get(s.key, s.default) for s in SETTINGS}
 
@@ -283,7 +284,7 @@ def recording_settings(now, into=None):
     st.recordings = constants.path(now["recordings"])
     st.labeled = constants.path(now["labeled"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
-    st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
+    st.adapter_config = {name: resolve.adapter_config(e) for name, e in now["adapters"].items()}
     return st
 
 
@@ -337,12 +338,25 @@ def from_2(c, path):
     return out, "the adapter claude is enabled"
 
 
+# The owners of the knobs in version 4 (tuning.py of that version): from_3 moves each knob to its owner of then,
+# whatever the knobs of today are. The ones that later versions took out go in their own steps (GONE_IN_5, GONE_IN_6).
+V4_OWNERS = {
+    **dict.fromkeys(("pieceSeconds", "cutSearchSeconds", "cutWhileSpeaking", "minLastPieceSeconds", "minSpeechSeconds",
+                     "maxCharsPerSpeechSecond", "thresholdDb", "speechAboveNoiseDb", "maxRecordingSeconds", "warmText"),
+                    "server"),
+    **dict.fromkeys(("temperature", "topK", "topP", "seed", "outputTokensPerSecond", "outputTokensBase",
+                     "maxOutputTokens", "contextAsSystem"), "model"),
+    **dict.fromkeys(("chatHistoryTokenBudget", "chatTermsTokenBudget", "chatHistoryMessages", "proseOnly"), "adapter"),
+}
+V4_CATALOG = "gemma-4-e4b"  # the catalog entry of every model in version 4: the only model of then
+
+
 def from_3(c, path):
-    """Version 3 → 4: each setting has its owner (docs/design.md, "Settings"). "fillers" go to the languages;
-    "saveRecordings" and "labeled" to the section "server"; a model's knob in the section "server" (the length of
-    the text) goes to each model's options; a model's options keep only the model's knobs: an adapter's knob goes to
-    each adapter's entry that has no value of its own (the model's value was every adapter's), a server's knob to the
-    section "server" if it has none; a model gets its catalog entry."""
+    """Version 3 → 4: each setting has its owner (docs/design.md, "Settings"), the one of version 4 (V4_OWNERS).
+    "fillers" go to the languages; "saveRecordings" and "labeled" to the section "server"; a model's knob in the
+    section "server" (the length of the text) goes to each model's options; a model's options keep only the model's
+    knobs: an adapter's knob goes to each adapter's entry that has no value of its own (the model's value was every
+    adapter's), a server's knob to the section "server" if it has none; a model gets its catalog entry."""
     server = dict(c.get("server") or {})
     adapters_ = {k: dict(v) for k, v in (c.get("adapters") or {}).items() if isinstance(v, dict)}
     langs = {k: dict(v) for k, v in (c.get("languages") or {}).items() if isinstance(v, dict)}
@@ -353,21 +367,20 @@ def from_3(c, path):
             server.setdefault(key, c[key])
     moved = {}  # the server section's knobs that are now a model's: every model's value, where it has none
     for key in list(server):
-        knob = tuning.BY_KEY.get(key)
-        if knob is not None and knob.owner != "server":
+        if V4_OWNERS.get(key, "server") != "server":
             moved[key] = server.pop(key)
     models = {}
     for name, entry in (c.get("models") or {}).items():
         entry = dict(entry)
-        entry.setdefault("catalog", catalog.DEFAULT)
-        kept = {k: v for k, v in moved.items() if tuning.BY_KEY[k].owner == "model"}
+        entry.setdefault("catalog", V4_CATALOG)
+        kept = {k: v for k, v in moved.items() if V4_OWNERS[k] == "model"}
         for key, value in (entry.get("options") or {}).items():
-            knob = tuning.BY_KEY.get(key)
-            if knob is None:
+            owner = V4_OWNERS.get(key)
+            if owner is None:
                 log.warning("config %s: models.%s.options.%s is not a setting: dropped", path, name, key)
-            elif knob.owner == "model":
+            elif owner == "model":
                 kept[key] = value
-            elif knob.owner == "adapter":
+            elif owner == "adapter":
                 for a in adapters_.values():
                     a.setdefault(key, value)
             else:
@@ -570,14 +583,14 @@ class ConfigWatcher:
         from_file = file_settings(self.path)
         if from_file is None:
             return True
-        now = resolve(from_file)
+        now = in_force(from_file)
         changed = {k for k in BY_KEY if now[k] != self.current[k]}
         if not changed:
             return True
         levels = {BY_KEY[k].level for k in changed}
         log.info("config %s changed: %s", self.path,
                  ", ".join(f"{k} {self.current[k]!r} -> {now[k]!r}" for k in sorted(changed)))
-        async with self.models.recording:  # after the running recording
+        async with self.models.in_use:  # after the running recording
             if "process" in levels:
                 log.info("host or port changed: the server ends; the app starts it again")
                 if not self.stop.done():

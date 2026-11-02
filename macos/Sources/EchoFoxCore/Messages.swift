@@ -88,7 +88,7 @@ public struct ServerInfo: Decodable, Equatable {
             public let what: String
         }
     }
-    /// A language the server's prompt names (server/dictation.py LANGUAGES).
+    /// A language the server's prompt names (server/languages.json, and the model's catalog entry names its languages).
     public struct Language: Decodable, Equatable {
         public let code: String
         public let name: String

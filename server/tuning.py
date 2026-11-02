@@ -8,7 +8,7 @@
 A knob is a setting of the user's (`user`): "basic", shown at once in the settings window, or "advanced", for those
 who tune the model and the context, behind the page's Advanced. A knob with no `user` is a constant: a guard or a
 number chosen by measurement, which the config does not set; only an experiment's start message changes it
-("options", `client`). Not tuned unless noted."""
+("options", `client`). Not tuned unless noted. A knob's value for a recording comes from its owners in resolve.py."""
 from dataclasses import dataclass
 
 import constants
@@ -139,29 +139,6 @@ def parse(raw, owner=None, what="options", constants_too=False):
             raise ValueError(f"unknown {what} key {key}; known: {', '.join(k.key for k in allowed)}")
         out[knob.name] = check(knob, value)
     return out
-
-
-def adapter_options(entry):
-    """An adapter's entry in the config → its context knobs, checked ("enabled" aside)."""
-    return parse({k: v for k, v in (entry or {}).items() if k != "enabled"}, "adapter", "adapter")
-
-
-def resolve(*owners, client=None):
-    """The options of a recording: the owners' values, each over the ones before it, then the client's over all of
-    them (an experiment wins over every owner). The one place of this order (docs/design.md, "Settings"). The owners
-    come in this order: the model's catalog defaults, the user's options of the model; for the context, then the
-    adapter's manifest defaults and the adapter's entry in the config."""
-    out = {}
-    for layer in (*owners, client):
-        out.update(layer or {})
-    return out
-
-
-def value(name, options, server):
-    """A knob's value for one recording: the options' (resolve), else the server's, else the fallback."""
-    if name in options:
-        return options[name]
-    return getattr(server, name, BY_NAME[name].default)
 
 
 def sampler(options):

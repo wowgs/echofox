@@ -4,6 +4,7 @@ import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import unittest
 
 import catalog
+import resolve
 
 
 class CatalogTest(unittest.TestCase):
@@ -26,7 +27,7 @@ class CatalogTest(unittest.TestCase):
 
     def test_every_catalog_entry_gives_the_models_constants(self):
         for name in catalog.entries():
-            self.assertIsNotNone(catalog.model_defaults({"catalog": name}).get("max_tokens_per_piece"), name)
+            self.assertIsNotNone(resolve.model_defaults({"catalog": name}).get("max_tokens_per_piece"), name)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ import asyncio
 import json
 import os
 import pathlib
+import re
+import tempfile
 import unittest
 
 import constants
@@ -12,13 +14,22 @@ import info
 import settings
 import tuning
 import session
-import variants
 from adapters import registry
 from fakes import args, stub_models
 
 SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
 EXAMPLES = json.loads(pathlib.Path(SHARED, "protocol-examples.json").read_text(encoding="utf-8"))
 CONSTANTS = json.loads(pathlib.Path(SHARED, "constants.json").read_text(encoding="utf-8"))
+SERVER = pathlib.Path(__file__).resolve().parent
+
+
+def sent_kinds(root=SERVER):
+    """The kinds of the messages that the server's code sends (send(type="…")), in every module of the server and its
+    adapters, not its tests or tools: a send that moves to another module is still found."""
+    modules = [f for f in root.glob("*.py")
+               if not f.name.startswith("test_") and f.name not in ("fakes.py", "sandbox.py")]
+    modules += root.glob("adapters/**/*.py")
+    return {kind for f in modules for kind in re.findall(r'\bsend\(type="(\w+)"', f.read_text(encoding="utf-8"))}
 
 
 class ContractTest(unittest.TestCase):
@@ -112,16 +123,23 @@ class ContractTest(unittest.TestCase):
 
     def test_the_server_sends_only_the_kinds_of_messages_of_the_examples(self):
         kinds = {m["type"] for m in EXAMPLES["server"]}
-        source = "".join(pathlib.Path(m.__file__).read_text(encoding="utf-8") for m in (session, info, variants))
-        for kind in ("speech", "text", "error", "stopped", "done", "info", "read"):
-            self.assertIn(f'type="{kind}"' if kind != "info" else '"type": "info"', source)
         self.assertEqual(kinds, {"speech", "text", "error", "stopped", "done"})
         models = {m["type"] for m in EXAMPLES["models"]}  # the answers to download and remove
-        for kind in ("progress", "downloaded", "removed"):
-            self.assertIn(f'type="{kind}"', source)
         self.assertEqual(models, {"progress", "downloaded", "removed", "error"})
+        # Every kind the code sends has its example, and every example's kind is sent; the info is a message of its own
+        self.assertEqual(sent_kinds(), kinds | models | {EXAMPLES["read"]["type"]})
+        self.assertEqual(info.info(args())["type"], EXAMPLES["info"]["type"])
         self.assertEqual({EXAMPLES[k]["type"] for k in ("download", "remove", "cancel")}, {"download", "remove", "cancel"})
         self.assertEqual((EXAMPLES["read"]["type"], EXAMPLES["content"]["type"]), ("read", "content"))
+
+    def test_the_search_for_sent_kinds_finds_a_send_in_any_module_but_the_tests(self):
+        with tempfile.TemporaryDirectory(dir=sandbox.ROOT) as d:
+            root = pathlib.Path(d)
+            (root / "adapters" / "some").mkdir(parents=True)
+            for name, kind in (("new_module.py", "a"), ("adapters/some/deep.py", "b"), ("test_x.py", "c"),
+                               ("fakes.py", "d")):
+                (root / name).write_text(f'async def f(send):\n    await send(type="{kind}", text="")\n')
+            self.assertEqual(sent_kinds(root), {"a", "b"})
 
 
 if __name__ == "__main__":

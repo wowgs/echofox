@@ -38,13 +38,14 @@ class SandboxTest(unittest.TestCase):
         self.assertIsNone(llama_process.end_stale(places.WORKING_LLAMA_PORT))
 
     def test_no_module_imports_a_replaced_function_by_its_name(self):
-        # The sandbox and fakes.py replace llama_process's functions by attribute: a caller that imported one by its
-        # name (from llama_process import spawn) would keep the real one and start a llama-server in a test
+        # The sandbox and fakes.py replace llama_process's and microphone's functions by attribute: a caller that
+        # imported one by its name (from llama_process import spawn) would keep the real one and start a llama-server
+        # or ask macOS in a test
         here = os.path.dirname(os.path.abspath(__file__))
         for f in sorted(glob.glob(os.path.join(here, "*.py")) + glob.glob(os.path.join(here, "adapters", "**", "*.py"),
                                                                            recursive=True)):
             source = pathlib.Path(f).read_text(encoding="utf-8")
-            self.assertNotRegex(source, r"(?m)^\s*from llama_process import", f)
+            self.assertNotRegex(source, r"(?m)^\s*from (llama_process|microphone) import", f)
 
 
 if __name__ == "__main__":

@@ -155,7 +155,7 @@ class MenuTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_info_names_the_menus_model_else_the_default(self):
         with FakeLlama():
-            st = settings.recording_settings(settings.resolve({}))
+            st = settings.recording_settings(settings.in_force({}))
             models = Models(ENTRIES, make=StubModel, chosen="big")
             self.assertEqual(info.info(st, models)["model"]["name"], "big")
             # A model this server does not have: none in memory, and the settings window shows the default's

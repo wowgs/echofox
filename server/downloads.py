@@ -2,7 +2,8 @@
 catalog entry, from its source (catalog.url), into the models folder. A download runs in a thread of its own and
 goes on when the client leaves; a client that asks for the same variant joins it. Each file is written as
 <file>.part and gets its own name only when its size and SHA-256 are right; a part that is there is continued with
-an HTTP Range request (Hugging Face answers one with 206 through its CDN, checked 2026-10-25)."""
+an HTTP Range request (Hugging Face answers one with 206 through its CDN, checked 2026-10-25). variants() says which
+variants of a model are downloaded, for the info."""
 import hashlib
 import logging
 import os
@@ -139,3 +140,20 @@ def remove(catalog_id, variant, models_folder):
                 os.remove(p)
     log.info("removed %s %s: %.1f GB", catalog_id, vid, freed / 1e9)
     return freed
+
+
+def variants(entry, models_folder):
+    """The variants of a registry entry's model, for the settings window: the one in force, and each with its name,
+    the bytes of its files, whether it is the catalog's default and whether its files are all in the models folder."""
+    vid, _ = catalog.variant(entry)
+    default = catalog.of(entry).get("defaultVariant")
+    now = running()
+    out = []
+    for v, spec in (catalog.of(entry).get("variants") or {}).items():
+        paths = catalog.files({**entry, "variant": v}, models_folder)
+        out.append({"id": v, "name": spec["name"], "bytes": sum(f["bytes"] for f in spec["files"].values()),
+                    **({"default": True} if v == default else {}),
+                    **({"memoryBytes": spec["memoryBytes"]} if "memoryBytes" in spec else {}),
+                    "downloaded": all(os.path.isfile(p) for p in paths.values()),
+                    **({"downloading": True} if (entry.get("catalog", catalog.DEFAULT), v) in now else {})})
+    return {"variant": vid, "variants": out}

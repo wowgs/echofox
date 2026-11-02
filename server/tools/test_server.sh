@@ -63,7 +63,7 @@ PY
     llama=(${(f)"$(cd $SRV && $PY -c '
 import sys
 import llama_process, model_registry, settings
-now = settings.resolve(settings.file_settings(sys.argv[1]) or {})
+now = settings.in_force(settings.file_settings(sys.argv[1]) or {})
 models = model_registry.Models(now["models"], models_folder=now["modelsFolder"], chosen=now["model"])
 name = models.selected or models.name_for(None)
 print("\n".join(llama_process.command(models.entries[name], models.models_folder)))' $STATE/config.json)"})

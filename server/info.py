@@ -2,9 +2,9 @@
 import adapters
 import catalog
 import constants
+import downloads
 import languages
 import settings
-from variants import variants
 
 
 def info(args, models=None):
@@ -35,6 +35,6 @@ def info(args, models=None):
                       "title": model.get("name"),
                       "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
                       "tokenWeights": model.get("tokenWeights"),
-                      **(variants(entry, folder) if entry else {})},
+                      **(downloads.variants(entry, folder) if entry else {})},
             "settings": settings.schema(args, entry, folder)}
 

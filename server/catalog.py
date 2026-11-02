@@ -43,8 +43,6 @@ defaults (docs/design.md, "Settings"):
 import json
 import os
 
-import tuning
-
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
 DEFAULT = "gemma-4-e4b"  # a registry entry from before the catalog (config version 3) was this model
 
@@ -64,11 +62,6 @@ def entries():
 def of(model_entry):
     """The catalog entry of a registry entry ({} if the catalog has none of that name)."""
     return entries().get((model_entry or {}).get("catalog") or DEFAULT, {})
-
-
-def model_defaults(model_entry):
-    """The defaults of the model's knobs and its constants: its catalog entry's options, by name."""
-    return tuning.parse(of(model_entry).get("options"), "model", "catalog options", constants_too=True)
 
 
 def token_weights(model_entry):
