@@ -223,7 +223,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }
 
     func choose(microphone: String) {
-        write(["microphone"], microphone, "microphone chosen: \(microphone)")
+        store.apply(SettingStore.microphone(microphone, in: store.config), "microphone chosen: \(microphone)")
     }
 
     // MARK: SettingsActions

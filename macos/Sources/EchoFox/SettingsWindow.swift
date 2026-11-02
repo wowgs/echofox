@@ -1,9 +1,9 @@
-// The settings window (docs/design.md): pages in a sidebar, each built from SettingsLayout. A setting described
-// by a SettingInfo (the server's in its info, the app's in SettingsLayout.appSettings) is one SettingRow: a switch, a
-// number or a text, with what is in force and where it comes from (SettingStore.state), and a button that takes the
-// value out of the config. The app's other items (the hotkeys, the microphone, the model, the prompt, the adapters,
-// the labels, the server's state) have views of their own. The window only reads and writes the config and asks the
-// App; it decides nothing.
+// The settings window (docs/design.md, "Settings"): pages in a sidebar (SettingsSidebar), each built from
+// SettingsLayout (SettingsPages). A setting described by a SettingInfo (the server's in its info, the app's in
+// SettingsLayout.appSettings) is one SettingRow; the app's other items have views of their own (SettingsPickers,
+// LanguageSettings, ModelSettings, AdapterPage, ServerStatus). The window shows the config and the server's info and
+// asks the App; what is in force, what a choice writes and the words for values are EchoFoxCore's (SettingStore,
+// SettingText, SettingsLayout), so the window decides nothing.
 import AppKit
 import Combine
 import EchoFoxCore
@@ -52,7 +52,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             w.center()
             w.setFrameAutosaveName("EchoFoxSettings")
             w.delegate = self
-            titles = model.$selection.sink { [weak w] item in w?.title = item?.title ?? "Settings" }
+            titles = model.$selection.combineLatest(model.$info).sink { [weak w] item, info in
+                w?.title = item?.title(adapters: info?.adapters ?? []) ?? "Settings"
+            }
             window = w
         }
         if let window { MainMenu.bringForward(window) }
@@ -77,7 +79,7 @@ final class SettingsModel: ObservableObject {
     @Published var problem: String?
     @Published var inputs: [AudioInput] = []
     @Published var volume: Float?
-    /// The page shown; kept for the next launch (a viewer's convenience, so UserDefaults).
+    /// The page shown; kept for the next launch (a viewer's convenience, so UserDefaults), in SidebarItem's form.
     @Published var selection: SidebarItem? = SidebarItem(saved: UserDefaults.standard.string(forKey: "settingsPage"))
                                                 ?? .page(.general) {
         didSet { UserDefaults.standard.set(selection?.saved, forKey: "settingsPage") }
@@ -89,52 +91,13 @@ final class SettingsModel: ObservableObject {
     /// What is typed in a field and not written yet, and the fields whose text was refused; by the field's id.
     @Published var drafts: [String: String] = [:]
     @Published var refused: Set<String> = []
+    /// The variant whose removal waits for the user's confirmation (the window keeps no view state of its own).
+    @Published var confirmRemoval: String?
     weak var actions: SettingsActions?
-
-    /// A text field's text: its draft while one is typed, else `shown` (the value in force).
-    func draft(_ id: String, shown: String) -> Binding<String> {
-        Binding(get: { self.drafts[id] ?? shown }, set: { self.drafts[id] = $0 })
-    }
-
-    func isOpen(_ id: String) -> Binding<Bool> {
-        Binding(get: { self.advancedOpen.contains(id) },
-                set: { if $0 { self.advancedOpen.insert(id) } else { self.advancedOpen.remove(id) } })
-    }
-
-    func state(_ s: SettingInfo, _ scope: SettingScope = .owner) -> SettingState {
-        SettingStore.state(of: s, in: config, scope: scope)
-    }
-
-    /// The setting that a page item shows, if it is one.
-    func shown(_ id: String) -> [(SettingInfo, SettingScope)] { setting(id).map { [($0, .owner)] } ?? [] }
-
-    /// How many of these settings differ from what they would be without a value here: for an Advanced's title.
-    func changed(_ settings: [(SettingInfo, SettingScope)]) -> Int {
-        settings.filter { state($0.0, $0.1).changed }.count
-    }
-
-    /// Writes or takes out the value of a setting, as SettingStore's edit says; a refused one is marked.
-    func apply(_ edit: SettingEdit, to s: SettingInfo, _ scope: SettingScope, id: String) {
-        guard let path = state(s, scope).path else { return }
-        switch edit {
-        case let .write(v):
-            done(id)
-            if let json = SettingStore.json(v, of: s) { write(path, json) }
-        case .remove:
-            done(id)
-            if config.value(path) != nil { remove(path) }
-        case .refuse:
-            refused.insert(id)
-        }
-    }
-
-    func done(_ id: String) {
-        drafts[id] = nil
-        refused.remove(id)
-    }
 
     let downloads: ModelDownloads
     private var downloadsChanged: AnyCancellable?
+    private var watch: Timer?
 
     init(actions: SettingsActions?, downloads: ModelDownloads) {
         self.actions = actions
@@ -154,31 +117,16 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    /// The server's last info, for the names of the adapters (adapterTitle).
-    static var lastInfo: ServerInfo?
-
     func serverChanged() {
         (info, problem) = actions?.serverState() ?? (nil, nil)
-        if let info { Self.lastInfo = info }
     }
 
-    /// The variant whose removal waits for the user's confirmation (the window keeps no view state of its own).
-    @Published var confirmRemoval: String?
-
-    /// The downloads and removals of model variants that the app started, by variant (ModelDownloads).
-    var jobs: [String: ModelJob] { downloads.jobs }
-
-    func download(catalog: String, variant: String) {
-        downloads.download(catalog: catalog, variant: variant, url: config.serverURL)
+    func microphoneChanged() {
+        config = actions?.config ?? config
+        inputs = AudioInputs.all()
+        let device = AudioInputs.chosen(config.microphone).input?.id ?? AudioInputs.defaultInput()
+        volume = device.flatMap(AudioInputs.volume)
     }
-
-    func cancel(_ variant: String) { downloads.cancel(variant) }
-
-    func remove(catalog: String, variant: String) {
-        downloads.remove(catalog: catalog, variant: variant, url: config.serverURL)
-    }
-
-    private var watch: Timer?
 
     /// Asks the server for its state now and every Tuning.serverStatusPollSeconds, while the state is shown.
     func watchServer(_ on: Bool) {
@@ -191,12 +139,13 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func microphoneChanged() {
-        config = actions?.config ?? config
-        inputs = AudioInputs.all()
-        let device = AudioInputs.chosen(config.microphone).input?.id ?? AudioInputs.defaultInput()
-        volume = device.flatMap(AudioInputs.volume)
-    }
+    // MARK: What the window shows
+
+    /// The server's adapters, for their names (ServerInfo.adapterTitle).
+    var adapters: [ServerInfo.Adapter] { info?.adapters ?? [] }
+
+    /// The menu's model, whose settings, variants and prompt the window shows (SettingStore.menuModel).
+    var menuModel: String? { SettingStore.menuModel(in: config, info: info) }
 
     /// The server's settings and the app's own.
     var settings: [SettingInfo] { (info?.settings ?? []) + SettingsLayout.appSettings }
@@ -208,736 +157,70 @@ final class SettingsModel: ObservableObject {
         return SettingsLayout.sections(of: page, serverKeys: keys)
     }
 
-    /// A value into the config, through the app's ConfigStore; the window shows the config it then has.
-    func write(_ path: [String], _ value: Any) {
-        actions?.write(path, value, "settings: \(path.joined(separator: ".")) = \(value)")
+    func state(_ s: SettingInfo, _ scope: SettingScope = .owner) -> SettingState {
+        SettingStore.state(of: s, in: config, scope: scope, info: info)
+    }
+
+    /// The setting that a page item shows, if it is one.
+    func shown(_ id: String) -> [(SettingInfo, SettingScope)] { setting(id).map { [($0, .owner)] } ?? [] }
+
+    /// How many of these settings differ from what they would be without a value here: for an Advanced's title.
+    func changed(_ settings: [(SettingInfo, SettingScope)]) -> Int {
+        settings.filter { state($0.0, $0.1).changed }.count
+    }
+
+    // MARK: Fields
+
+    /// A text field's text: its draft while one is typed, else `shown` (the value in force).
+    func draft(_ id: String, shown: String) -> Binding<String> {
+        Binding(get: { self.drafts[id] ?? shown }, set: { self.drafts[id] = $0 })
+    }
+
+    func isOpen(_ id: String) -> Binding<Bool> {
+        Binding(get: { self.advancedOpen.contains(id) },
+                set: { if $0 { self.advancedOpen.insert(id) } else { self.advancedOpen.remove(id) } })
+    }
+
+    func done(_ id: String) {
+        drafts[id] = nil
+        refused.remove(id)
+    }
+
+    // MARK: Writes
+
+    /// What the user entered in a SettingRow, as SettingStore's edit says: written, taken out, or refused and marked.
+    func apply(_ edit: SettingEdit, to s: SettingInfo, _ scope: SettingScope, id: String) {
+        guard edit != .refuse else {
+            refused.insert(id)
+            return
+        }
+        done(id)
+        apply(SettingStore.change(edit, of: s, scope: scope, in: config, info: info))
+    }
+
+    /// A change that SettingStore made, into the config through the app's ConfigStore; the window shows the config it
+    /// then has. Every write of the window goes here.
+    func apply(_ change: ConfigChange?) {
+        switch change {
+        case nil: return
+        case let .set(path, value)?: actions?.write(path, value, "settings: \(path.joined(separator: ".")) = \(value)")
+        case let .remove(path)?: actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
+        }
         config = actions?.config ?? config
     }
 
-    func remove(_ path: [String]) {
-        actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
-        config = actions?.config ?? config
-    }
-}
+    // MARK: Model variants
 
-/// A row of the sidebar: a page, or one adapter under the page Adapters.
-enum SidebarItem: Hashable {
-    case page(SettingsPage)
-    case adapter(String)
+    /// The downloads and removals of model variants that the app started, by variant (ModelDownloads).
+    var jobs: [String: ModelJob] { downloads.jobs }
 
-    var title: String {
-        switch self {
-        case let .page(p): return p.title
-        case let .adapter(name): return adapterTitle(name)
-        }
+    func download(catalog: String, variant: String) {
+        downloads.download(catalog: catalog, variant: variant, url: config.serverURL)
     }
 
-    /// As UserDefaults keeps it: "page.model", "adapter.claude".
-    var saved: String {
-        switch self {
-        case let .page(p): return "page." + p.rawValue
-        case let .adapter(name): return "adapter." + name
-        }
-    }
+    func cancel(_ variant: String) { downloads.cancel(variant) }
 
-    init?(saved: String?) {
-        guard let saved, let dot = saved.firstIndex(of: ".") else { return nil }
-        let kind = saved[..<dot], name = String(saved[saved.index(after: dot)...])
-        if kind == "page", let p = SettingsPage(rawValue: name) { self = .page(p) }
-        else if kind == "adapter", !name.isEmpty { self = .adapter(name) }
-        else { return nil }
-    }
-}
-
-/// An adapter's name for people (ServerInfo.adapterTitle), from the server's last info.
-func adapterTitle(_ name: String) -> String { ServerInfo.adapterTitle(name, in: SettingsModel.lastInfo) }
-
-struct SettingsView: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        // A plain sidebar and page: no window toolbar, so no sidebar button and no band over the page
-        HStack(spacing: 0) {
-            List(selection: $model.selection) {
-                ForEach(SettingsLayout.sidebar, id: \.self) { entry in
-                    switch entry {
-                    case let .page(page):
-                        Label {
-                            Text(page.title)
-                        } icon: {
-                            SidebarIcon { Image(systemName: page.symbol).resizable().scaledToFit() }
-                        }
-                        .tag(SidebarItem.page(page))
-                    case .adapters:
-                        // A section, not a page: its heading opens and closes the adapters' rows; macOS shows its
-                        // chevron at the right of the heading when the pointer is over it.
-                        Section(SidebarEntry.adaptersTitle, isExpanded: $model.adaptersOpen) {
-                            ForEach(model.info?.adapters ?? [], id: \.name) { a in
-                                AdapterSidebarRow(model: model, adapter: a).tag(SidebarItem.adapter(a.name))
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) { SidebarFooter(model: model) }
-            .frame(width: 210)
-            Divider()
-            Group {
-                switch model.selection {
-                case let .page(page)?: PageView(model: model, page: page)
-                case let .adapter(name)?:
-                    if let a = model.info?.adapters.first(where: { $0.name == name }) {
-                        AdapterPage(model: model, adapter: a)
-                    } else {
-                        Text("The server does not have this adapter any more.").foregroundStyle(.secondary)
-                    }
-                case nil: EmptyView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
-/// A sidebar row's icon in a column of its own: fitted into a square of one size and centered, so that a wide symbol
-/// (the stethoscope) and a narrow one (the microphone) take the same room and every title starts at one line.
-struct SidebarIcon<Icon: View>: View {
-    static var size: CGFloat { 18 }
-    static var column: CGFloat { 24 }
-    @ViewBuilder let icon: () -> Icon
-
-    var body: some View {
-        icon().frame(width: Self.size, height: Self.size).frame(width: Self.column)
-    }
-}
-
-/// An adapter in the sidebar: the icon of the app it reads, its name (grey when it is off), and a dot for its state
-/// as on the page Diagnostics: green when it is on, red when it does not work, none when it is off.
-struct AdapterSidebarRow: View {
-    @ObservedObject var model: SettingsModel
-    let adapter: ServerInfo.Adapter
-
-    private var on: Bool { model.config.adapters[adapter.name] == true }
-
-    var body: some View {
-        Label {
-            HStack {
-                Text(adapterTitle(adapter.name)).foregroundStyle(on || adapter.error != nil ? .primary : .secondary)
-                Spacer()
-                if adapter.error != nil { StatusDot(color: .red) } else if on { StatusDot(color: .green) }
-            }
-        } icon: {
-            SidebarIcon { AppIcon(bundleIds: adapter.apps) }
-        }
-        .help(adapter.error.map { "It does not work: \($0)" } ?? (on ? "On" : "Off"))
-    }
-}
-
-/// The bottom of the sidebar: About, and Uninstall, which asks first (Uninstaller).
-struct SidebarFooter: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Divider().padding(.bottom, 4)
-            Button { NSApp.orderFrontStandardAboutPanel(nil) } label: { Label("About EchoFox", systemImage: "info.circle") }
-            Button(role: .destructive) { model.actions?.uninstall() } label: { Label("Uninstall…", systemImage: "trash") }
-                .foregroundStyle(.red)
-        }
-        .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
-        .padding(.horizontal, 16).padding(.bottom, 12)
-    }
-}
-
-struct PageView: View {
-    @ObservedObject var model: SettingsModel
-    let page: SettingsPage
-
-    var body: some View {
-        Form {
-            if model.info == nil && [.general, .model, .recordings].contains(page) {
-                Text("The dictation server is not answering. Its settings appear here when it answers.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(model.sections(page), id: \.section) { section in
-                if section.section == SettingsLayout.advanced {
-                    AdvancedSection(model: model, id: page.rawValue,
-                                    changed: model.changed(section.ids.flatMap(model.shown))) {
-                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
-                    }
-                } else if let header = SettingsLayout.header(section.section, on: page) {
-                    Section(header) {
-                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
-                    }
-                } else {
-                    Section {
-                        ForEach(section.ids, id: \.self) { id in ItemView(model: model, id: id) }
-                    }
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-/// One item of a page: one of the app's own, or a server setting from its description.
-struct ItemView: View {
-    @ObservedObject var model: SettingsModel
-    let id: String
-
-    var body: some View {
-        switch id {
-        case "dictationKey": KeyPicker(model: model, isPrivate: false, title: "Dictation",
-                                       note: "Tap to start and stop. The text goes where the cursor was.")
-        case "privateDictationKey": KeyPicker(model: model, isPrivate: true, title: "Private dictation",
-                                              note: "Reads nothing on the screen and saves nothing.")
-        case "language": LanguagePicker(model: model)
-        case "commonNotes": LanguageList(model: model, field: "notes", title: "Notes for every language",
-                                         note: "{LANGUAGE} is replaced with the language. English speech gets none.",
-                                         every: true)
-        case "languageNotes": LanguageList(model: model, field: "notes", title: "Notes for this language",
-                                           note: "Rules about this language for the model, one on each line.")
-        case "languageFillers": LanguageList(model: model, field: "fillers", title: "Hesitation sounds",
-                                             note: "Removed from the text. Separate them with commas.")
-        case "microphone": MicrophonePicker(model: model)
-        case "inputVolume": VolumeRow(model: model)
-        case "model": ModelPicker(model: model)
-        case "variant": VariantPicker(model: model)
-        case "prompt": PromptEditor(model: model)
-        case "labelStats":
-            LabeledContent("Labeled") {
-                Text("\(model.labels.count) pieces, \(String(format: "%.1f", model.labels.seconds / 60)) min")
-            }
-        case "labelRecordings": Button("Label Recordings…") { model.actions?.openLabeling() }
-        case "serverStatus": ServerStatus(model: model)
-        case "openLog": Button("Open the Log") { model.actions?.openLog() }
-        default:
-            if let s = model.setting(id) { SettingRow(model: model, setting: s, scope: .owner) }
-        }
-    }
-}
-
-/// What to type when a number was refused, next to its field (Apple HIG, Writing: say how to enter it correctly):
-/// "Enter a number from 5 to 30."
-func allowedValues(_ s: SettingInfo) -> String {
-    let what = s.kind == "integer" ? "a whole number" : "a number"
-    let lo = s.min.map { show(.number($0)) }, hi = s.max.map { show(.number($0)) }
-    let above = s.minExclusive == true, below = s.maxExclusive == true
-    switch (lo, hi) {
-    case let (l?, h?): return "Enter \(what) " + (above ? "above \(l)" : "from \(l)") + (below ? " and below \(h)." : " to \(h).")
-    case let (l?, nil): return "Enter \(what) " + (above ? "above \(l)." : "of \(l) or more.")
-    case let (nil, h?): return "Enter \(what) " + (below ? "below \(h)." : "of \(h) or less.")
-    default: return "Enter \(what)."
-    }
-}
-
-func show(_ v: SettingValue?) -> String {
-    switch v {
-    case let .number(n)?: return n == n.rounded() && abs(n) < 1e9 ? String(Int(n)) : String(n)
-    case let .bool(b)?: return b ? "on" : "off"
-    case let .string(s)?: return s
-    default: return ""
-    }
-}
-
-/// Where the value in force comes from, for an adapter's setting: its own default, or the built-in one.
-func sourceNote(_ state: SettingState) -> String {
-    if state.changed { return "Set here." }
-    switch state.source {
-    case let .adapter(name): return "From the \(adapterTitle(name)) defaults."
-    case .ownerDefault: return "The built-in default."
-    }
-}
-
-/// A setting described by a SettingInfo, in one scope: a switch, a number or a text; the inherited value is the empty
-/// field's placeholder; the reset button takes the value out of the config.
-struct SettingRow: View {
-    @ObservedObject var model: SettingsModel
-    let setting: SettingInfo
-    let scope: SettingScope
-
-    private var id: String {
-        switch scope {
-        case .owner: return "setting." + setting.key
-        case let .adapter(a): return "adapter.\(a.name).\(setting.key)"
-        }
-    }
-    private var state: SettingState { model.state(setting, scope) }
-    private var refused: Bool { model.refused.contains(id) }
-    /// The field's text: the value set here; empty when it is inherited (the placeholder shows it).
-    private var shown: String {
-        ["string", "folder"].contains(setting.kind) ? show(state.value) : state.own.map { show($0) } ?? ""
-    }
-
-    private var note: String? {
-        if refused { return allowedValues(setting) }
-        let parts = [setting.help, scope == .owner ? "" : sourceNote(state)].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
-    var body: some View {
-        SettingLine(title: setting.title, note: note, refused: refused,
-                    pending: model.drafts[id].map { $0 != shown } ?? false) {
-            // The reset before the control, so that the controls end at the row's edge
-            ResetButton(visible: state.changed, help: "Restore the default") {
-                model.apply(.remove, to: setting, scope, id: id)
-            }
-            control
-        }
-        .disabled(state.path == nil || disabledAdapter)
-    }
-
-    /// A setting of an adapter that is off: shown, not changed.
-    private var disabledAdapter: Bool {
-        if case let .adapter(a) = scope { return model.config.adapters[a.name] != true }
-        return false
-    }
-
-    @ViewBuilder private var control: some View {
-        switch setting.kind {
-        case "boolean":
-            Toggle("", isOn: Binding(get: { state.value == .bool(true) },
-                                     set: { model.apply(SettingStore.toggle($0, state: state), to: setting, scope, id: id) }))
-                .labelsHidden().toggleStyle(.switch)
-        case "string", "folder":
-            InputField(text: model.draft(id, shown: shown), width: 240, refused: refused, onSubmit: commit)
-            if setting.kind == "folder" {
-                Button("Choose…") {
-                    if let folder = chooseFolder(starting: shown) {
-                        model.apply(SettingStore.edit(folder, of: setting, state: state), to: setting, scope, id: id)
-                    }
-                }
-            }
-        default:
-            InputField(placeholder: show(state.inherited), text: model.draft(id, shown: shown), width: 110, number: true,
-                       unit: setting.unit, refused: refused, onSubmit: commit)
-        }
-    }
-
-    private func commit() {
-        guard let text = model.drafts[id] else { return }
-        model.apply(SettingStore.edit(text, of: setting, state: state), to: setting, scope, id: id)
-    }
-}
-
-struct KeyPicker: View {
-    @ObservedObject var model: SettingsModel
-    let isPrivate: Bool, title: String, note: String
-
-    private var path: String { isPrivate ? "privateDictationKey" : "dictationKey" }
-    private var current: TapKeyChoice? { isPrivate ? model.config.privateDictationKey : model.config.dictationKey }
-    private var other: TapKeyChoice? { isPrivate ? model.config.dictationKey : model.config.privateDictationKey }
-    private var clash: Bool { current != nil && current == other }
-
-    var body: some View {
-        SettingLine(title: title, note: clash ? "The other dictation uses this key too. Choose another one." : note,
-                    refused: clash) {
-            Picker(title, selection: Binding(get: { current?.rawValue ?? "none" }, set: { v in
-                model.write([path], v)
-            })) {
-                ForEach(TapKeyChoice.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                Text("None").tag("none")
-            }
-            .labelsHidden()
-            .fixedSize()
-        }
-    }
-}
-
-struct LanguagePicker: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        Picker("Language", selection: Binding(get: { model.config.language }, set: { model.write(["language"], $0) })) {
-            Text("Any").tag("")
-            ForEach(model.info?.languages ?? [], id: \.code) { Text($0.name).tag($0.code) }
-            if !model.config.language.isEmpty, !(model.info?.languages ?? []).contains(where: { $0.code == model.config.language }) {
-                Text(model.config.language).tag(model.config.language)
-            }
-        }
-    }
-}
-
-struct MicrophonePicker: View {
-    @ObservedObject var model: SettingsModel
-
-    /// The config's microphone is one of the choices: a connected device, the built-in one, or macOS's input.
-    private var chosenIsListed: Bool {
-        MicrophoneChoice.isListed(model.config.microphone, among: model.inputs.map(\.device))
-    }
-
-    var body: some View {
-        Picker("Microphone", selection: Binding(get: { model.config.microphone }, set: {
-            model.actions?.choose(microphone: $0)
-            model.microphoneChanged()
-        })) {
-            ForEach(model.inputs, id: \.uid) { input in
-                Text(input.name + (input.builtIn ? " (built-in)" : "")).tag(MicrophoneChoice.value(for: input.device))
-            }
-            Text("Follow macOS's input").tag(Config.systemMicrophone)
-            if !chosenIsListed { Text("Not connected").tag(model.config.microphone) }
-        }
-    }
-}
-
-struct VolumeRow: View {
-    @ObservedObject var model: SettingsModel
-
-    var body: some View {
-        if let v = model.volume {
-            LabeledContent("Input volume") {
-                Slider(value: Binding(get: { Double(v) }, set: { x in
-                    model.actions?.setInputVolume(Float(x))
-                    model.volume = Float(x)
-                }), in: 0...1).frame(width: 220)
-                Text("\(Int((Double(v) * 100).rounded()))%").monospacedDigit().frame(width: 44, alignment: .trailing)
-            }
-        } else {
-            LabeledContent("Input volume") { Text("This microphone has no volume control.").foregroundStyle(.secondary) }
-        }
-    }
-}
-
-/// The model: its name, or a choice when the registry has more than one.
-struct ModelPicker: View {
-    @ObservedObject var model: SettingsModel
-
-    private var names: [String] { model.info?.models ?? model.config.models }
-    private var current: String { model.config.model ?? model.info?.model?.name ?? "" }
-
-    var body: some View {
-        if names.count > 1 {
-            Picker("Model", selection: Binding(get: { current }, set: { model.write(["model"], $0) })) {
-                // the model in force by its name for people (Gemma 4 E4B), the others by their registry name
-                ForEach(names, id: \.self) { name in
-                    Text(name == model.info?.model?.name ? model.info?.model?.title ?? name : name).tag(name)
-                }
-            }
-        } else {
-            LabeledContent("Model") { Text(model.info?.model?.title ?? current) }
-        }
-        if let e = model.config.error { Text(e).font(.caption).foregroundStyle(.red) }
-        if let n = model.config.note { Text(n).font(.caption).foregroundStyle(.secondary) }
-    }
-}
-
-/// The quantizations of the menu's model, one row each: its size on disk and in memory, whether it is in use,
-/// downloaded or downloading, and what can be done with it: Use (only one whose files are on the disk), Download
-/// with its progress and Cancel, or Remove, which deletes its files after a confirmation. The one in use cannot be
-/// removed (the server refuses it): another one is chosen first.
-struct VariantPicker: View {
-    @ObservedObject var model: SettingsModel
-
-    private var info: ServerInfo.Model? { model.info?.model }
-
-    var body: some View {
-        if let variants = info?.variants, !variants.isEmpty, let name = model.config.model ?? info?.name {
-            Text("Smaller: less memory, faster. Larger: fewer errors.").foregroundStyle(.secondary)
-            ForEach(variants, id: \.id) { v in
-                VariantRow(model: model, name: name, catalog: info?.catalog ?? "", variant: v,
-                           inUse: v.id == info?.variant)
-            }
-        }
-    }
-}
-
-func gigabytes(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
-
-/// One quantization in a row: its name, its size on the disk and in memory, then its state and what can be done:
-/// In use and Remove, or Use and Remove, for one on the disk (Remove after a confirmation, which for the one in use says
-/// that dictation stops until a model is downloaded); Download, with its progress and Cancel, for one
-/// that is not. While another window (the first start's) downloads it, the server's info says so and there is no
-/// Download.
-struct VariantRow: View {
-    @ObservedObject var model: SettingsModel
-    let name: String
-    let catalog: String
-    let variant: ServerInfo.Variant
-    let inUse: Bool
-
-    private var job: ModelJob? { model.jobs[variant.id] }
-    private var running: Bool { job.map { $0.error == nil && !$0.finished } ?? false }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 18) {
-                Text(variant.name).frame(width: 64, alignment: .leading)
-                Measure(label: "Disk", value: gigabytes(variant.bytes))
-                if let m = variant.memoryBytes { Measure(label: "RAM", value: gigabytes(m)) }
-                Spacer()
-                actions
-            }
-            if let job, running {
-                Text(job.status).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            } else if let e = job?.error {
-                Text(e).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .confirmationDialog("Remove \(variant.name) from this Mac?", isPresented: Binding(
-            get: { model.confirmRemoval == variant.id }, set: { if !$0 { model.confirmRemoval = nil } })) {
-            Button("Remove \(gigabytes(variant.bytes))", role: .destructive) {
-                model.remove(catalog: catalog, variant: variant.id)
-            }
-            Button("Keep", role: .cancel) {}
-        } message: {
-            Text(inUse ? "It is the model in use: dictation stops until you download one. Its files are deleted from the disk."
-                       : "Its files are deleted from the disk. You can download it again later.")
-        }
-    }
-
-    @ViewBuilder private var actions: some View {
-        if let job, running {
-            ProgressView(value: job.total > 0 ? job.bytes / job.total : 0).frame(width: 120)
-            Button("Cancel") { model.cancel(variant.id) }
-        } else if inUse {
-            Label("In use", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
-        } else if variant.downloaded {
-            Button("Use") {
-                model.write(SettingStore.variantPath(of: name), variant.id)
-                model.actions?.refreshServer()
-            }
-            Button("Remove", role: .destructive) { model.confirmRemoval = variant.id }
-        } else if variant.canDownload {
-            Button("Download") { model.download(catalog: catalog, variant: variant.id) }
-        } else {
-            ProgressView().controlSize(.small).help("Downloading in the EchoFox window.")
-        }
-    }
-}
-
-/// A measure next to a name: its label grey, its value plain ("Disk 5.6 GB").
-struct Measure: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(label).foregroundStyle(.secondary)
-            Text(value).monospacedDigit()
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The model's prompt template: its own in the config, or its catalog entry's. The language notes follow it.
-struct PromptEditor: View {
-    @ObservedObject var model: SettingsModel
-    private var id: String { "prompt." + (model.config.model ?? "") }
-
-    private var path: [String]? { model.config.model.map(SettingStore.promptPath) }
-    private var own: String? { path.flatMap { model.config.value($0) as? String } }
-    private var catalog: String { model.info?.model?.prompt ?? "" }
-    private var shown: String { own ?? catalog }
-    private var text: String { model.drafts[id] ?? shown }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: model.draft(id, shown: shown)).font(.system(.body, design: .monospaced))
-                .frame(minHeight: 160).inputBox()
-            HStack {
-                Text("{LANGUAGE} is replaced with the language. The language notes come after the prompt.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if own != nil {
-                    Button("Restore Default") { if let p = path { model.done(id); model.remove(p) } }
-                }
-                Button("Save") {
-                    let t = text
-                    model.done(id)
-                    if let p = path { model.write(p, t) }
-                }
-                .keyboardShortcut("s", modifiers: .command)
-                .buttonStyle(.borderedProminent)
-                .disabled(text == shown)
-            }
-        }
-    }
-}
-
-/// A language's list (its notes or its hesitation sounds), or with `every` the notes of every language: the config's,
-/// else the table's.
-struct LanguageList: View {
-    @ObservedObject var model: SettingsModel
-    let field: String, title: String, note: String
-    var every = false
-
-    private var code: String { every ? "*" : String(model.config.language.prefix(while: { $0 != "-" })) }
-    private var id: String { "language.\(code).\(field)" }
-    private var list: SettingStore.LanguageList { field == "notes" ? .notes : .fillers }
-    private var path: [String] { list.path(of: code) }
-    private var own: [String]? { model.config.value(path) as? [String] }
-    private var defaults: [String] {
-        if every { return model.info?.commonNotes ?? [] }
-        let l = model.info?.languages.first { $0.code == code }
-        return (field == "notes" ? l?.notes : l?.fillers) ?? []
-    }
-    private var shown: String { list.text(own ?? defaults) }
-
-    var body: some View {
-        if code.isEmpty {
-            Text("Choose a language to see its notes and sounds.").foregroundStyle(.secondary)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(title)
-                    Spacer()
-                    ResetButton(visible: own != nil, help: "Restore the defaults") {
-                        model.done(id)
-                        model.remove(path)
-                    }
-                }
-                if field == "notes" {
-                    TextEditor(text: model.draft(id, shown: shown)).frame(minHeight: 60).inputBox()
-                } else {
-                    InputField(text: model.draft(id, shown: shown), width: 360) { save() }
-                }
-                HStack {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if field == "notes" { Button("Save") { save() }.disabled((model.drafts[id] ?? shown) == shown) }
-                }
-            }
-        }
-    }
-
-    private func save() {
-        guard let text = model.drafts[id] else { return }
-        model.done(id)
-        model.write(path, list.items(text))
-    }
-}
-
-/// An Advanced section: closed until a click; its title says how many of its settings differ from what they would be
-/// without a value there, so that a change is never out of sight.
-struct AdvancedSection<Content: View>: View {
-    @ObservedObject var model: SettingsModel
-    let id: String
-    let changed: Int
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        Section {
-            DisclosureGroup(isExpanded: model.isOpen(id)) {
-                content()
-            } label: {
-                // The whole row, not only the triangle: a click anywhere on it opens or closes the section.
-                Button {
-                    withAnimation { model.isOpen(id).wrappedValue.toggle() }
-                } label: {
-                    HStack {
-                        Text(SettingsLayout.advanced)
-                        if changed > 0 { Text("\(changed) changed").font(.caption).foregroundStyle(.secondary) }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Shows or hides the advanced settings")
-            }
-        }
-    }
-}
-
-struct AdapterSwitch: View {
-    @ObservedObject var model: SettingsModel
-    let adapter: ServerInfo.Adapter
-
-    var body: some View {
-        Toggle("", isOn: Binding(get: { model.config.adapters[adapter.name] == true }, set: { on in
-            model.write(["adapters", adapter.name, "enabled"], on)
-            model.actions?.refreshServer()
-        }))
-        .labelsHidden().toggleStyle(.switch)
-    }
-}
-
-/// One adapter's page: whether it works, what it reads, its settings.
-struct AdapterPage: View {
-    @ObservedObject var model: SettingsModel
-    let adapter: ServerInfo.Adapter
-
-    var body: some View {
-        Form {
-            Section("Adapter") {
-                if let d = adapter.description, !d.isEmpty {
-                    Text(d).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                LabeledContent("On") { AdapterSwitch(model: model, adapter: adapter) }
-                if let e = adapter.error {
-                    LabeledContent("Problem") { Text(e).foregroundStyle(.red).textSelection(.enabled) }
-                }
-            }
-            // Each list in a section of its own, one row per item, the icons in one column (as in the sidebar)
-            Section("Apps it reads") {
-                ForEach(adapter.apps, id: \.self) { id in AppRow(bundleId: id) }
-            }
-            if let reads = adapter.reads, !reads.isEmpty {
-                Section("Files it reads") {
-                    ForEach(reads, id: \.self) { path in
-                        Label { Text(path).textSelection(.enabled) } icon: {
-                            SidebarIcon { Image(systemName: "folder").resizable().scaledToFit() }
-                        }
-                    }
-                }
-            }
-            let screen = adapter.screen ?? []
-            let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : [])
-            if !screen.isEmpty || !tree.isEmpty {
-                Section("From the screen") {
-                    // Its kinds of screen text; for an adapter that reads the screen of only some of its apps, one row per app
-                    let some = adapter.screenApps.flatMap { Set($0) == Set(adapter.apps) ? nil : $0 }
-                    ForEach(screen, id: \.self) { s in
-                        let kind = s == "lists" ? "Message lists" : s == "outline" ? "Page text" : s
-                        if let some {
-                            ForEach(some, id: \.self) { id in AppRow(bundleId: id, note: kind.lowercased()) }
-                        } else {
-                            Label { Text(kind) } icon: {
-                                SidebarIcon {
-                                    Image(systemName: s == "lists" ? "list.bullet.rectangle" : "doc.text").resizable().scaledToFit()
-                                }
-                            }
-                        }
-                    }
-                    ForEach(tree, id: \.self) { id in
-                        AppRow(bundleId: id, note: "window content, asked for")
-                    }
-                }
-            }
-            AdvancedSection(model: model, id: "adapter." + adapter.name,
-                            changed: model.changed(model.adapterSettings.map { ($0, .adapter(adapter)) })) {
-                ForEach(model.adapterSettings, id: \.key) { s in
-                    SettingRow(model: model, setting: s, scope: .adapter(adapter))
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-/// The dictation server's state, asked in the background while it is shown: a dot as in macOS's own settings (green:
-/// it answers; red: it does not, and why; grey: not asked yet).
-struct ServerStatus: View {
-    @ObservedObject var model: SettingsModel
-
-    private var state: (color: Color, text: String) {
-        if let p = model.problem { return (.red, p) }
-        if model.info != nil { return (.green, "Running") }
-        return (.secondary, "Checking…")
-    }
-
-    var body: some View {
-        LabeledContent("Dictation server") { Text(model.config.serverURL.absoluteString).textSelection(.enabled) }
-        LabeledContent("State") {
-            HStack(spacing: 6) {
-                StatusDot(color: state.color)
-                Text(state.text).textSelection(.enabled)
-            }
-            .accessibilityElement(children: .combine)
-        }
-        .onAppear { model.watchServer(true) }
-        .onDisappear { model.watchServer(false) }
-        LabeledContent("Model") { Text(model.info?.model?.title ?? model.config.model ?? "not known") }
+    func remove(catalog: String, variant: String) {
+        downloads.remove(catalog: catalog, variant: variant, url: config.serverURL)
     }
 }

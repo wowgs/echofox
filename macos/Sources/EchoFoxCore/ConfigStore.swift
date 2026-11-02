@@ -31,6 +31,17 @@ public final class ConfigStore {
     /// `f(old, new)` runs on each change of the config, after it is read again.
     public func observe(_ f: @escaping (_ old: Config, _ new: Config) -> Void) { observers.append(f) }
 
+    /// Writes a change that SettingStore made (a value equal to its default is never written: it takes the key out);
+    /// nil, nothing to change, writes nothing. False if a write failed.
+    @discardableResult
+    public func apply(_ change: ConfigChange?, _ done: String) -> Bool {
+        switch change {
+        case nil: return true
+        case let .set(path, value)?: return set(path, to: value, done)
+        case let .remove(path)?: return remove(path, done)
+        }
+    }
+
     /// Writes `value` at `path` (Config.set); true if it was written.
     @discardableResult
     public func set(_ path: [String], to value: Any, _ done: String) -> Bool {

@@ -1,10 +1,11 @@
 // The config file the app shares with the dictation server, ~/.echofox/config.json ($ECHOFOX_CONFIG), format 11
 // (shared/config.schema.json has its keys; docs/design.md, "The config file over versions"). The app reads each key
-// on its own and leaves out what it does not know, so a file of a newer format is read too; it is the file's only
-// writer, one key at a time, and keeps the keys it does not know. The app reads the model registry, the chosen model, the language,
-// the enabled adapters, the silence stop, where the server listens and keeps its recordings, and where the labeled
-// recordings go, the microphone and the hotkeys; it writes what the menu and the settings window choose, and takes a
-// value out to go back to its default.
+// on its own and leaves out what it does not know, so a file of a newer format is read too; a wrong value is that
+// key's default. It is the file's only writer, one key at a time, and keeps the keys it does not know. The app reads
+// the model registry, the chosen model, the language, the enabled adapters, the silence stop, where the server listens
+// and keeps its recordings, and where the labeled recordings go, the microphone and the hotkeys; it writes what the
+// menu and the settings window choose (SettingStore says what each choice writes), and takes a value out to go back
+// to its default.
 import Foundation
 
 public struct Config: Equatable {
@@ -23,6 +24,9 @@ public struct Config: Equatable {
     /// "microphone": the Mac's own microphone (the default), macOS's input, or a device's UID.
     public static let builtInMicrophone = "builtin"
     public static let systemMicrophone = "system"
+    /// The hotkeys' defaults.
+    public static let defaultDictationKey = TapKeyChoice.rightOption
+    public static let defaultPrivateDictationKey = TapKeyChoice.rightCommand
 
     public static var url: URL {
         if let p = ProcessInfo.processInfo.environment["ECHOFOX_CONFIG"], !p.isEmpty { return URL(fileURLWithPath: p) }
@@ -32,12 +36,14 @@ public struct Config: Equatable {
     public var models: [String] = []
     public var model: String?
     public var language = ""
+    /// macOS's first language as a language code: the language when the file has none.
+    public var systemLanguage = ""
     /// The adapters the file enables or disables, by name; one not named is off.
     public var adapters: [String: Bool] = [:]
     public var silenceStopSeconds = Tuning.silenceStopSeconds
-    /// The hotkeys: a tap of one right-hand modifier (TapKeyChoice); nil: the action has no key.
-    public var dictationKey: TapKeyChoice? = .rightOption
-    public var privateDictationKey: TapKeyChoice? = .rightCommand
+    /// The hotkeys: a tap of one right-hand modifier (TapKeyChoice); nil: the action has no key ("none" in the file).
+    public var dictationKey: TapKeyChoice? = Config.defaultDictationKey
+    public var privateDictationKey: TapKeyChoice? = Config.defaultPrivateDictationKey
     /// The file as parsed, for the settings window, which reads any value (a model's options, the server's section).
     public var raw: [String: Any] { file.contents }
     var file = Parsed()
@@ -62,12 +68,18 @@ public struct Config: Equatable {
 
     public init() {}
 
-    /// A path of the config: "~" is the home folder.
     /// The recordings and the labeled pieces: the server's folders, else the config's (the server is not running).
     public func folders(_ info: ServerInfo?) -> (recordings: URL, labeled: URL) {
         (info?.folder("recordings") ?? recordings, info?.folder("labeled") ?? labeled)
     }
 
+    /// Both actions have the same key: the settings window asks for another one (TapKey gives it to one action).
+    public var keysClash: Bool { dictationKey != nil && dictationKey == privateDictationKey }
+
+    /// A language tag's language code, the part before its first "-": "en-GB" → "en".
+    public static func languageCode(_ tag: String) -> String { String(tag.prefix(while: { $0 != "-" })) }
+
+    /// A path of the config: "~" is the home folder.
     public static func path(_ p: String) -> URL {
         URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
     }
@@ -75,7 +87,8 @@ public struct Config: Equatable {
     public static func load(from url: URL = Config.url,
                             systemLanguage: String? = Locale.preferredLanguages.first) -> Config {
         var c = Config()
-        c.language = systemLanguage.map { String($0.prefix(while: { $0 != "-" })) } ?? ""
+        c.systemLanguage = systemLanguage.map(languageCode) ?? ""
+        c.language = c.systemLanguage
         // No file yet (the first start): every value is its default, which is no error
         guard FileManager.default.fileExists(atPath: url.path) else { return c }
         guard let data = try? Data(contentsOf: url) else {
@@ -97,8 +110,8 @@ public struct Config: Equatable {
         }
         if let s = d["silenceStopSeconds"] as? Double, s > 0 { c.silenceStopSeconds = s }
         if let m = d["microphone"] as? String, !m.isEmpty { c.microphone = m }
-        if let k = d["dictationKey"] as? String { c.dictationKey = TapKeyChoice(rawValue: k) }
-        if let k = d["privateDictationKey"] as? String { c.privateDictationKey = TapKeyChoice(rawValue: k) }
+        c.dictationKey = hotkey(d["dictationKey"], default: defaultDictationKey)
+        c.privateDictationKey = hotkey(d["privateDictationKey"], default: defaultPrivateDictationKey)
         c.file = Parsed(contents: d)
         if let server = d["server"] as? [String: Any] {
             if let h = server["host"] as? String, !h.isEmpty { c.host = h }
@@ -109,46 +122,45 @@ public struct Config: Equatable {
         return c
     }
 
-    /// Writes `value` at `path` (keys of nested objects): the menu's model, language and adapters. Only that value
-    /// changes in the text, so the file keeps its order and layout (JSONEdit); the edit is kept only if the file then
-    /// parses to its old contents with the new value. Otherwise the file is written again from its parsed contents.
-    /// A file that is not there yet (the first start) starts as `{"version": …}`.
+    /// A hotkey from its value in the file: a key's name, or "none" (TapKeyChoice.off), no key; any other value, or
+    /// none, is the key's default.
+    static func hotkey(_ value: Any?, default d: TapKeyChoice) -> TapKeyChoice? {
+        guard let s = value as? String else { return d }
+        return s == TapKeyChoice.off ? nil : TapKeyChoice(rawValue: s) ?? d
+    }
+
+    /// Writes `value` at `path` (keys of nested objects). A file that is not there yet (the first start) starts as
+    /// `{"version": …}`.
     public static func set(_ path: [String], to value: Any, in url: URL = Config.url) throws {
         if !FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("{\n  \"version\": \(version)\n}\n".utf8).write(to: url, options: .atomic)
         }
-        let text = try String(contentsOf: url, encoding: .utf8)
-        guard let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
-            throw MessageError("\(url.path) is not a JSON object")
-        }
-        let expected = setting(path[...], to: value, in: parsed)
-        if let edited = try? JSONEdit.set(path, to: value, in: text),
-           let check = try? JSONSerialization.jsonObject(with: Data(edited.utf8)) as? [String: Any],
-           NSDictionary(dictionary: check).isEqual(to: expected) {
-            try edited.write(to: url, atomically: true, encoding: .utf8)
-            return
-        }
-        let data = try JSONSerialization.data(withJSONObject: expected,
-                                              options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try (data + Data("\n".utf8)).write(to: url, options: .atomic)
+        try change(url, to: { setting(path[...], to: value, in: $0) }, edit: { try JSONEdit.set(path, to: value, in: $0) })
     }
 
-    /// Takes the value at `path` out of the file (back to its default), the rest of the text as it was; checked as
-    /// set() checks its edit.
+    /// Takes the value at `path` out of the file (back to its default).
     public static func remove(_ path: [String], in url: URL = Config.url) throws {
+        try change(url, to: { removing(path[...], from: $0) }, edit: { try JSONEdit.remove(path, in: $0) })
+    }
+
+    /// One change of the file, the one path of set() and remove(): only the changed value changes in the text, so the
+    /// file keeps its order and layout (`edit`, JSONEdit). The edit is kept only if the file then parses to `expected`
+    /// of its old contents; otherwise the file is written again from those contents.
+    private static func change(_ url: URL, to expected: ([String: Any]) -> [String: Any],
+                               edit: (String) throws -> String) throws {
         let text = try String(contentsOf: url, encoding: .utf8)
         guard let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
             throw MessageError("\(url.path) is not a JSON object")
         }
-        let expected = removing(path[...], from: parsed)
-        if let edited = try? JSONEdit.remove(path, in: text),
+        let after = expected(parsed)
+        if let edited = try? edit(text),
            let check = try? JSONSerialization.jsonObject(with: Data(edited.utf8)) as? [String: Any],
-           NSDictionary(dictionary: check).isEqual(to: expected) {
+           NSDictionary(dictionary: check).isEqual(to: after) {
             try edited.write(to: url, atomically: true, encoding: .utf8)
             return
         }
-        let data = try JSONSerialization.data(withJSONObject: expected,
+        let data = try JSONSerialization.data(withJSONObject: after,
                                               options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try (data + Data("\n".utf8)).write(to: url, options: .atomic)
     }

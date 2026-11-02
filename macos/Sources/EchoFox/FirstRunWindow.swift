@@ -1,11 +1,12 @@
 // The window of the first start (docs/reference/4-app.md, "The first start"): until the setup is done (Done, which sets
-// setupDone in the app's preferences) or while no variant of the menu's model is downloaded, it asks for the language, which variant to download and which adapters may read the conversation,
-// shows the two permissions with a button each (the app asks for none by itself), shows the download, and then names
-// the variant in the config; it stays open after the download, until Done. An adapter's switch writes the config at
-// once. The
-// dictation server does the download (ModelJob), so it goes on if the window closes. The fox stands beside it: the
-// only place of the full character in the app (macos/art/README.md). `--render-first-run` draws the window into a PNG
-// from a server info in a file, for checking its look without a server (Snapshots).
+// setupDone in the app's preferences) or while no variant of the menu's model is downloaded (FirstRun decides), it
+// asks for the language, which variant to download and which adapters may read the conversation, shows the two
+// permissions with a button each (the app asks for none by itself), shows the download, and then names the variant in
+// the config; it stays open after the download, until Done. An adapter's switch writes the config at once. What each
+// choice writes is SettingStore's. The dictation server does the download (ModelJob), so it goes on if the window
+// closes. The fox stands beside it: the only place of the full character in the app (macos/art/README.md).
+// `--render first-run` draws the window into a PNG from a server info in a file, for checking its look without a
+// server (Snapshots).
 import AppKit
 import Combine
 import EchoFoxCore
@@ -35,38 +36,30 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
     /// The variant in use was removed: the window may open again (showIfNeeded).
     func allowAgain() { shown = false }
 
-    /// The app's preference that the first start's window was finished with Done; absent before its first start.
-    static let setupDone = "setupDone"
     /// Whether the config file was there when the app started: then an earlier version set EchoFox up.
     var configExisted = false
 
-    /// Opens the window once in a run of the app, when the setup is not done or the server's info says that no variant
-    /// of the menu's model is downloaded or downloading. An earlier version's setup (no preference yet, but a config
-    /// and a downloaded model) counts as done.
+    /// Opens the window when FirstRun.decide says so for the server's info, once in a run of the app.
     func showIfNeeded(_ info: ServerInfo?) {
-        guard !shown, let m = info?.model, let variants = m.variants, !variants.isEmpty,
-              let name = m.name, let catalog = m.catalog else { return }
         let prefs = UserDefaults.standard
-        let hasModel = variants.contains(where: { $0.downloaded || $0.downloading == true })
-        if prefs.object(forKey: Self.setupDone) == nil && configExisted && hasModel {
-            prefs.set(true, forKey: Self.setupDone)
+        switch FirstRun.decide(model: info?.model, shown: shown, setupDone: prefs.object(forKey: FirstRun.setupDone) as? Bool,
+                               configExisted: configExisted) {
+        case .none: return
+        case .setUpEarlier:
+            prefs.set(true, forKey: FirstRun.setupDone)
             Log.write("first start: set up by an earlier version (a config and a downloaded model)")
+            return
+        case .show: break
         }
-        guard !prefs.bool(forKey: Self.setupDone) || !hasModel else { return }
-        prefs.set(false, forKey: Self.setupDone)
+        guard let info, let model = FirstRunModel(info: info, config: store?.config ?? Config(), store: store,
+                                                  downloads: downloads) else { return }
+        prefs.set(false, forKey: FirstRun.setupDone)
         shown = true
-        let config = store?.config ?? Config()
-        let languages = info?.languages ?? []
-        let model = FirstRunModel(name: name, catalog: catalog, title: m.title ?? name, variants: variants,
-                                  inForce: m.variant, languages: languages,
-                                  language: info?.proposedLanguage(config.language) ?? "en",
-                                  adapters: info?.adapters ?? [], enabled: config.adapters, store: store,
-                                  downloads: downloads)
         (model.microphone, model.accessibility) = permissions()
         model.allowMicrophone = { [weak self] in self?.allowMicrophone() }
         model.allowAccessibility = { [weak self] in self?.allowAccessibility() }
         model.done = { [weak self] in
-            UserDefaults.standard.set(true, forKey: Self.setupDone)
+            UserDefaults.standard.set(true, forKey: FirstRun.setupDone)
             Log.write("first start: done")
             self?.askServer()
             self?.window?.close()
@@ -89,34 +82,10 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         window = nil
         model = nil
     }
-
-    /// Draws the window's content, as the first start shows it for this server info, into a PNG at the screen's
-    /// scale, in the light or the dark appearance; nothing is written to the config.
-    static func render(info file: String, to out: String, dark: Bool) {
-        guard let data = FileManager.default.contents(atPath: file), let info = try? ServerInfo.decode(data),
-              let m = info.model, let variants = m.variants, let name = m.name, let catalog = m.catalog else {
-            FileHandle.standardError.write(Data("render: no server info with a model in \(file)\n".utf8))
-            exit(1)
-        }
-        let model = FirstRunModel(name: name, catalog: catalog, title: m.title ?? name, variants: variants,
-                                  inForce: m.variant, languages: info.languages, language: "ru",
-                                  adapters: info.adapters, enabled: [:], store: nil, downloads: ModelDownloads())
-        // The window's own background: an offscreen view draws on nothing
-        let view = NSHostingView(rootView: FirstRunView(model: model).background(Color(nsColor: .windowBackgroundColor)))
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled],
-                         backing: .buffered, defer: false)
-        w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        w.contentView = view
-        view.layoutSubtreeIfNeeded()
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
-        exit(0)
-    }
 }
 
 final class FirstRunModel: ObservableObject {
-    let name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?
+    let name: String, catalog: String, title: String, variants: [ServerInfo.Variant]
     let languages: [ServerInfo.Language]
     /// The adapters the server has, and which of them the config turns on.
     let adapters: [ServerInfo.Adapter]
@@ -138,20 +107,21 @@ final class FirstRunModel: ObservableObject {
     private let downloads: ModelDownloads
     private var downloadsChanged: AnyCancellable?
 
-    init(name: String, catalog: String, title: String, variants: [ServerInfo.Variant], inForce: String?,
-         languages: [ServerInfo.Language], language: String, adapters: [ServerInfo.Adapter], enabled: [String: Bool],
-         store: ConfigStore?, downloads: ModelDownloads) {
+    /// The window's model for the server's `info`, with the language it proposes for `config` and the adapters the
+    /// config turns on; nil without a model with variants in the info. `store` nil: nothing is written (a render).
+    init?(info: ServerInfo, config: Config, store: ConfigStore?, downloads: ModelDownloads) {
+        guard let m = info.model, let variants = m.variants, !variants.isEmpty, let name = m.name,
+              let catalog = m.catalog else { return nil }
         self.store = store
         self.downloads = downloads
         self.name = name
         self.catalog = catalog
-        self.title = title
+        title = m.title ?? name
         self.variants = variants
-        self.inForce = inForce
-        self.languages = languages
-        self.language = language
-        self.adapters = adapters
-        self.enabled = enabled
+        languages = info.languages
+        language = info.proposedLanguage(config.language)
+        adapters = info.adapters
+        enabled = config.adapters
         downloaded = Set(variants.filter(\.downloaded).map(\.id))
         choice = variants.first(where: \.downloaded)?.id ?? ServerInfo.Variant.recommended(variants, memory: ProcessInfo.processInfo.physicalMemory)
         downloadsChanged = downloads.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
@@ -162,27 +132,38 @@ final class FirstRunModel: ObservableObject {
         }
     }
 
+    /// An adapter's name for people, as Settings shows it.
+    func title(of adapter: ServerInfo.Adapter) -> String { ServerInfo.adapterTitle(adapter.name, in: adapters) }
+
     /// An adapter's switch: the config changes at once, as in Settings.
     func setAdapter(_ name: String, _ on: Bool) {
         enabled[name] = on
-        store?.set(["adapters", name, "enabled"], to: on, "first start: adapter \(name) \(on ? "on" : "off")")
+        guard let store else { return }
+        store.apply(SettingStore.adapter(name, enabled: on, in: store.config),
+                    "first start: adapter \(name) \(on ? "on" : "off")")
     }
 
     func download() {
-        store?.set(["language"], to: language, "first start: language \(language)")
+        writeLanguage()
         downloads.download(catalog: catalog, variant: choice, url: (store?.config ?? Config()).serverURL)
+    }
+
+    /// The speaker's language into the config (macOS's own needs no line in it).
+    private func writeLanguage() {
+        guard let store else { return }
+        store.apply(SettingStore.language(language, in: store.config), "first start: language \(language)")
     }
 
     /// The chosen variant, downloaded, is the menu model's (the catalog's default needs no line in the config).
     private func useChoice() {
-        if choice != inForce {
-            store?.set(["models", name, "variant"], to: choice, "first start: \(name) variant \(choice)")
-        }
+        guard let store else { return }
+        store.apply(SettingStore.variant(choice, of: name, variants: variants, in: store.config),
+                    "first start: \(name) variant \(choice)")
     }
 
     /// Done: the language and the chosen variant go into the config, and the setup is done.
     func finish() {
-        store?.set(["language"], to: language, "first start: language \(language)")
+        writeLanguage()
         useChoice()
         done()
     }
@@ -308,9 +289,9 @@ struct FirstRunView: View {
     private func adapterRow(_ a: ServerInfo.Adapter) -> some View {
         HStack(spacing: 8) {
             AppIcon(bundleIds: a.apps)
-            Text(a.title ?? a.name.capitalized)
+            Text(model.title(of: a))
             Spacer(minLength: 12)
-            Toggle(a.title ?? a.name, isOn: Binding(get: { model.enabled[a.name] == true },
+            Toggle(model.title(of: a), isOn: Binding(get: { model.enabled[a.name] == true },
                                                      set: { model.setAdapter(a.name, $0) }))
                 .labelsHidden().toggleStyle(.switch).controlSize(.small)
         }

@@ -642,5 +642,185 @@ do {
           && TransferRate.left(4800) == "about 1 h 20 min left", "rate: the time's words")
 }
 
+// The settings side: what each choice of the windows writes (a default takes the key out), the hotkeys' values, the
+// words of the settings window, the sidebar's saved row, the adapters' names, and whether the first start opens.
+do {
+    let info = try ServerInfo.decode(data(examples["info"]!))
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-choices-\(getpid())")
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let file = dir.appendingPathComponent("config.json")
+    let written = """
+    {
+      "version": 11,
+      "language": "de",
+      "microphone": "AirPods-1",
+      "dictationKey": "rightShift",
+      "adapters": {"telegram": {"enabled": true}, "claude-code": {"enabled": false}},
+      "models": {"gemma-e4b": {"variant": "q8_0", "prompt": "mine"}},
+      "languages": {"ru": {"fillers": ["э"]}}
+    }
+
+    """
+    try written.write(to: file, atomically: true, encoding: .utf8)
+    let c = Config.load(from: file, systemLanguage: "ru-RU")
+    let empty = Config.load(from: dir.appendingPathComponent("not-there.json"), systemLanguage: "ru-RU")
+    // A value equal to its default takes the key out, and is no change where the file has none
+    check(SettingStore.microphone("builtin", in: c) == .remove(["microphone"])
+          && SettingStore.microphone("builtin", in: empty) == nil
+          && SettingStore.microphone("system", in: c) == .set(["microphone"], "system")
+          && SettingStore.microphone("AirPods-1", in: c) == nil, "choices: the microphone")
+    check(SettingStore.language("ru", in: c) == .remove(["language"]) && SettingStore.language("ru", in: empty) == nil
+          && SettingStore.language("", in: empty) == .set(["language"], "") && SettingStore.language("de", in: c) == nil,
+          "choices: the language, whose default is macOS's")
+    check(SettingStore.hotkey(.rightOption, isPrivate: false, in: c) == .remove(["dictationKey"])
+          && SettingStore.hotkey(nil, isPrivate: false, in: c) == .set(["dictationKey"], "none")
+          && SettingStore.hotkey(.rightCommand, isPrivate: true, in: c) == nil
+          && SettingStore.hotkey(.rightOption, isPrivate: true, in: c) == .set(["privateDictationKey"], "rightOption"),
+          "choices: the hotkeys, and none")
+    check(SettingStore.adapter("claude-code", enabled: false, in: c) == .remove(["adapters", "claude-code", "enabled"])
+          && SettingStore.adapter("claude-chat", enabled: false, in: c) == nil
+          && SettingStore.adapter("claude-chat", enabled: true, in: c) == .set(["adapters", "claude-chat", "enabled"], true)
+          && SettingStore.adapter("telegram", enabled: true, in: c) == nil, "choices: an adapter's switch, off by default")
+    let variants = info.model?.variants
+    check(SettingStore.variant("q4_0", of: "gemma-e4b", variants: variants, in: c) == .remove(["models", "gemma-e4b", "variant"])
+          && SettingStore.variant("q4_0", of: "gemma-e4b", variants: variants, in: empty) == nil
+          && SettingStore.variant("q8_0", of: "gemma-e4b", variants: variants, in: empty)
+              == .set(["models", "gemma-e4b", "variant"], "q8_0")
+          && SettingStore.variant("q4_0", of: "gemma-e4b", variants: nil, in: empty)
+              == .set(["models", "gemma-e4b", "variant"], "q4_0"),
+          "choices: a variant; the catalog's default is none, and an unknown default writes the value")
+    check(SettingStore.model("gemma-e4b", info: info, in: empty) == nil
+          && SettingStore.model("other", info: info, in: empty) == .set(["model"], "other")
+          && SettingStore.model("gemma-e4b", info: nil, in: empty) == .set(["model"], "gemma-e4b"),
+          "choices: the model, whose default is the registry's first")
+    let catalog = info.model?.prompt
+    check(SettingStore.prompt(catalog ?? "", of: "gemma-e4b", catalog: catalog, in: c) == .remove(["models", "gemma-e4b", "prompt"])
+          && SettingStore.prompt("new", of: "gemma-e4b", catalog: catalog, in: c) == .set(["models", "gemma-e4b", "prompt"], "new"),
+          "choices: a prompt equal to the catalog's is none")
+    let fillers = SettingStore.LanguageList.fillers, notes = SettingStore.LanguageList.notes
+    let ruFillers = info.languages.first { $0.code == "ru" }?.fillers ?? []
+    check(SettingStore.list(fillers, of: "ru", text: fillers.text(ruFillers), info: info, in: c) == .remove(["languages", "ru", "fillers"])
+          && SettingStore.list(fillers, of: "ru", text: "", info: info, in: c) == .set(["languages", "ru", "fillers"], [String]())
+          && SettingStore.list(notes, of: "*", text: notes.text(info.commonNotes ?? []), info: info, in: empty) == nil
+          && SettingStore.list(fillers, of: "ru", text: "э", info: info, in: c) == nil,
+          "choices: a language's list equal to the server's is none; an empty one turns it off")
+    check(SettingStore.reset(["models", "gemma-e4b", "prompt"], in: c) == .remove(["models", "gemma-e4b", "prompt"])
+          && SettingStore.reset(["model"], in: c) == nil, "choices: a reset only of what the file has")
+    // true is not 1: the server reads only a boolean as an adapter's switch
+    check(ConfigChange.set(["x"], true) != .set(["x"], 1) && ConfigChange.set(["x"], 1) == .set(["x"], 1.0),
+          "choices: a boolean is not a number")
+    // The menu's model: the config's, else the registry's first; a model's setting is written there
+    let topK = SettingInfo(key: "topK", owner: "model", kind: "integer", title: "Top K", default: .number(64))
+    check(SettingStore.menuModel(in: empty, info: info) == "gemma-e4b" && SettingStore.menuModel(in: empty, info: nil) == nil
+          && SettingStore.state(of: topK, in: empty, info: info).path == ["models", "gemma-e4b", "options", "topK"]
+          && SettingStore.state(of: topK, in: empty).path == nil,
+          "choices: the menu's model without a model in the config")
+    check(SettingStore.change(.write(.number(40)), of: topK, in: empty, info: info) == .set(["models", "gemma-e4b", "options", "topK"], 40)
+          && SettingStore.change(.remove, of: topK, in: empty, info: info) == nil
+          && SettingStore.change(.refuse, of: topK, in: empty, info: info) == nil, "choices: a row's edit")
+
+    // Through the store: a default takes the key out of the file; nothing to change writes nothing, and no file is made
+    let store = ConfigStore(url: file)
+    var logged: [String] = []
+    store.log = { logged.append($0) }
+    check(store.apply(SettingStore.microphone("builtin", in: store.config), "mic") && store.config.value(["microphone"]) == nil
+          && store.config.microphone == "builtin" && logged == ["mic"], "store: the default microphone takes the key out")
+    check(store.apply(SettingStore.microphone("builtin", in: store.config), "again") && logged == ["mic"],
+          "store: nothing to change writes nothing")
+    let none = dir.appendingPathComponent("none/config.json")
+    let fresh = ConfigStore(url: none)
+    check(fresh.apply(SettingStore.language(fresh.config.systemLanguage, in: fresh.config), "language")
+          && !FileManager.default.fileExists(atPath: none.path), "store: the first start's macOS language makes no file")
+
+    // The hotkeys from the file: "none" is off, a value this version does not know is the key's default
+    try #"{"dictationKey": "none", "privateDictationKey": "leftFoot"}"#.write(to: file, atomically: true, encoding: .utf8)
+    var keys = Config.load(from: file)
+    check(keys.dictationKey == nil && keys.privateDictationKey == .rightCommand, "keys: none is off, an unknown key the default")
+    try #"{"dictationKey": 5, "privateDictationKey": "rightOption"}"#.write(to: file, atomically: true, encoding: .utf8)
+    keys = Config.load(from: file)
+    check(keys.dictationKey == .rightOption && keys.privateDictationKey == .rightOption && keys.keysClash,
+          "keys: a wrong type is the default; the same key twice is a clash")
+    keys.dictationKey = nil
+    keys.privateDictationKey = nil
+    check(!keys.keysClash && TapKeyChoice.configValue(nil) == "none", "keys: two without a key are no clash")
+    let schema = try JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent(
+        "shared/config.schema.json"))) as! [String: Any]
+    let props = schema["properties"] as! [String: Any]
+    for key in ["dictationKey", "privateDictationKey"] {
+        let values = (props[key] as? [String: Any])?["enum"] as? [String] ?? []
+        check(values == TapKeyChoice.allCases.map(\.rawValue) + [TapKeyChoice.off], "keys: the schema's values of \(key): \(values)")
+    }
+
+    // The language's code
+    check(Config.languageCode("en-GB") == "en" && Config.languageCode("ru") == "ru" && Config.languageCode("") == ""
+          && Config.load(from: none, systemLanguage: "pt-BR").systemLanguage == "pt", "language: the code of a tag")
+
+    // One write path: an edit that JSONEdit cannot make writes the file again from its contents
+    try #"{"s": "text", "a": 1}"#.write(to: file, atomically: true, encoding: .utf8)
+    try Config.set(["s", "x"], to: 1, in: file)
+    var parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+    check(NSDictionary(dictionary: parsed).isEqual(to: ["s": ["x": 1], "a": 1]), "config: a set through a string, written again \(parsed)")
+    try #"{"s": "text", "a": 1}"#.write(to: file, atomically: true, encoding: .utf8)
+    try Config.remove(["s", "x"], in: file)
+    parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+    check(NSDictionary(dictionary: parsed).isEqual(to: ["s": "text", "a": 1]), "config: a removal through a string keeps the rest \(parsed)")
+    try? FileManager.default.removeItem(at: dir)
+
+    // The words of the settings window
+    let cut = info.settings!.first { $0.key == "maxRecordingSeconds" }!
+    check(SettingText.allowedValues(cut) == "Enter a number above 0.", "words: \(SettingText.allowedValues(cut))")
+    let range = SettingInfo(key: "k", owner: "server", kind: "integer", title: "K", default: nil, min: 5, max: 30)
+    let open = SettingInfo(key: "k", owner: "server", kind: "number", title: "K", default: nil, max: 1, maxExclusive: true)
+    check(SettingText.allowedValues(range) == "Enter a whole number from 5 to 30."
+          && SettingText.allowedValues(open) == "Enter a number below 1."
+          && SettingText.allowedValues(SettingInfo(key: "k", owner: "server", kind: "number", title: "K", default: nil))
+              == "Enter a number.", "words: what to enter")
+    check(SettingText.value(.number(60)) == "60" && SettingText.value(.number(0.95)) == "0.95"
+          && SettingText.value(.bool(true)) == "on" && SettingText.value(nil) == "", "words: a value")
+    let budget = info.settings!.first { $0.key == "chatHistoryTokenBudget" }!
+    let own = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"telegram","enabled":true,"apps":[],"electronTree":false,"context":{"chatHistoryTokenBudget":600}}"#.utf8))
+    let bySelf = SettingStore.state(of: budget, in: Config(), scope: .adapter(own))
+    let builtIn = SettingStore.state(of: budget, in: Config(), scope: .adapter(info.adapters.first { $0.name == "telegram" }!))
+    check(SettingText.source(bySelf, adapters: info.adapters) == "From the Telegram defaults."
+          && SettingText.source(builtIn, adapters: info.adapters) == "The built-in default.",
+          "words: where an adapter's value comes from")
+    check(gigabytes(5_582_359_648) == "5.6 GB" && gigabytes(0) == "0.0 GB", "words: gigabytes")
+
+    // The adapters' names for people: the manifest's title, else the name with a capital
+    check(ServerInfo.adapterTitle("claude-code", in: info.adapters) == "Claude Code"
+          && ServerInfo.adapterTitle("telegram", in: info.adapters) == "Telegram"
+          && ServerInfo.adapterTitle("my-notes", in: []) == "My-notes", "adapters: names for people")
+
+    // The sidebar's row, as the preferences keep it
+    let rows: [SidebarItem] = [.page(.model), .adapter("claude-code")]
+    check(rows.map(\.saved) == ["page.model", "adapter.claude-code"]
+          && rows.allSatisfy { SidebarItem(saved: $0.saved) == $0 }, "sidebar: saved and read back")
+    check(SidebarItem(saved: nil) == nil && SidebarItem(saved: "page.gone") == nil && SidebarItem(saved: "adapter.") == nil
+          && SidebarItem(saved: "general") == nil, "sidebar: a form this version does not know")
+    check(SidebarItem.adapter("claude-code").title(adapters: info.adapters) == "Claude Code"
+          && SidebarItem.adapter("claude-code").title(adapters: []) == "Claude-code"
+          && SidebarItem.page(.recordings).title(adapters: []) == "Recordings & Labels", "sidebar: the window's title")
+    check(SettingsPage.model.showsServerSettings && !SettingsPage.language.showsServerSettings, "sidebar: the server's pages")
+
+    // The first start: whether its window opens
+    let m = info.model  // q8_0 downloaded
+    var plain = examples["info"] as! [String: Any], model = plain["model"] as! [String: Any]
+    model["variants"] = (model["variants"] as! [[String: Any]]).map { var v = $0; v["downloaded"] = false; return v }
+    plain["model"] = model
+    let bare = try ServerInfo.decode(data(plain)).model  // nothing downloaded
+    check(FirstRun.decide(model: m, shown: false, setupDone: nil, configExisted: false) == .show
+          && FirstRun.decide(model: m, shown: false, setupDone: nil, configExisted: true) == .setUpEarlier
+          && FirstRun.decide(model: m, shown: false, setupDone: true, configExisted: true) == .none
+          && FirstRun.decide(model: m, shown: false, setupDone: false, configExisted: true) == .show
+          && FirstRun.decide(model: bare, shown: false, setupDone: true, configExisted: true) == .show
+          && FirstRun.decide(model: bare, shown: false, setupDone: nil, configExisted: true) == .show
+          && FirstRun.decide(model: bare, shown: true, setupDone: nil, configExisted: false) == .none
+          && FirstRun.decide(model: nil, shown: false, setupDone: nil, configExisted: false) == .none,
+          "first start: shown until Done, again without a model, an earlier version's setup counts as done")
+} catch {
+    check(false, "settings side: \(error)")
+}
+
 print(failures == 0 ? "echofox-tests: all checks pass" : "echofox-tests: \(failures) failed")
 exit(failures == 0 ? 0 : 1)
