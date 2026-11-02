@@ -227,6 +227,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     var config: Config { store.config }
 
+    func apply(_ change: ConfigChange, _ done: String) { store.apply(change, done) }
+
     /// The server applies a change of the config at its next look at the file; then its info is asked again, so the
     /// snapshots, the trees and the settings window follow it.
     func refreshServer() {
@@ -249,12 +251,6 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         let config = store.config
         key.set([(.dictation, config.dictationKey), (.privateDictation, config.privateDictationKey)])
     }
-
-    @discardableResult
-    func remove(_ path: [String], _ done: String) -> Bool { store.remove(path, done) }
-
-    @discardableResult
-    func write(_ path: [String], _ value: Any, _ done: String) -> Bool { store.set(path, to: value, done) }
 
     func openLabeling() {
         let (recordings, labeled) = store.config.folders(infoClient.info)

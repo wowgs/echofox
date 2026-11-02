@@ -138,6 +138,7 @@ class Adapter(abc.ABC):
 - The skip list is checked against all DOM classes of an element. Only the copy sent is cut to 12 classes. Now the classes are cut first: in a snapshot of Claude Desktop some elements had 12 of them, so a class after the 12th never matches a skip.
 - A skipped element stays in the outline with `"skipped": true`, without its children. Adapters read that flag instead of deciding again by role and class.
 - When the budget stops the walk, the outline still includes the ancestors of the last element read. So the oldest element on the screen can be told apart and taken whole.
+- The walks of the outline and of the lists stop after 10,000 elements, and they leave out a child that is one of its own ancestors. The budget counts only text, and a surface may have no budget. The application element of Claude Desktop and of Finder was its own child (2026-11-02). [The context reference](reference/3-context.md#what-the-app-reads) has the rule and the measurements.
 
 ### The settings window
 

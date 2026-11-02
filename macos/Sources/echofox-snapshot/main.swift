@@ -14,6 +14,8 @@
 // classes); --lists, the rows of the window's lists; --processes, the app's child processes; --budget, read the
 // outline and the lists up to this many tokens (without it, all of them), counted with --weights, the model's
 // tokenWeights (without them, a token per 3.4 characters). Without --read and these flags, only the identity.
+// What a walk left out (the budget, the depth, the bound of elements, the repeats of a cycle) goes to stderr, as the
+// app's log says it.
 // A snapshot with an outline or lists holds the window's text: keep it private.
 import AppKit
 import EchoFoxCore
@@ -83,9 +85,15 @@ var result: [String: Any] = ["identity": capture.identity ?? [:]]
 if let request {
     let started = Date()
     let tokens = TokenEstimate(request.tokenWeights)
-    var surfaces: [String: [String: Any]] = [:]
-    for s in request.surfaces { surfaces[s.surface] = FocusSnapshot.read(s, of: capture, tokens: tokens) }
-    let message = ClientMessage.content(surfaces: surfaces, tookMs: Int(Date().timeIntervalSince(started) * 1000))
+    var reads: [String: FocusSnapshot.Read] = [:]
+    for s in request.surfaces { reads[s.surface] = FocusSnapshot.read(s, of: capture, tokens: tokens) }
+    let message = ClientMessage.content(surfaces: reads.mapValues(\.content),
+                                        tookMs: Int(Date().timeIntervalSince(started) * 1000))
+    for (surface, read) in reads.sorted(by: { $0.key < $1.key }) {
+        for part in read.cuts.keys.sorted() {
+            FileHandle.standardError.write("\(surface) \(part): left out \(read.leftOut(part) ?? "")\n".data(using: .utf8)!)
+        }
+    }
     result["content"] = try JSONSerialization.jsonObject(with: Data(message.utf8))
 }
 let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])

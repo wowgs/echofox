@@ -32,8 +32,54 @@ public enum FocusSnapshot {
     /// end of the tree, so the tree is read from its end. A chat of 4 messages in Claude Desktop had 547 elements, 32
     /// levels deep (2026-10-25).
     static let maxOutlineDepth = 80
+    /// The most elements one walk reads: the outline, or the search for the lists with their rows and cells. It is a
+    /// protection, not a limit of the content: the token budget counts only text, and a surface may have no budget.
+    /// On 2026-11-02 the largest tree measured was Claude Desktop's whole window of a long Code tab session: 3538
+    /// elements in 440 ms, about 0.12 ms an element. 10000 elements is about three times that tree, about 1.2 s at
+    /// that rate.
+    public static let maxElements = 10_000
     /// The roles whose AXValue is text shown on the screen; an input field's value never goes in.
     static let shownTextRoles: Set<String> = ["AXStaticText", "AXListMarker"]
+
+    /// Why a walk left part of the tree out. The content says only that it did: the outline's "complete" is false, a
+    /// list's rows are fewer than its "rowCount". The contract has no field for the reason, so it goes to the log.
+    public enum Cut: String, CaseIterable {
+        /// The text reached the token budget.
+        case budget
+        /// The outline reached maxOutlineDepth levels.
+        case depth
+        /// The walk read maxElements elements.
+        case elements
+        /// An element was its own descendant, and its repeat was left out. Nothing is missing then: the element and
+        /// its subtree are read once. On 2026-11-02, while Claude Desktop had no focused element, the focused window of
+        /// Claude Desktop was the application element (role AXApplication), and that element was its own first child. The
+        /// outline repeated the app's menus down to 80 levels: 20117 elements in 2.3 s. In Finder the desktop's
+        /// group had the application element 63 times among its children, and the walk ran for minutes.
+        case cycle
+
+        /// What the walk left out, for the log.
+        public var leftOut: String {
+            switch self {
+            case .budget: return "what is past the token budget"
+            case .depth: return "what is deeper than \(FocusSnapshot.maxOutlineDepth) levels"
+            case .elements: return "what is past \(FocusSnapshot.maxElements) elements"
+            case .cycle: return "the repeats of an element inside itself"
+            }
+        }
+    }
+
+    /// What read() read of one surface.
+    public struct Read {
+        /// The surface's content, as the content message carries it.
+        public let content: [String: Any]
+        /// What each walk left out, by part ("outline", "lists"); a part that left nothing out is not here.
+        public let cuts: [String: Set<Cut>]
+
+        /// What the walk of `part` left out, in words for the log; nil when it left nothing out.
+        public func leftOut(_ part: String) -> String? {
+            cuts[part].map { cut in Cut.allCases.filter(cut.contains).map(\.leftOut).joined(separator: ", ") }
+        }
+    }
 
     /// The first phase: the identity, and the elements that the text and the second phase need later.
     public struct Capture {
@@ -99,21 +145,24 @@ public enum FocusSnapshot {
 
     /// The second phase: what `request` asks of one surface, read of the captured window, with the estimate of the
     /// read request's model. {"outline": …} with the outline, {"lists": […], "focusedFrame": …} with the lists,
-    /// {"processes": [{pid, name}]} with the processes; a part that has nothing to read of is left out.
-    public static func read(_ request: ReadRequest.Surface, of capture: Capture, tokens: TokenEstimate) -> [String: Any] {
-        var out: [String: Any] = [:]
+    /// {"processes": [{pid, name}]} with the processes; a part that has nothing to read of is left out. With it, what
+    /// the walks left out, for the log.
+    public static func read(_ request: ReadRequest.Surface, of capture: Capture, tokens: TokenEstimate) -> Read {
+        var out: [String: Any] = [:], cuts: [String: Set<Cut>] = [:]
         if let o = request.outline, let root = capture.webArea ?? capture.window {
-            out["outline"] = outline(root, root: capture.webArea == nil ? "window" : "webArea", skip: Set(o.skip ?? []),
-                                     budget: o.budget, tokens: tokens)
+            let walked = outline(root, root: capture.webArea == nil ? "window" : "webArea", skip: Set(o.skip ?? []),
+                                 budget: o.budget, tokens: tokens)
+            (out["outline"], cuts["outline"]) = (walked.outline, walked.cuts)
         }
         if let l = request.lists, let w = capture.window {
-            out["lists"] = windowLists(w, budget: l.budget, tokens: tokens)
+            let walked = windowLists(w, budget: l.budget, tokens: tokens)
+            (out["lists"], cuts["lists"]) = (walked.lists, walked.cuts)
             if let f = capture.focused, let r = frame(f) { out["focusedFrame"] = r }
         }
         if request.processes != nil, let pid = capture.pid {
             out["processes"] = descendants(of: pid)
         }
-        return out
+        return Read(content: out, cuts: cuts.filter { !$0.value.isEmpty })
     }
 
     // MARK: Accessibility
@@ -164,38 +213,75 @@ public enum FocusSnapshot {
         return ["x": Double(point.x), "y": Double(point.y), "width": Double(size.width), "height": Double(size.height)]
     }
 
-    /// The lists in `window`, in the tree's order: each one's frame, its row count and its last rows (oldest first),
-    /// a row's accessible text and its cells' titles. Each list is read from its end until its text reaches `budget`
-    /// tokens; the row that reaches it is the last one (no budget: every row).
-    static func windowLists(_ window: AXUIElement, budget: Int?, tokens: TokenEstimate) -> [[String: Any]] {
-        var found: [AXUIElement] = []
-        func look(_ e: AXUIElement, _ depth: Int) {
+    /// The lists in an accessibility window (lists(in:) has the rule).
+    static func windowLists(_ window: AXUIElement, budget: Int?,
+                            tokens: TokenEstimate) -> (lists: [[String: Any]], cuts: Set<Cut>) {
+        lists(in: window, budget: budget, tokens: tokens, children: children, role: { string($0, "AXRole") },
+              text: { string($0, "AXTitle") ?? string($0, "AXValue") ?? string($0, "AXDescription") },
+              title: { string($0, "AXTitle") }, frame: frame)
+    }
+
+    /// The lists in `window`, in the tree's order, at most maxLists within maxListDepth levels: each one's frame, its
+    /// row count and its last rows (oldest first), a row's accessible text (`text`) and its cells' titles (`title`).
+    /// Each list is read from its end until its text reaches `budget` tokens; the row that reaches it is the last one
+    /// (no budget: every row). The search and the rows with their cells read at most maxElements elements together,
+    /// and an element inside itself is not searched again. Apart from Accessibility, so that the checks can walk a
+    /// made-up tree.
+    public static func lists<Node: Hashable>(in window: Node, budget: Int?, tokens: TokenEstimate = .fallback,
+                                             children: (Node) -> [Node], role: (Node) -> String?,
+                                             text: (Node) -> String?, title: (Node) -> String?,
+                                             frame: (Node) -> [String: Any]?) -> (lists: [[String: Any]], cuts: Set<Cut>) {
+        var found: [Node] = [], path: Set<Node> = [window], read = 0, cuts: Set<Cut> = []
+        func look(_ e: Node, _ depth: Int) {
             for c in children(e) where found.count < maxLists {
-                if string(c, "AXRole") == "AXList" {
+                if read >= maxElements {
+                    cuts.insert(.elements)
+                    return
+                }
+                if path.contains(c) {
+                    cuts.insert(.cycle)
+                    continue
+                }
+                read += 1
+                if role(c) == "AXList" {
                     found.append(c)
                 } else if depth < maxListDepth {
+                    path.insert(c)
                     look(c, depth + 1)
+                    path.remove(c)
                 }
             }
         }
         look(window, 0)
-        return found.map { list in
+        let lists = found.map { list in
             let rows = children(list)
             var kept: [[String: Any]] = [], spent = TokenBudget(budget)
             for r in rows.reversed() {
-                if spent.isReached { break }
-                let text = string(r, "AXTitle") ?? string(r, "AXValue") ?? string(r, "AXDescription") ?? ""
-                let columns = children(r).compactMap { string($0, "AXTitle") }
-                spent.add(tokens.count(([text] + columns).joined(separator: " ")))
-                kept.append(compact(["text": text.isEmpty ? nil : text, "columns": columns.isEmpty ? nil : columns]))
+                if spent.isReached {
+                    cuts.insert(.budget)
+                    break
+                }
+                if read >= maxElements {
+                    cuts.insert(.elements)
+                    break
+                }
+                let cells = children(r)
+                let readable = cells.prefix(maxElements - read - 1)
+                if readable.count < cells.count { cuts.insert(.elements) }
+                read += 1 + readable.count
+                let line = text(r) ?? ""
+                let columns = readable.compactMap(title)
+                spent.add(tokens.count(([line] + columns).joined(separator: " ")))
+                kept.append(compact(["text": line.isEmpty ? nil : line, "columns": columns.isEmpty ? nil : columns]))
             }
             return compact(["frame": frame(list), "rowCount": rows.count, "rows": Array(kept.reversed())])
         }
+        return (lists, cuts)
     }
 
     /// The outline of an accessibility element (outline(of:) has the rule).
     static func outline(_ root: AXUIElement, root name: String, skip: Set<String>, budget: Int?,
-                        tokens: TokenEstimate) -> [String: Any] {
+                        tokens: TokenEstimate) -> (outline: [String: Any], cuts: Set<Cut>) {
         outline(of: root, root: name, skip: skip, budget: budget, tokens: tokens, describe: describe,
                 children: children, shownText: { string($0, "AXValue") })
     }
@@ -203,28 +289,44 @@ public enum FocusSnapshot {
     /// The tree under `root`, flat in the tree's order: each element's depth under the root, its service fields
     /// (`describe`, with all its DOM classes), and the shown text of a static text or a list marker (`shownText`, asked
     /// only of those). It is walked from the end, last child first, until its text reaches `budget` tokens (no budget:
-    /// the whole tree): the element whose text reaches it is the last one read, so the outline keeps the end of the
-    /// tree, and the ancestors of that element go in too, without their text, so that the element's place is known.
-    /// "complete" says whether the outline has all of the tree. An element whose role or one of whose DOM classes is in
-    /// `skip` goes in alone, marked "skipped": its children are not read. An element keeps at most maxDomClasses of its
-    /// classes. Apart from Accessibility, so that the checks can walk a made-up tree.
-    public static func outline<Node>(of root: Node, root name: String, skip: Set<String> = [], budget: Int? = nil,
-                                     tokens: TokenEstimate = .fallback, describe: (Node) -> [String: Any],
-                                     children: (Node) -> [Node], shownText: (Node) -> String?) -> [String: Any] {
-        var nodes: [[String: Any]] = [], spent = TokenBudget(budget), stopped = false, complete = true
+    /// the whole tree) or maxElements elements are read: the element that reaches either is the last one read, so the
+    /// outline keeps the end of the tree, and the ancestors of that element go in too, without their text, so that the
+    /// element's place is known. A child that is one of its own ancestors is left out, so that a tree with a cycle
+    /// ends. "complete" says whether the outline has all of the tree's elements; the cuts say what was left out. An
+    /// element whose role or one of whose DOM classes is in `skip` goes in alone, marked "skipped": its children are
+    /// not read. An element keeps at most maxDomClasses of its classes. Apart from Accessibility, so that the checks
+    /// can walk a made-up tree.
+    public static func outline<Node: Hashable>(of root: Node, root name: String, skip: Set<String> = [],
+                                               budget: Int? = nil, tokens: TokenEstimate = .fallback,
+                                               describe: (Node) -> [String: Any], children: (Node) -> [Node],
+                                               shownText: (Node) -> String?) -> (outline: [String: Any], cuts: Set<Cut>) {
+        var nodes: [[String: Any]] = [], spent = TokenBudget(budget), stopped = false, cuts: Set<Cut> = []
+        var path: Set<Node> = [], read = 0
         func visit(_ e: Node, _ depth: Int) {
+            read += 1
             var d = describe(e)
             let classes = d["domClasses"] as? [String] ?? []
             if classes.count > maxDomClasses { d["domClasses"] = Array(classes.prefix(maxDomClasses)) }
             if !skip.isEmpty && !skip.isDisjoint(with: [d["role"] as? String ?? ""] + classes) {
                 d["skipped"] = true  // its children are never read: their text stays out of the snapshot
             } else if depth < maxOutlineDepth {
+                path.insert(e)
                 for c in children(e).reversed() {
+                    if read >= maxElements {
+                        stopped = true
+                        cuts.insert(.elements)
+                        break
+                    }
+                    if path.contains(c) {
+                        cuts.insert(.cycle)
+                        continue
+                    }
                     visit(c, depth + 1)
                     if stopped { break }
                 }
+                path.remove(e)
             } else if !children(e).isEmpty {
-                complete = false
+                cuts.insert(.depth)
             }
             d["depth"] = depth
             if !stopped, let role = d["role"] as? String, shownTextRoles.contains(role), let text = shownText(e) {
@@ -234,11 +336,12 @@ public enum FocusSnapshot {
             nodes.append(d)  // after a stop inside its subtree: an ancestor of the last element read
             if !stopped, spent.isReached {
                 stopped = true
-                complete = false
+                cuts.insert(.budget)
             }
         }
         visit(root, 0)
-        return ["root": name, "complete": complete, "nodes": Array(nodes.reversed())]
+        let complete = cuts.isSubset(of: [.cycle])  // a cycle's repeat holds no element that is not read
+        return (["root": name, "complete": complete, "nodes": Array(nodes.reversed())], cuts)
     }
 
     // MARK: Processes

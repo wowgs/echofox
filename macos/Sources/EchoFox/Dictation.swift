@@ -197,27 +197,32 @@ final class Dictation {
         let tokens = TokenEstimate(request.tokenWeights)
         readQueue.async { [weak self] in
             let started = Date()
-            var surfaces: [String: [String: Any]] = [:]
-            for s in request.surfaces { surfaces[s.surface] = FocusSnapshot.read(s, of: capture, tokens: tokens) }
+            var reads: [String: FocusSnapshot.Read] = [:]
+            for s in request.surfaces { reads[s.surface] = FocusSnapshot.read(s, of: capture, tokens: tokens) }
             let tookMs = Int(Date().timeIntervalSince(started) * 1000)
             DispatchQueue.main.async {
                 guard let self else { return }
                 let late = self.phase != .recording
-                Log.write("content: \(Dictation.summary(surfaces)), \(tookMs) ms" + (late ? ", not sent: the recording had stopped" : ""))
+                Log.write("content: \(Dictation.summary(reads)), \(tookMs) ms" + (late ? ", not sent: the recording had stopped" : ""))
                 if late { return }
+                let surfaces = reads.mapValues(\.content)
                 self.queue.async { self.send(text: ClientMessage.content(surfaces: surfaces, tookMs: tookMs)) }
             }
         }
     }
 
-    /// The content for the log: per surface, how much of each part, never its text.
-    private static func summary(_ surfaces: [String: [String: Any]]) -> String {
-        surfaces.keys.sorted().map { name in
-            let c = surfaces[name] ?? [:]
+    /// The content for the log: per surface, how much of each part and what its walk left out, never its text.
+    private static func summary(_ reads: [String: FocusSnapshot.Read]) -> String {
+        reads.keys.sorted().map { name in
+            let c = reads[name]?.content ?? [:]
+            func leftOut(_ part: String) -> String { reads[name]?.leftOut(part).map { " (left out: \($0))" } ?? "" }
             var parts: [String] = []
-            if let o = c["outline"] as? [String: Any] { parts.append("outline \((o["nodes"] as? [Any])?.count ?? 0) elements") }
+            if let o = c["outline"] as? [String: Any] {
+                parts.append("outline \((o["nodes"] as? [Any])?.count ?? 0) elements" + leftOut("outline"))
+            }
             if let l = c["lists"] as? [[String: Any]] {
-                parts.append("lists \(l.count) with \(l.reduce(0) { $0 + (($1["rows"] as? [Any])?.count ?? 0) }) rows")
+                parts.append("lists \(l.count) with \(l.reduce(0) { $0 + (($1["rows"] as? [Any])?.count ?? 0) }) rows"
+                             + leftOut("lists"))
             }
             if let p = c["processes"] as? [Any] { parts.append("processes \(p.count)") }
             return "\(name) " + (parts.isEmpty ? "nothing" : parts.joined(separator: ", "))

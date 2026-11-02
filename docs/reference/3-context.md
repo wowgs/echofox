@@ -41,7 +41,13 @@ The server answers with a read request. For each surface in it, the app reads wh
 - `lists` and `focusedFrame`: the lists of the focused window in the tree's order, at most 6 within 4 levels of the window. Each list has its `frame`, its `rowCount` and its last `rows` (oldest first), with a row's `text` and the titles of its cells (`columns`). `focusedFrame` is the place of the focused element on the screen.
 - `processes`: the app's child processes, `pid` and `name`, breadth first, at most 40.
 
-The outline and the lists are read from their end, up to the request's budget, with the token estimate below and the same rule (`TokenBudget`): the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits them. When the budget stops the outline, the ancestors of the last element read still go in, without their text, so the place of that element is known. Without a budget only the structural limits apply: 80 levels of the outline.
+The outline and the lists are read from their end, up to the request's budget, with the token estimate below and the same rule (`TokenBudget`): the element or row whose text reaches the budget is the last one. When the budget stops the outline, the ancestors of the last element read still go in, without their text, so the place of that element is known. Without a budget only the structural limits apply: 80 levels of the outline, and the bound of elements below.
+
+The budget counts only text, so a tree of elements without text never reaches it. So each walk also stops after 10,000 elements (`FocusSnapshot.maxElements`): the outline, or the search for the lists with their rows and cells. The outline stops as it does at the budget, with the ancestors of the last element read. The bound is a protection, not a limit of the content. The largest tree measured, a whole window of Claude Desktop's Code tab, had 3538 elements ([observations](../observations.md#token-estimate-and-screen-reading)).
+
+An accessibility tree can hold a cycle: an element can be its own descendant. On 2026-11-02 the application element of Claude Desktop and of Finder was its own child. So a walk leaves out a child that is one of its own ancestors. Nothing is missing then, because that element and its subtree are read once.
+
+The content message has no field for the reason a part is not whole. The outline's `complete` is false when the budget, the 80 levels or the bound of elements stopped it. A list's `rows` are fewer than its `rowCount` when the budget or the bound stopped it. The app's log names the reason at each dictation, for example `outline 10000 elements (left out: what is past 10000 elements)`. `echofox-snapshot` prints the same words to its error output.
 
 ## What the model gets
 

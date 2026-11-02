@@ -17,8 +17,8 @@ protocol SettingsActions: AnyObject {
     func askServer()
     /// The config as the app last read it (ConfigStore).
     var config: Config { get }
-    @discardableResult func write(_ path: [String], _ value: Any, _ done: String) -> Bool
-    @discardableResult func remove(_ path: [String], _ done: String) -> Bool
+    /// Writes a change that SettingStore made (ConfigStore.apply); `done` is what the log says of it.
+    func apply(_ change: ConfigChange, _ done: String)
     func choose(microphone: String)
     func setInputVolume(_ value: Float)
     func openLabeling()
@@ -201,10 +201,10 @@ final class SettingsModel: ObservableObject {
     /// A change that SettingStore made, into the config through the app's ConfigStore; the window shows the config it
     /// then has. Every write of the window goes here.
     func apply(_ change: ConfigChange?) {
+        guard let change else { return }
         switch change {
-        case nil: return
-        case let .set(path, value)?: actions?.write(path, value, "settings: \(path.joined(separator: ".")) = \(value)")
-        case let .remove(path)?: actions?.remove(path, "settings: \(path.joined(separator: ".")) back to its default")
+        case let .set(path, value): actions?.apply(change, "settings: \(path.joined(separator: ".")) = \(value)")
+        case let .remove(path): actions?.apply(change, "settings: \(path.joined(separator: ".")) back to its default")
         }
         config = actions?.config ?? config
     }

@@ -1,4 +1,4 @@
-// The checks of EchoFoxCore and of FocusSnapshot's token estimate and outline: `swift run --package-path macos echofox-tests`.
+// The checks of EchoFoxCore and of FocusSnapshot's token estimate, outline and lists: `swift run --package-path macos echofox-tests`.
 // An executable, not a test target: XCTest and Swift Testing come only with Xcode. It exits 1 if a check fails.
 import Foundation
 import EchoFoxCore
@@ -201,14 +201,25 @@ check(ClientMessage.StopReason.silence.rawValue == "silence", "stop: the reasons
 
 // The server's read request, and the content that answers it: the example's outline, walked on a made-up tree of the
 // example's page with the example's skip list, is the example's content.
-struct FakeNode {
-    var fields: [String: Any] = [:]
-    var kids: [FakeNode] = []
-    var value: String?
+/// An element of a made-up tree, one object per element as an accessibility element is: its children can be changed
+/// after it is made, so a tree can hold a cycle.
+final class FakeNode: Hashable {
+    let fields: [String: Any]
+    var kids: [FakeNode]
+    let value: String?
+    init(fields: [String: Any] = [:], kids: [FakeNode] = [], value: String? = nil) {
+        (self.fields, self.kids, self.value) = (fields, kids, value)
+    }
+    static func == (a: FakeNode, b: FakeNode) -> Bool { a === b }
+    func hash(into h: inout Hasher) { h.combine(ObjectIdentifier(self)) }
 }
-func walk(_ root: FakeNode, skip: [String] = [], budget: Int? = nil, asked: ((FakeNode) -> Void)? = nil) -> [String: Any] {
+func walked(_ root: FakeNode, skip: [String] = [], budget: Int? = nil, asked: ((FakeNode) -> Void)? = nil)
+    -> (outline: [String: Any], cuts: Set<FocusSnapshot.Cut>) {
     FocusSnapshot.outline(of: root, root: "webArea", skip: Set(skip), budget: budget, describe: { $0.fields },
                           children: { $0.kids }, shownText: { asked?($0); return $0.value })
+}
+func walk(_ root: FakeNode, skip: [String] = [], budget: Int? = nil, asked: ((FakeNode) -> Void)? = nil) -> [String: Any] {
+    walked(root, skip: skip, budget: budget, asked: asked).outline
 }
 func nodes(_ outline: [String: Any]) -> [[String: Any]] { outline["nodes"] as? [[String: Any]] ?? [] }
 func text(_ s: String) -> FakeNode { FakeNode(fields: ["role": "AXStaticText"], value: s) }
@@ -266,12 +277,71 @@ do {
     check(nodes(whole).map { $0["text"] as? String ?? $0["identifier"] as? String ?? "" }
               == ["", "a", "old", "b", "c", String(repeating: "x", count: 40), String(repeating: "y", count: 40)]
           && whole["complete"] as? Bool == true, "outline: no budget, the whole tree in its order")
+    check(walked(tree, budget: 5).cuts == [.budget] && walked(tree).cuts.isEmpty, "outline: the budget's stop is its cut")
 
     var asked: [String] = []
     let field = walk(FakeNode(fields: ["role": "AXWebArea"], kids: [
         FakeNode(fields: ["role": "AXTextField"], value: "typed"), text("shown")]), asked: { asked.append($0.value ?? "") })
     check(asked == ["shown"] && !nodes(field).contains { $0["text"] as? String == "typed" },
           "outline: an input field's value is never read")
+}
+
+// The walks' protections: at most maxElements elements, the depth, and a tree that holds a cycle.
+do {
+    let max = FocusSnapshot.maxElements
+    // Elements without text, as in a window of no budget: the budget never stops them. The root and a group are 2.
+    func flat(_ count: Int) -> FakeNode {
+        FakeNode(fields: ["role": "AXWebArea"], kids: [
+            FakeNode(fields: ["role": "AXGroup"], kids: (0..<count).map { FakeNode(fields: ["role": "AXImage", "identifier": "\($0)"]) })])
+    }
+    let over = walked(flat(max + 500))
+    let ids = nodes(over.outline).compactMap { $0["identifier"] as? String }
+    check(nodes(over.outline).count == max && over.outline["complete"] as? Bool == false && over.cuts == [.elements]
+          && nodes(over.outline).prefix(2).map { $0["role"] as? String } == ["AXWebArea", "AXGroup"]
+          && ids.first == "\(500 + 2)" && ids.last == "\(max + 499)",
+          "outline: the bound of elements keeps the end of the tree and its ancestors, \(nodes(over.outline).count), \(over.cuts)")
+    let exact = walked(flat(max - 2))
+    check(nodes(exact.outline).count == max && exact.outline["complete"] as? Bool == true && exact.cuts.isEmpty,
+          "outline: a tree of maxElements elements is whole, \(exact.cuts)")
+    let deep = (0..<100).reduce(text("bottom")) { below, _ in FakeNode(fields: ["role": "AXGroup"], kids: [below]) }
+    let tooDeep = walked(deep)
+    check(tooDeep.cuts == [.depth] && tooDeep.outline["complete"] as? Bool == false && nodes(tooDeep.outline).count == 81,
+          "outline: the depth limit, \(tooDeep.cuts), \(nodes(tooDeep.outline).count)")
+
+    // Claude Desktop without its Electron tree: the application element is its own first child (2026-11-02).
+    let items = (0..<3).map { FakeNode(fields: ["role": "AXMenuItem", "identifier": "item \($0)"]) }
+    let app = FakeNode(fields: ["role": "AXApplication"], kids: [FakeNode(fields: ["role": "AXMenuBar"], kids: items)])
+    app.kids.insert(app, at: 0)
+    let looped = walked(app)
+    check(nodes(looped.outline).map { $0["identifier"] as? String ?? $0["role"] as! String }
+              == ["AXApplication", "AXMenuBar", "item 0", "item 1", "item 2"]
+          && looped.outline["complete"] as? Bool == true && looped.cuts == [.cycle],
+          "outline: an element inside itself is read once, \(nodes(looped.outline)), \(looped.cuts)")
+    // Finder: the desktop's group holds the application element 63 times among its children.
+    let finder = FakeNode(fields: ["role": "AXApplication"])
+    let desktop = FakeNode(fields: ["role": "AXGroup", "identifier": "desktop"], kids: Array(repeating: finder, count: 63) + [text("icon")])
+    finder.kids = [finder, FakeNode(fields: ["role": "AXScrollArea"], kids: [desktop])]
+    let many = walked(finder)
+    check(nodes(many.outline).count == 4 && many.cuts == [.cycle], "outline: a cycle under many parents ends, \(nodes(many.outline).count)")
+
+    // The lists: rows from the end up to the budget; the search and the rows read at most maxElements elements.
+    func lists(_ window: FakeNode, budget: Int? = nil) -> (lists: [[String: Any]], cuts: Set<FocusSnapshot.Cut>) {
+        FocusSnapshot.lists(in: window, budget: budget, children: { $0.kids }, role: { $0.fields["role"] as? String },
+                            text: { $0.value }, title: { $0.fields["title"] as? String }, frame: { _ in nil })
+    }
+    func list(_ rows: [FakeNode]) -> FakeNode { FakeNode(fields: ["role": "AXList"], kids: rows) }
+    func rows(_ l: [String: Any]) -> [String] { (l["rows"] as? [[String: Any]] ?? []).map { $0["text"] as? String ?? "" } }
+    let chat = list((0..<5).map { FakeNode(fields: ["role": "AXRow"], value: "message \($0) " + String(repeating: "x", count: 30)) })
+    let window = FakeNode(fields: ["role": "AXWindow"], kids: [FakeNode(fields: ["role": "AXGroup"], kids: [chat])])
+    window.kids.append(window)  // a cycle in the search
+    let read = lists(window, budget: 15)  // a row is about 12 tokens with the fallback: the second one from the end reaches 15
+    check(read.lists.count == 1 && rows(read.lists[0]).map { String($0.prefix(9)) } == ["message 3", "message 4"]
+          && read.lists[0]["rowCount"] as? Int == 5 && read.cuts == [.budget, .cycle],
+          "lists: the last rows up to the budget, a cycle searched once, \(read.lists), \(read.cuts)")
+    let long = lists(FakeNode(fields: ["role": "AXWindow"], kids: [
+        list((0..<(max + 10)).map { _ in FakeNode(fields: ["role": "AXRow"]) })]))
+    check(rows(long.lists[0]).count == max - 1 && long.lists[0]["rowCount"] as? Int == max + 10 && long.cuts == [.elements],
+          "lists: the bound of elements counts the search and the rows, \(rows(long.lists[0]).count), \(long.cuts)")
 }
 
 // The server's messages.
@@ -693,7 +763,8 @@ do {
     store.observe { old, new in seen.append((old.dictationKey, new.dictationKey)) }
     store.onError = { errors.append($0) }
     store.log = { logged.append($0) }
-    check(store.set(["dictationKey"], to: "rightShift", "keys: right Shift"), "store: a write")
+    check(store.apply(nil, "nothing") && logged.isEmpty && seen.isEmpty, "store: no change writes nothing")
+    check(store.apply(.set(["dictationKey"], "rightShift"), "keys: right Shift"), "store: a write")
     check(seen.count == 1 && seen[0].1 == .rightShift && logged == ["keys: right Shift"], "store: the write reaches the observer, \(seen)")
     store.check()
     check(seen.count == 1, "store: no change, no call")
@@ -704,8 +775,11 @@ do {
     store.check()
     check(seen.count == 2 && seen[1] == (.rightShift, .rightControl) && store.config.dictationKey == .rightControl,
           "store: a change from elsewhere reaches the observer, \(seen)")
+    check(store.apply(.remove(["dictationKey"]), "keys: default") && store.config.dictationKey == Config.defaultDictationKey
+          && Config.load(from: file).value(["dictationKey"]) == nil && seen.count == 3,
+          "store: a value taken out, back to its default, \(seen)")
     try Data("not json".utf8).write(to: file)
-    check(!store.remove(["dictationKey"], "keys: default") && errors.count == 1, "store: a failed write is reported, \(errors)")
+    check(!store.apply(.remove(["dictationKey"]), "keys: default") && errors.count == 1, "store: a failed write is reported, \(errors)")
     try? FileManager.default.removeItem(at: dir)
 } catch {
     check(false, "store: \(error)")

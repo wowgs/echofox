@@ -31,30 +31,19 @@ public final class ConfigStore {
     /// `f(old, new)` runs on each change of the config, after it is read again.
     public func observe(_ f: @escaping (_ old: Config, _ new: Config) -> Void) { observers.append(f) }
 
-    /// Writes a change that SettingStore made (a value equal to its default is never written: it takes the key out);
-    /// nil, nothing to change, writes nothing. False if a write failed.
+    /// Writes a change that SettingStore made (a value equal to its default is never written: it takes the key out).
+    /// It is the app's one way into the file: Config.set writes a value, Config.remove takes one out. Nil, nothing to
+    /// change, writes nothing. False if a write failed.
     @discardableResult
     public func apply(_ change: ConfigChange?, _ done: String) -> Bool {
         switch change {
         case nil: return true
-        case let .set(path, value)?: return set(path, to: value, done)
-        case let .remove(path)?: return remove(path, done)
+        case let .set(path, value)?: return write(done) { try Config.set(path, to: value, in: url) }
+        case let .remove(path)?: return write(done) { try Config.remove(path, in: url) }
         }
     }
 
-    /// Writes `value` at `path` (Config.set); true if it was written.
-    @discardableResult
-    public func set(_ path: [String], to value: Any, _ done: String) -> Bool {
-        change(done) { try Config.set(path, to: value, in: url) }
-    }
-
-    /// Takes the value at `path` out, back to its default (Config.remove); true if it was written.
-    @discardableResult
-    public func remove(_ path: [String], _ done: String) -> Bool {
-        change(done) { try Config.remove(path, in: url) }
-    }
-
-    private func change(_ done: String, _ write: () throws -> Void) -> Bool {
+    private func write(_ done: String, _ write: () throws -> Void) -> Bool {
         do {
             try write()
             log(done)

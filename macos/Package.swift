@@ -5,7 +5,7 @@ import PackageDescription
 // ReadRequest). EchoFoxCore: the app's logic that needs no screen and no permission (the config, the protocol's
 // messages, the hotkey's logic, the app's numbers), checked by echofox-tests. EchoFox: the menu bar app.
 // echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore and of FocusSnapshot's token estimate,
-// budget and outline, an executable because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
+// budget, outline and lists, an executable because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
 let package = Package(
     name: "EchoFox",
     platforms: [.macOS("26.0")],  // pins.sh MACOS_MIN
