@@ -145,9 +145,10 @@ class FakeLlama:
 
 class FakeLlamaServer:
     """llama-server's /health, /props, /tokenize and /v1/chat/completions, in a thread; a token per word.
-    A completion decodes `decode` tokens and takes `delay` seconds; /props says `slots` slots."""
+    A completion decodes `decode` tokens and takes `delay` seconds; /props says `slots` slots. A completion whose text
+    has more words than `context` gets llama-server's refusal of a request over a slot's context (HTTP 400)."""
 
-    def __init__(self, decode=5, delay=0.0, slots=1):
+    def __init__(self, decode=5, delay=0.0, slots=1, context=None):
         import http.server
         self.seen, self.finished = [], []
         seen, finished = self.seen, self.finished
@@ -166,8 +167,18 @@ class FakeLlamaServer:
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 seen.append((self.path, body))
+                text = " ".join(p.get("text", "") for p in (body.get("messages") or [{}])[0].get("content") or []
+                                if isinstance(p, dict))
                 if self.path == "/tokenize":
                     out = {"tokens": list(range(len(body["content"].split())))}
+                elif context is not None and len(text.split()) > context:
+                    data = json.dumps({"error": {"code": 400, "type": "exceed_context_size_error",
+                                                 "message": "request exceeds the available context size"}}).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
                 else:
                     time.sleep(delay)
                     finished.append(time.monotonic())

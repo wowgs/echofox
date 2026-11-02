@@ -13,6 +13,7 @@ import resolve
 from audio import seconds
 
 log = logging.getLogger("echofox-server")
+CONTEXT_TOO_BIG = "exceed_context_size_error"  # llama-server's error type for a request over a slot's context
 
 
 class Dictation:
@@ -25,9 +26,10 @@ class Dictation:
     saved."""
 
     def __init__(self, model, text_prompt, options, server, meta, files=None, client_options=None,
-                 token_weights=None):
+                 token_weights=None, text_room=None):
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
         self.weights = token_weights or {}  # the model's tokens per character (budget.count)
+        self.room = text_room  # the tokens a request's text may take beside the longest audio (catalog.text_room)
         self.client = client_options or {}  # the start message's own: they win over the adapter's settings too
         self.files = files or recordings.Unsaved()
         self.text, self.chat_tokens = text_prompt, 0
@@ -40,7 +42,11 @@ class Dictation:
         if not context:
             return
         options = resolve.adapter(context.get("adapter"), self.options, self.server, self.client)
-        block, holds = prompt.context(context, options, self.server, self.meta.get("language"), self.weights)
+        fits = None
+        if self.room is not None:
+            room = self.room - resolve.value("max_tokens_per_piece", self.options, self.server)
+            fits = lambda block: len(self.m.tokenize(block + "\n\n" + self.prompt)) <= room  # noqa: E731  the model's count
+        block, holds = prompt.context(context, options, self.server, self.meta.get("language"), self.weights, fits)
         if block is None:
             return
         self.text = block + "\n\n" + self.prompt
@@ -86,8 +92,20 @@ class Dictation:
             return ""
         limit = resolve.value("max_tokens_per_piece", self.options, self.server)
         try:
-            text, timings = await blocking.run(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                               cancel=self.m.cancel)
+            try:
+                text, timings = await blocking.run(self.m.complete, self.text, pcm, limit, self.options, slot,
+                                                   cancel=self.m.cancel)
+            except RuntimeError as e:
+                if CONTEXT_TOO_BIG not in str(e) or self.text == self.prompt:
+                    raise
+                # A text over the model's room (catalog.text_room is computed, not asked of llama-server): the
+                # dictation goes on without its context rather than fail
+                log.warning("%s: piece %d did not fit the model with its context: again without it", self.m.name, piece)
+                self.text = self.prompt
+                self.meta = {**self.meta, "context_dropped": "too big for the model"}
+                meta = {**meta, "context_dropped": "too big for the model"}
+                text, timings = await blocking.run(self.m.complete, self.text, pcm, limit, self.options, slot,
+                                                   cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)

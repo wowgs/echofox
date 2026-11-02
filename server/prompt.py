@@ -67,19 +67,46 @@ def block_of(document):
     return f"File {document['name']}:\n{document['text']}"
 
 
-def context(found, options, server, language, weights):
-    """The context block of `found` (an adapter's context) within the token budgets of `options` (held): (block, what
-    it holds), or (None, {}) when nothing of it fits. The block has the terms, the documents, then the messages oldest
-    first."""
-    h = held(found, options, server, language, weights)
+def assembled(about, h):
+    """The context block of what `h` holds (held), or None when it holds nothing. The block has the terms, the
+    documents, then the messages oldest first."""
     terms, docs = h["terms"], [block_of(d) for d in h["documents"]]
     kept = [line(m) for m in h["messages"]]  # newest first
     if not kept and not terms and not docs:
-        return None, {}
+        return None
     parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + docs + list(reversed(kept))
              + ["</context>"])
-    block = context_header(found.get("about"), bool(docs)) + "\n\n" + "\n\n".join(parts)
+    return context_header(about, bool(docs)) + "\n\n" + "\n\n".join(parts)
+
+
+def context(found, options, server, language, weights, fits=None):
+    """The context block of `found` (an adapter's context) within the token budgets of `options` (held): (block, what
+    it holds), or (None, {}) when nothing of it fits. The budgets are not strict, but the model's room is: `fits(block)`
+    says whether the block with the prompt fits a request beside the longest audio and the answer. While it does not,
+    the block gives up a document (the last first, each whole), then a message (the oldest first, each whole), then
+    half of its terms: the newest messages are what the speaker most likely talks about (2026-11-02: a Markdown file
+    of 22,000 characters open beside a session made a text of 8,669 tokens for a slot of 8,192, and llama-server
+    refused every piece)."""
+    h = held(found, options, server, language, weights)
+    h = {k: list(v) for k, v in h.items()}
+    left = {"documents": 0, "messages": 0, "terms": 0}
+    block = assembled(found.get("about"), h)
+    while block is not None and fits is not None and not fits(block):
+        if h["documents"]:
+            h["documents"].pop()
+            left["documents"] += 1
+        elif h["messages"]:
+            h["messages"].pop()  # newest first: the oldest goes
+            left["messages"] += 1
+        else:
+            left["terms"] += len(h["terms"]) - len(h["terms"]) // 2
+            h["terms"] = h["terms"][:len(h["terms"]) // 2]
+        block = assembled(found.get("about"), h)
+    if block is None:
+        return None, {}
+    terms, docs, kept = h["terms"], h["documents"], h["messages"]
     return block, {"chat_messages": len(kept), "chat_documents": len(docs), "chat_terms": len(terms),
+                   **({"chat_left_for_room": left} if any(left.values()) else {}),
                    "chat_budget": resolve.value("chat_history_token_budget", options, server),
                    "chat_documents_budget": resolve.value("chat_documents_token_budget", options, server),
                    "chat_tokens_estimated": budget.count(block + "\n\n", weights)}

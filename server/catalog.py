@@ -4,6 +4,8 @@ defaults (docs/design.md, "Settings"):
   name               for people
   maxAudioSeconds    the audio a request takes: Gemma 4, 30 s (model card and processor_config.json: 25 tokens a
                      second, 750 tokens)
+  audioTokensPerSecond  the tokens of a second of audio in a request: Gemma 4, 25 (the same sources; measured
+                     2026-11-02: 12.5 s of audio took 321 tokens with the turn's end, 21 s took 537 on 2026-10-15)
   tokenWeights       its tokenizer's tokens per character of each kind (budget.py), for the context's budgets:
                      Gemma 4 E4B's, fitted by calibrate_tokens.py with llama-tokenize (llama.cpp d81235049, the Q8_0
                      file's vocabulary) on 100 saved texts before the audio and measured on 100 others: |error|
@@ -41,6 +43,7 @@ defaults (docs/design.md, "Settings"):
                      stops it
 """
 import json
+import math
 import os
 
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
@@ -71,6 +74,28 @@ def token_weights(model_entry):
 
 def max_audio_seconds(model_entry):
     return float(of(model_entry).get("maxAudioSeconds", 30))
+
+
+TURN_TOKENS = 32  # the chat template's tokens around a request's text and audio (its turn's start and end); a margin
+
+
+def slot_tokens(model_entry):
+    """The tokens one request may hold: its llama-server's context (-c) shared by its slots (-np), from the catalog
+    entry's arguments; None when they do not say."""
+    args = (of(model_entry).get("llamaServer") or {}).get("args") or []
+    value = {a: args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-c", "--ctx-size", "-np", "--parallel")}
+    size, slots = value.get("-c") or value.get("--ctx-size"), value.get("-np") or value.get("--parallel") or "1"
+    return int(size) // int(slots) if size else None
+
+
+def text_room(model_entry):
+    """The tokens a request's text may take: one slot's tokens less the longest audio and the turn's own; the
+    answer's limit (maxTokensPerPiece) comes off too, by its caller. None when the slot's size is not known."""
+    slot = slot_tokens(model_entry)
+    if slot is None:
+        return None
+    audio = math.ceil(max_audio_seconds(model_entry) * float(of(model_entry).get("audioTokensPerSecond", 25)))
+    return slot - audio - TURN_TOKENS
 
 
 def variant(model_entry):

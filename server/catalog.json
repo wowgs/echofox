@@ -2,6 +2,7 @@
   "gemma-4-e4b": {
     "name": "Gemma 4 E4B",
     "maxAudioSeconds": 30,
+    "audioTokensPerSecond": 25,
     "tokenWeights": {
       "cyrillic": 0.238,
       "latin": 0.199,

@@ -260,7 +260,8 @@ class Session:
                     entry = (getattr(self.models, "entries", None) or {}).get(getattr(model, "name", None))
                     dictation = Dictation(model, self.start.text_prompt, self.start.options, self.args, self.meta,
                                           self.files, client_options=self.start.client_options,
-                                          token_weights=catalog.token_weights(entry))
+                                          token_weights=catalog.token_weights(entry),
+                                          text_room=catalog.text_room(entry) if entry else None)
                     await dictation.prepare(await context)
                 except Exception as e:
                     log.exception("recording %s: preparing failed", self.id)

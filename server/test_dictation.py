@@ -35,10 +35,40 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         lines = pathlib.Path(self.file).read_text(encoding="utf-8").splitlines()
         return [m for m in map(json.loads, lines) if m["event"] == event]
 
-    def dictation(self, options=None, model=None, files=None, weights=None):
+    def dictation(self, options=None, model=None, files=None, weights=None, room=None):
         # the model's options as a start message gives them: its catalog entry's, then these
         return d.Dictation(model or self.fake.model(), "PROMPT", {**resolve.model_defaults({}), **(options or {})},
-                           args(), {}, files, token_weights=weights)
+                           args(), {}, files, token_weights=weights, text_room=room)
+
+    async def test_the_context_fits_the_models_room_whatever_its_budgets_say(self):
+        # A token a word for the model (the fake's /tokenize). The file goes whole by its budget, but the text with it
+        # would not fit beside the audio and the answer: the file goes first, then the oldest messages
+        long = " ".join(["word"] * 300)
+        chat = {"messages": [{"from": "Claude", "text": "the newest reply"}, {"from": "Claude", "text": "an older one"}],
+                "documents": [{"name": "big.md", "text": long}], "terms": ["GitHub"]}
+        limit = resolve.model_defaults({})["max_tokens_per_piece"]
+        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + 60)
+        await d.prepare(chat)
+        self.assertNotIn("File big.md", d.text)
+        self.assertIn("Claude: the newest reply", d.text)
+        self.assertLessEqual(len(d.text.split()), 60)
+        m = self.metrics("prepare")[0]
+        self.assertEqual((m["chat_documents"], m["chat_left_for_room"]["documents"]), (0, 1))
+        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + 20)  # room for the prompt and a little
+        await d.prepare(chat)
+        self.assertNotIn("an older one", d.text)
+        self.assertLessEqual(len(d.text.split()), 20)
+
+    async def test_a_piece_that_does_not_fit_with_its_context_goes_again_without_it(self):
+        self.fake.close()
+        self.fake = FakeLlamaServer(context=20)  # its slot takes 20 words of text
+        d = self.dictation({"chat_history_token_budget": 1000})  # no room known: the context goes as the budget says
+        await d.prepare({"messages": [{"from": "Claude", "text": " ".join(["word"] * 50)}]})
+        self.assertEqual(await d.piece(LOUD, 1, 1), "text from llama")
+        first, again = self.fake.completions()
+        self.assertIn("<context>", first["messages"][0]["content"][0]["text"])
+        self.assertEqual(again["messages"][0]["content"][0]["text"], "PROMPT")
+        self.assertEqual(self.metrics("piece")[0]["context_dropped"], "too big for the model")
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
         d = self.dictation({"chat_history_token_budget": 20, "seed": 3})
