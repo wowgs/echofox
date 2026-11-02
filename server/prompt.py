@@ -57,6 +57,23 @@ def held(found, options, server, language, weights):
     return {"terms": terms, "messages": kept, "documents": docs}
 
 
+def said_before(texts, tokens, weights):
+    """The end of what the pieces before this one gave: whole words from the end until about `tokens` (budget.take:
+    the word that reaches it whole); "" without them."""
+    words = " ".join(t for t in texts if t).split()
+    kept, _ = budget.take(list(reversed(words)), tokens, lambda w: budget.count(w + " ", weights))
+    return " ".join(reversed(kept))
+
+
+def with_said(text, said):
+    """The text of a piece's request: the text before the audio, then what the speaker said just before the piece. It
+    comes after the text that a slot holds from the warm-up, so that the slot's cache still serves that text."""
+    if not said:
+        return text
+    return (text + "\n\nThe speaker said just before this piece: \"" + said + "\". The piece continues it: transcribe "
+            "only the piece's own speech and do not repeat this text.")
+
+
 def line(message):
     """A message as the context block writes it."""
     return f"{message['from']}: {message['text']}"

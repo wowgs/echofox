@@ -65,6 +65,11 @@ KNOBS = [
          unit="s"),
     Knob("cutWhileSpeaking", "cut_while_speaking", bool, True, "server", "cutting"),
     Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server", "cutting", low=0, unit="s"),
+    # The end of what the pieces before gave goes with each next piece, as text of the request after the prompt, not
+    # as the model's own turn: in one conversation, the model began pieces by repeating its earlier answers
+    # (2026-10-14). Whisper conditions a window on the text before it the same way. The tail joins a cut sentence
+    # ("…подряд, чтобы" / "Когда он…", 2026-11-02). 0 turns it off; the gain is not measured yet.
+    Knob("previousTextTokens", "previous_text_tokens", int, 100, "server", "cutting", low=0, unit="tokens"),
     # From the speech that Silero VAD found in the 2038 saved pieces (2026-10-15 to 2026-10-22): the 35 pieces with
     # 0 to 0.06 s of it all got text of the model's own or copied from the context; the shortest real answer had
     # 0.51 s. A piece with less speech than this does not go to the model.

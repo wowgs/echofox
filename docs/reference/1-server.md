@@ -29,6 +29,8 @@ Speech detection also drives the app's silence timeout. Audio levels are used to
 
 A piece's text has at most 600 tokens (`maxTokensPerPiece` in the model's catalog entry). A token is a word or part of a word. The limit stops a model that does not end its text; without it, the model writes until its slot's context is full. The text that reached the limit is kept. In 798 speech pieces collected on 22–27 October 2026, Gemma 4 E4B wrote at most 10.4 tokens per second of speech; 600 is twice that for the longest piece the model takes, 30 seconds.
 
+Each piece takes the end of the text that the pieces before it gave, about 100 tokens of whole words (`previousTextTokens`, a constant of `server/tuning.py`; 0 turns it off). It goes after the text before the audio, as a line of the request, not as the model's own turn: in one conversation for the whole recording, the model began pieces by repeating its earlier answers (2026-10-14). So a sentence cut between two pieces goes on in the next one. A piece then waits for the text of the one before it, so the pieces of a recording go one after the other. The record of a piece keeps that text (`said` in `pieces.jsonl`). The gain is not measured yet.
+
 ## Recognition prompt
 
 The prompt combines the model's template with the language notes. The Gemma template is the speech recognition prompt of Google's model card with two additions: the speech comes from software engineers, so product names, services and abbreviations keep their official Latin spelling, and the text has punctuation and capital letters. It also asks for numbers as digits.

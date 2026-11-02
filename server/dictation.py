@@ -76,10 +76,11 @@ class Dictation:
                  took, timings.get("prefill_tokens"), timings.get("cached_tokens"))
         metrics.metric("warm", model=self.m.name, **self.meta, slot=slot, wall_seconds=round(took, 3), **timings)
 
-    async def piece(self, pcm, piece, speech, slot=None):
+    async def piece(self, pcm, piece, speech, slot=None, said=""):
         """One piece with `speech` seconds of speech in it (the VAD's) → its text. A piece with too little speech does
         not go to the model; the model writes at most maxTokensPerPiece tokens, so that one that does not end its text
-        stops."""
+        stops. `said`: the end of the pieces' text before it (prompt.said_before), which goes after the text before
+        the audio."""
         t, audio = time.monotonic(), seconds(pcm)
         meta = {**self.meta, "piece": piece, "slot": slot}
         if speech < resolve.value("min_speech_seconds", self.options, self.server):
@@ -93,8 +94,8 @@ class Dictation:
         limit = resolve.value("max_tokens_per_piece", self.options, self.server)
         try:
             try:
-                text, timings = await blocking.run(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                                   cancel=self.m.cancel)
+                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.text, said), pcm, limit,
+                                                   self.options, slot, cancel=self.m.cancel)
             except RuntimeError as e:
                 if CONTEXT_TOO_BIG not in str(e) or self.text == self.prompt:
                     raise
@@ -104,8 +105,8 @@ class Dictation:
                 self.text = self.prompt
                 self.meta = {**self.meta, "context_dropped": "too big for the model"}
                 meta = {**meta, "context_dropped": "too big for the model"}
-                text, timings = await blocking.run(self.m.complete, self.text, pcm, limit, self.options, slot,
-                                                   cancel=self.m.cancel)
+                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.text, said), pcm, limit,
+                                                   self.options, slot, cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)
@@ -128,6 +129,7 @@ class Dictation:
                        speech_seconds=round(speech, 2), text_chars=len(text), raw_chars=len(raw), max_tokens_hit=hit,
                        **timings)
         self.files.piece(pcm, {"piece": piece, "audio_seconds": round(audio, 2), "speech_seconds": round(speech, 2),
-                               "text": text, **({"raw": raw} if raw != text else {}), "max_tokens_hit": hit,
+                               "text": text, **({"raw": raw} if raw != text else {}), **({"said": said} if said else {}),
+                               "max_tokens_hit": hit,
                                **timings})
         return text
