@@ -3,7 +3,7 @@ of the ones it needs from the server (info.info); those it needs before it can a
 shared/constants.json, which the tests of both sides check (test_contract.py)."""
 import os
 
-# Where the servers listen: the working ones (the dictation you use) and the test ones (server/test_server.sh).
+# Where the servers listen: the working ones (the dictation you use) and the test ones (server/tools/test_server.sh).
 HOST = "127.0.0.1"
 WORKING_PORT = 8090        # the dictation server you use
 WORKING_LLAMA_PORT = 8092  # its llama-server

@@ -4,21 +4,25 @@ The audio goes in 100 ms chunks at real-time speed, then the stop message. The s
 its time, and the time from the stop until the server says done.
 Usage: try_wav.py <16 kHz mono 16-bit WAV> [--url URL] [--working] [--model NAME] [--language CODE]
                   [--hint KEY=VALUE]... [--snapshot FILE] [--options JSON] [--prompt TEXT] [--fast]
-It goes to the test dictation server (server/test_server.sh, constants.TEST_URL) unless --url says otherwise. The working
-server, the one your dictation uses, it reaches only with --working: a run there would wait behind your dictation,
-make yours wait, and add to your recordings and metrics.
+It goes to the test dictation server (server/tools/test_server.sh, constants.TEST_URL) unless --url says otherwise.
+The working server, the one your dictation uses, it reaches only with --working: a run there would wait behind your
+dictation, make yours wait, and add to your recordings and metrics.
 """
 import argparse
 import asyncio
 import json
+import pathlib
+import sys
 import time
 import urllib.parse
 import wave
 
 from websockets.asyncio.client import connect
 
-import constants
-import settings
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # the server's modules: a tool is in server/tools
+
+import constants  # noqa: E402
+import settings  # noqa: E402
 
 
 def config_language():
@@ -57,7 +61,7 @@ async def main():
         except ValueError:
             hints[key] = value
     if urllib.parse.urlparse(args.url).port == constants.WORKING_PORT and not args.working:
-        p.error(f"{args.url} is the working dictation server; use the test one (server/test_server.sh start) or add --working")
+        p.error(f"{args.url} is the working dictation server; use the test one (server/tools/test_server.sh start) or add --working")
     with wave.open(args.wav) as w:
         assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, constants.SAMPLE_BYTES, constants.RATE), \
             f"need {constants.RATE} Hz mono 16-bit"
@@ -67,7 +71,7 @@ async def main():
     try:
         ws = await connect(args.url, max_size=None)
     except OSError as e:
-        raise SystemExit(f"cannot reach {args.url} ({e}); for the test server: server/test_server.sh start")
+        raise SystemExit(f"cannot reach {args.url} ({e}); for the test server: server/tools/test_server.sh start")
     async with ws:
         await ws.send(json.dumps({"type": "start", "language": args.language, "sampleRate": constants.RATE,
                                   "encoding": constants.ENCODING, "client": "try_wav", "hints": hints,

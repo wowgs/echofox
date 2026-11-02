@@ -3,8 +3,9 @@ import PackageDescription
 
 // FocusSnapshot: the focus snapshot (Accessibility). EchoFoxCore: the app's logic that needs no screen and no
 // permission (the config, the protocol's messages, the hotkey's logic, the app's numbers), checked by echofox-tests.
-// EchoFox: the menu bar app. echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore, an executable
-// because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
+// EchoFox: the menu bar app. echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore and of
+// FocusSnapshot's token estimate and budget, an executable because XCTest and Swift Testing come only with Xcode
+// (`swift run echofox-tests`).
 let package = Package(
     name: "EchoFox",
     platforms: [.macOS("26.0")],  // pins.sh MACOS_MIN
@@ -28,7 +29,7 @@ let package = Package(
                                                          .product(name: "Sparkle", package: "Sparkle")],
                           // Sparkle.framework is in the app's Contents/Frameworks (build-app.sh)
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
-        .executableTarget(name: "echofox-tests", dependencies: ["EchoFoxCore"]),
+        .executableTarget(name: "echofox-tests", dependencies: ["EchoFoxCore", "FocusSnapshot"]),
         // Sparkle.framework next to it, where swift build puts it
         .executableTarget(name: "echofox-updater-check", dependencies: [.product(name: "Sparkle", package: "Sparkle")],
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]),

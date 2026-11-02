@@ -19,7 +19,7 @@ server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requ
 
 The build needs Xcode, because `actool` compiles the icon, and a Developer ID Application identity in the keychain. `ECHOFOX_SIGN` names the identity; without it, the build takes the one Developer ID Application identity it finds. Without one, the build stops. It signs with the hardened runtime.
 
-The app includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The app leaves out the server's tests and its development tools. The build keeps its downloads and the `llama-server` build in `macos/.cache`, which `macos/cache-deps.sh` fills (`build-app.sh` runs it first); it builds `llama-server` again when its commit or cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. In CI the cache lives on master (`cache.yml`): a run on a tag can restore only its own ref's cache or the default branch's, so a cache saved by one tag would never serve the next one. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
+The app includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The app leaves out the server's tests and its development tools, which are all in `server/tools`. The build keeps its downloads and the `llama-server` build in `macos/.cache`, which `macos/cache-deps.sh` fills (`build-app.sh` runs it first); it builds `llama-server` again when its commit or cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. In CI the cache lives on master (`cache.yml`): a run on a tag can restore only its own ref's cache or the default branch's, so a cache saved by one tag would never serve the next one. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
 
 The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag.
 
@@ -57,39 +57,42 @@ A test closes every file and socket it opens: the tests workflow fails when the 
 
 Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the start of a llama-server in `llama.py` with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
 
-Run app checks with:
+Build every target of the app's package, then run the app's checks:
 
 ```
+swift build --package-path macos
 swift run --package-path macos echofox-tests
 ```
 
+`echofox-tests` compiles only the targets that it checks. The build compiles the others too, the app's included.
+
 To check the look of a window without a server, run `macos/build/EchoFox.app/Contents/MacOS/EchoFox --render KIND INFO.json OUT.png [dark]`, with KIND `first-run`, `settings`, `uninstall` or `update` (Sparkle's progress window): it draws the window for a server's info (the `info` message, as JSON) into a PNG and quits.
 
-`echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode. Both suites read the protocol examples (`shared/protocol-examples.json`) and the values both sides use (`shared/constants.json`), so a change on one side that the other does not follow fails a test.
+`echofox-tests` is an executable, because XCTest and Swift Testing come only with Xcode. Both suites read the protocol examples (`shared/protocol-examples.json`), the values both sides use (`shared/constants.json`) and the examples of the token estimate and budget (`shared/token-examples.json`), so a change on one side that the other does not follow fails a test.
 
 ## Test recognition on a separate server
 
 Use the test server for recognition experiments. Starting it temporarily pauses normal dictation so only one model occupies memory; stopping it restores the working server:
 
 ```
-server/test_server.sh start
-server/.venv/bin/python server/try_wav.py recording.wav --language ru
-server/test_server.sh stop
+server/tools/test_server.sh start
+server/.venv/bin/python server/tools/try_wav.py recording.wav --language ru
+server/tools/test_server.sh stop
 ```
 
 `start` waits for the current recording, stops the working servers, and starts isolated test servers. The dictation endpoint is `ws://127.0.0.1:8091`; its model server uses port 8093. The test config has separate metrics and recordings.
 
 | Option | Purpose |
 |---|---|
-| `VARIANT=q4_0 server/test_server.sh start` | Test a different model variant. |
-| `BUNDLE=macos/build/EchoFox.app server/test_server.sh start` | Test the Python and the server of a built app instead of the repository's. |
+| `VARIANT=q4_0 server/tools/test_server.sh start` | Test a different model variant. |
+| `BUNDLE=macos/build/EchoFox.app server/tools/test_server.sh start` | Test the Python and the server of a built app instead of the repository's. |
 | `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
 | `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
 | `try_wav.py ... --hint KEY=VALUE` | Send a hint to the adapters in the start message; VALUE is JSON, or else text. For example `--hint 'sessions=["<id>"]'` names Claude Code sessions to the Claude adapter. |
 
 Input WAV files must be 16 kHz, mono, 16-bit. The client prints server messages and the delay after stopping. It reaches the working server only with `--working`.
 
-**Normal dictation stays paused until `server/test_server.sh stop`.** Stop the test server when finished to restore the working servers.
+**Normal dictation stays paused until `server/tools/test_server.sh stop`.** Stop the test server when finished to restore the working servers.
 
 The ports are in `server/constants.py`.
 
@@ -99,7 +102,7 @@ The context's budgets estimate tokens from the characters (`server/budget.py`) w
 
 ```
 cmake --build macos/.cache/llama.cpp-<commit>-macos<version>/build --target llama-tokenize
-server/.venv/bin/python server/calibrate_tokens.py --tokenizer macos/.cache/llama.cpp-<commit>-macos<version>/build/bin/llama-tokenize --model <the model's .gguf>
+server/.venv/bin/python server/tools/calibrate_tokens.py --tokenizer macos/.cache/llama.cpp-<commit>-macos<version>/build/bin/llama-tokenize --model <the model's .gguf>
 ```
 
 It fits the weights on half of the texts, prints them with the error on the other half, and writes nothing. `llama-tokenize` reads only the model's vocabulary.
@@ -108,7 +111,7 @@ It fits the weights on half of the texts, prints them with the error on the othe
 
 | Workflow | Trigger | Result |
 |---|---|---|
-| `tests.yml` | Manual dispatch or a call from the release workflow | Python and Swift checks on a clean Mac; a `ResourceWarning` in the server's tests fails it. |
+| `tests.yml` | Manual dispatch or a call from the release workflow | A build of every target of the Swift package, the app's included, then the Python and Swift checks on a clean Mac. A `ResourceWarning` in the server's tests fails it. |
 | `release.yml` | Push of a `v*` tag or manual dispatch | Tests, then a bundled DMG, the server's tests again with the bundled Python, and the DMG signed and sent to Apple's notary service. |
 | `staple.yml` | The webhook, when Apple has checked the DMG, or manual dispatch with the submission's id | Apple's ticket stapled to the DMG, then the release. |
 | `cache.yml` | A push to master that changes `macos/pins.sh`, `macos/cache-deps.sh` or `macos/dmg/requirements.txt`; weekly; manual dispatch | `macos/cache-deps.sh` (the Python tarball, the `llama-server` build, the dmgbuild environment) into the Actions cache on master, which the release's runs on tags restore. |

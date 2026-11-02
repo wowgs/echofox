@@ -7,14 +7,16 @@
 # The ports and folders are in constants.py. It reads the same config (~/.echofox/config.json) through a copy in
 # which every model's llamaServer is the test llama-server, and whose port, metrics and recordings folder are the test
 # server's own; its log is its own too.
-# Usage: [VARIANT=<id>] [BUNDLE=<EchoFox.app>] server/test_server.sh [start|stop|status]; VARIANT picks another
+# Usage: [VARIANT=<id>] [BUNDLE=<EchoFox.app>] server/tools/test_server.sh [start|stop|status]; VARIANT picks another
 # variant of the models (q4_0); BUNDLE runs the Python and the server of that app (macos/build/EchoFox.app, for one)
 # instead of this repository's. The llama-server is the app's: BUNDLE's, else the installed one's.
 set -euo pipefail
-HERE=${0:A:h}  # before any cd (a relative $0 resolves from the current folder), and not in c(): inside a function $0 is the function's name
-cd "$HERE"
+# The server's folder, the parent of this script's: before any cd (a relative $0 resolves from the current folder), and
+# not in c(): inside a function $0 is the function's name
+SERVER=${0:A:h:h}
+cd "$SERVER"
 # The shared numbers and names come from server/constants.py.
-c() { PYTHONPATH=$HERE $HERE/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
+c() { PYTHONPATH=$SERVER $SERVER/.venv/bin/python -c "import constants as c; v = c.$1; print(c.path(v) if isinstance(v, str) and v.startswith('~') else v)"; }
 PORT=$(c TEST_PORT)
 LLAMA_PORT=$(c TEST_LLAMA_PORT)
 WORKING_PORT=$(c WORKING_PORT)
@@ -25,7 +27,7 @@ EXIT_WAIT=$(c STOP_WAIT_S)
 # The Python and the server that run: this repository's, or a bundled app's
 if [[ -n ${BUNDLE:-} ]]; then PY=${BUNDLE:A}/Contents/Resources/python/bin/python3 SRV=${BUNDLE:A}/Contents/Resources/server
   export PYTHONDONTWRITEBYTECODE=1  # as the app does: nothing new in the signed bundle
-else PY=$HERE/.venv/bin/python SRV=$HERE; fi
+else PY=$SERVER/.venv/bin/python SRV=$SERVER; fi
 pids() { pgrep -f "gemma_voice.py --config $STATE/config.json" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
 stop_tests() { for p in $(pids); do kill $p; done; for i in {1..50}; do [[ -z $(pids) ]] && break; sleep 0.1; done; }
 case ${1:-start} in

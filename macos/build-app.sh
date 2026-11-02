@@ -84,11 +84,10 @@ rm -rf "$res"/python/lib/python3.*/ensurepip
 left=$(find "$res/python" \( -name pip -o -name 'pip-*' -o -name 'pip3*' -o -name ensurepip \) -print)
 [ -z "$left" ] || { echo "pip is still in the bundle: $left" >&2; exit 1; }
 
-# The server's code, without its tests and the tools of its development
+# The server's code, without its tests and the tools of its development, which are all in server/tools
 mkdir -p "$res/server"
 rsync -a --exclude '__pycache__' --exclude '.venv' --exclude 'test_*.py' --exclude 'fakes.py' \
-  --exclude 'sandbox.py' --exclude 'testdata' --exclude 'try_wav.py' --exclude 'test_server.sh' \
-  --exclude 'which_session.py' ../server/ "$res/server/"
+  --exclude 'sandbox.py' --exclude 'testdata' --exclude '/tools/' ../server/ "$res/server/"
 # The bytecode of the server, the standard library (the stripped Python has none) and the packages, so that Python
 # finds it and writes nothing into the signed bundle (the agent also sets PYTHONDONTWRITEBYTECODE); it also cuts
 # the server's imports from about 0.26 s to 0.07 s (M5, 2026-10-26). Each .pyc carries its source's hash, not a time

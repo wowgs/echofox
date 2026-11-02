@@ -175,12 +175,12 @@ public enum FocusSnapshot {
         look(window, 0)
         return found.map { list in
             let rows = children(list)
-            var kept: [[String: Any]] = [], used = 0
+            var kept: [[String: Any]] = [], spent = TokenBudget(budget)
             for r in rows.reversed() {
-                if let budget, used >= budget { break }
+                if spent.isReached { break }
                 let text = string(r, "AXTitle") ?? string(r, "AXValue") ?? string(r, "AXDescription") ?? ""
                 let columns = children(r).compactMap { string($0, "AXTitle") }
-                used += tokens.count(([text] + columns).joined(separator: " "))
+                spent.add(tokens.count(([text] + columns).joined(separator: " ")))
                 kept.append(compact(["text": text.isEmpty ? nil : text, "columns": columns.isEmpty ? nil : columns]))
             }
             return compact(["frame": frame(list), "rowCount": rows.count, "rows": Array(kept.reversed())])
@@ -194,7 +194,7 @@ public enum FocusSnapshot {
     /// whose DOM classes is in `skip` goes in alone, marked "skipped": its children are not read.
     static func outline(_ root: AXUIElement, root name: String, skip: Set<String> = [], budget: Int? = nil,
                         tokens: TokenEstimate = .fallback) -> [String: Any] {
-        var nodes: [[String: Any]] = [], used = 0, stopped = false, complete = true
+        var nodes: [[String: Any]] = [], spent = TokenBudget(budget), stopped = false, complete = true
         func visit(_ e: AXUIElement, _ depth: Int) {
             var d = describe(e)
             let skipped = !skip.isEmpty && !skip.isDisjoint(with: [d["role"] as? String ?? ""] + (d["domClasses"] as? [String] ?? []))
@@ -211,10 +211,10 @@ public enum FocusSnapshot {
             d["depth"] = depth
             if let role = d["role"] as? String, shownTextRoles.contains(role), let text = string(e, "AXValue") {
                 d["text"] = text
-                used += tokens.count(text)
+                spent.add(tokens.count(text))
             }
             nodes.append(d)
-            if let budget, used >= budget {
+            if spent.isReached {
                 stopped = true
                 complete = false
             }

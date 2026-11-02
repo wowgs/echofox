@@ -8,13 +8,13 @@ context gets plain prose: the words stay, the marks go, and each heading, list i
 
 markdown-it-py parses the text (CommonMark with GitHub's tables, strikethrough and bare links), so what is code, a
 link or a mark is the parser's answer, escapes included. Code blocks and HTML go (code is not speech). Inline code
-keeps its text when it is a term: an identifier, a file, a flag, a short command (the terms the speaker says). It goes
-when it is code: a URL, more than CODE_WORDS words, any of CODE_CHARS (JSON, calls, assignments, shell pipes), or
-no letter or digit at all (`**`). A link of any scheme keeps its text, and only its text, with one exception: a link to a
-file (a file: URL or a path without a scheme) also gives the file's name, when its text does not name it. The name is
-the last part of the path, without the query, the fragment (#L12) and a line suffix (:12), and with %-escapes decoded:
-it is the text when the link has none, else it follows the text in brackets. Bare URLs (with their scheme) and e-mail
-addresses go, images keep their alt text. A table's header
+keeps its text, as it is written, when it is a term: an identifier, a file, a path (`..`), a flag, a short command (the
+terms the speaker says). It goes when it is code: a URL, more than CODE_WORDS words, any of CODE_CHARS (JSON, calls,
+assignments, shell pipes), or no letter or digit at all unless it is a path (`**`). A link of any scheme keeps its
+text, and only its text, with one exception: a link to a file (a file: URL or a path without a scheme) also gives the
+file's name, when its text does not name it. The name is the last part of the path, without the query, the fragment
+(#L12) and a line suffix (:12), and with %-escapes decoded: it is the text when the link has none, else it follows the
+text in brackets. Bare URLs (with their scheme) and e-mail addresses go, images keep their alt text. A table's header
 row goes; each other row becomes "first cell: the other cells." Each sentence made from a heading, list item or table
 row starts with a capital letter, as prose does, unless its first word is written with a small one on purpose
 (iPhone, macOS, a.py, snake_case).
@@ -33,13 +33,19 @@ CODE_CHARS = set("{}[]();=<>\"'|\\$`")
 CODE_WORDS = 3
 BARE_LINKS = {"linkify", "autolink"}  # the markup of a link the text did not name
 END = re.compile(r"[.!?…:;,]$")
+PATH = re.compile(r"[~./]+")  # . .. ~ /: a path, a term though it has no letter
+# A kept code span stands in the prose as KEEP, its number and KEEP_END while tidy() mends the prose around it, so that
+# tidy() never changes it. Put in as plain text, "только `.md` и `.markdown`" became "только.md и.markdown": tidy()
+# takes the space before a stop away. The marks are Unicode noncharacters, which no text has.
+KEEP, KEEP_END = "\ufdd0", "\ufdd1"
+KEPT = re.compile(KEEP + r"(\d+)" + KEEP_END)
 
 
 def code_text(content):
     """An inline code span's text: kept if it is a term, "" if it is code."""
     t = content.strip()
     if ("://" in t or MD.linkify.test(t) or CODE_CHARS & set(t) or len(t.split()) > CODE_WORDS
-            or not any(c.isalnum() for c in t)):
+            or not (any(c.isalnum() for c in t) or PATH.fullmatch(t))):
         return ""
     return t
 
@@ -66,14 +72,19 @@ def tidy(s):
 
 def text_of(inline):
     """The words of an inline token."""
-    out, in_bare_link, link = [], False, None  # link: the file name of the open link and where its text starts
+    out, kept, in_bare_link, link = [], [], False, None  # link: the file name of the open link and where its text starts
+
+    def words(s):
+        """s with the kept code spans in their places."""
+        return KEPT.sub(lambda m: kept[int(m.group(1))], s)
+
     for c in inline.children or []:
         if c.type == "link_open":
             in_bare_link = c.markup in BARE_LINKS
             link = None if in_bare_link else (file_name(str(c.attrs.get("href") or "")), len(out))
         elif c.type == "link_close":
             if link and link[0]:
-                text = "".join(out[link[1]:]).strip()
+                text = words("".join(out[link[1]:])).strip()
                 if link[0].lower() not in text.lower():
                     out.append(f" ({link[0]})" if text else link[0])
             in_bare_link, link = False, None
@@ -82,12 +93,14 @@ def text_of(inline):
         elif c.type == "text":
             out.append(c.content)
         elif c.type == "code_inline":
-            out.append(code_text(c.content))
+            if t := code_text(c.content):
+                out.append(f"{KEEP}{len(kept)}{KEEP_END}")
+                kept.append(t)
         elif c.type in ("softbreak", "hardbreak"):
             out.append(" ")
         elif c.type == "image":
             out.append(c.content)  # its alt text
-    return tidy("".join(out))
+    return words(tidy("".join(out)))
 
 
 def sentence(s):

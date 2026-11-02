@@ -1,0 +1,28 @@
+{
+ "about": "Examples of the token estimate and of the token budget's rule (docs/reference/3-context.md, \"Token budgets\"). The estimate exists on both sides: server/budget.py and macos/Sources/FocusSnapshot/TokenEstimate.swift. server/test_budget.py and macos echofox-tests check every example. counts are the characters of the text by kind (a character is a Unicode scalar; whitespace is Unicode's White_Space). tokens are the estimate with the weights below and with the fallback of a model without weights, the ceiling of the exact decimal sum. take: the first items of costs, greedily, until their sum reaches budget; kept is how many, used their sum.",
+ "weights": {"gemma-4-e4b": {"cyrillic": 0.238, "latin": 0.199, "digit": 1.649, "space": 0.362, "other": 0.717}},
+ "estimates": [
+  {"about": "an empty text", "text": "", "counts": {"cyrillic": 0, "latin": 0, "digit": 0, "space": 0, "other": 0}, "tokens": {"gemma-4-e4b": 0, "fallback": 0}},
+  {"about": "Cyrillic letters and punctuation", "text": "Привет, мир! Ёжик и ёлка.", "counts": {"cyrillic": 18, "latin": 0, "digit": 0, "space": 4, "other": 3}, "tokens": {"gemma-4-e4b": 8, "fallback": 8}},
+  {"about": "the ends of the Cyrillic block (U+0400, U+04FF) and the next one (U+0500)", "text": "ЀӿԀ", "counts": {"cyrillic": 2, "latin": 0, "digit": 0, "space": 0, "other": 1}, "tokens": {"gemma-4-e4b": 2, "fallback": 1}},
+  {"about": "Latin letters; accented and full-width letters are other", "text": "Hello, World: AZaz é ß Ａ", "counts": {"cyrillic": 0, "latin": 14, "digit": 0, "space": 5, "other": 5}, "tokens": {"gemma-4-e4b": 9, "fallback": 8}},
+  {"about": "ASCII digits; Arabic-Indic and full-width digits are other", "text": "0123456789 ٣١٢ ５", "counts": {"cyrillic": 0, "latin": 0, "digit": 10, "space": 2, "other": 4}, "tokens": {"gemma-4-e4b": 21, "fallback": 5}},
+  {"about": "every White_Space character", "text": "\t\n\u000b\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000", "counts": {"cyrillic": 0, "latin": 0, "digit": 0, "space": 25, "other": 0}, "tokens": {"gemma-4-e4b": 10, "fallback": 8}},
+  {"about": "not White_Space: the information separators U+001C-U+001F, which Python's isspace() takes, and U+200B, U+180E, U+FEFF", "text": "\u001c\u001d\u001e\u001f\u200b\u180e\ufeff", "counts": {"cyrillic": 0, "latin": 0, "digit": 0, "space": 0, "other": 7}, "tokens": {"gemma-4-e4b": 6, "fallback": 3}},
+  {"about": "CR LF are two characters", "text": "строка\r\nline", "counts": {"cyrillic": 6, "latin": 4, "digit": 0, "space": 2, "other": 0}, "tokens": {"gemma-4-e4b": 3, "fallback": 4}},
+  {"about": "emoji count by scalar: a skin tone, a variation selector, a family joined by ZWJ", "text": "👍🏽 ❤\ufe0f 👨\u200d👩\u200d👧", "counts": {"cyrillic": 0, "latin": 0, "digit": 0, "space": 2, "other": 9}, "tokens": {"gemma-4-e4b": 8, "fallback": 4}},
+  {"about": "a dictation of Russian with English terms", "text": "Запусти llama-server на порту 8091, потом проверь /health и напиши в README.md, что всё ок.", "counts": {"cyrillic": 42, "latin": 25, "digit": 4, "space": 14, "other": 6}, "tokens": {"gemma-4-e4b": 31, "fallback": 27}},
+  {"about": "a no-break space, a tab, quotes, a dash and an ellipsis", "text": "Ну и\u00a0вот: «кавычки» — тире…\tтаб", "counts": {"cyrillic": 20, "latin": 0, "digit": 0, "space": 6, "other": 5}, "tokens": {"gemma-4-e4b": 11, "fallback": 10}},
+  {"about": "a whole sum with Gemma's weights (20.0), which a plain loop of additions makes 20.000000000000004", "text": "дом кот лес сад мир сон час день вечер hello 12345", "counts": {"cyrillic": 30, "latin": 5, "digit": 5, "space": 10, "other": 0}, "tokens": {"gemma-4-e4b": 20, "fallback": 15}},
+  {"about": "a whole sum with the fallback (59.0), which a plain loop of additions makes 59.00000000000001", "text": "Проверь, что server.py и budget.py читают один файл: shared/token-examples.json. Потом запусти тесты 12 раз и сравни время с 2026-11-01; если оно выросло, пришли лог. Готово (see log, then re-run CI).", "counts": {"cyrillic": 87, "latin": 56, "digit": 10, "space": 29, "other": 18}, "tokens": {"gemma-4-e4b": 72, "fallback": 59}}
+ ],
+ "take": [
+  {"about": "the item that reaches the budget is taken whole and is the last", "costs": [3, 4, 5], "budget": 6, "kept": 2, "used": 7},
+  {"about": "one item over the budget is taken whole", "costs": [10, 1], "budget": 6, "kept": 1, "used": 10},
+  {"about": "a sum equal to the budget stops the taking", "costs": [3, 3, 1], "budget": 6, "kept": 2, "used": 6},
+  {"about": "no budget, no item", "costs": [1], "budget": 0, "kept": 0, "used": 0},
+  {"about": "no items", "costs": [], "budget": 5, "kept": 0, "used": 0},
+  {"about": "items that cost nothing are taken until the budget is reached", "costs": [0, 0, 2, 1], "budget": 2, "kept": 3, "used": 2},
+  {"about": "all items within the budget", "costs": [2, 2], "budget": 100, "kept": 2, "used": 4}
+ ]
+}

@@ -157,6 +157,15 @@ class CleanTest(Fixture):
                          "Открывай, или, а как пример.")
         self.assertEqual(plain("Код ``a `b` c`` и `x`."), "Код и x.")
 
+    def test_inline_code_that_is_kept_stays_as_written(self):
+        plain = adapters.markdown.plain
+        # a real reply before the audio, 2026-11-02: it was "только.md и.markdown", and `..` was gone
+        self.assertEqual(plain("только `.md` и `.markdown`"), "только .md и .markdown")
+        self.assertEqual(plain("не Markdown, не `..` и не ссылка из папки"), "не Markdown, не .. и не ссылка из папки")
+        self.assertEqual(plain("Файл: `.zshrc`, папка `~/`, корень `/`, здесь `.`."),
+                         "Файл: .zshrc, папка ~/, корень /, здесь ..")
+        self.assertEqual(plain("- `.md` и [`a.py`](a.py)"), ".md и a.py.")
+
     def test_names_in_other_scripts_are_terms_but_not_the_first_word_of_a_sentence(self):
         got = adapters.terms(["Поставь Убунту на ubu. Потом проверь Флинт и роутер.\nДальше Флинт снова."])
         self.assertEqual(got[0], "Флинт")  # twice; the others once

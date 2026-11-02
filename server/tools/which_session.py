@@ -1,14 +1,17 @@
 """Which adapter claims a focus snapshot, and which conversation it finds: for a check by hand, without audio.
 
-Usage: server/.venv/bin/python server/which_session.py [SNAPSHOT.json]   (default: read the snapshot from stdin)
-       macos/.build/release/echofox-snapshot | server/.venv/bin/python server/which_session.py
+Usage: server/.venv/bin/python server/tools/which_session.py [SNAPSHOT.json]   (default: read the snapshot from stdin)
+       macos/.build/release/echofox-snapshot | server/.venv/bin/python server/tools/which_session.py
 Prints the claim of every adapter (enabled or not), the surest first, then what the surest one found: what it
 is, where it was read, the adapter's details, the number of messages and the first terms. It never prints the replies themselves.
 """
 import json
+import pathlib
 import sys
 
-import adapters
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # the server's modules: a tool is in server/tools
+
+import adapters  # noqa: E402
 
 
 def main():

@@ -26,7 +26,7 @@ Context is placed before the recognition prompt, between `<context>` and `</cont
 
 Every budget is taken the same way (`server/budget.py`): greedily and not strictly. The items are taken in their order (the terms most frequent first, the messages newest first, the files as the adapter gives them) until their sum reaches the budget. The item that reaches it is taken whole and is the last. So a long reply or file goes in whole, and the context can be bigger than its budget.
 
-Tokens are estimated, not counted by the model: the characters of each kind (Cyrillic, Latin, digit, whitespace, other) times the model's tokens per character of that kind (`tokenWeights` in its catalog entry). The estimate needs no running model, so the adapters and the app use it too. `server/calibrate_tokens.py` fits the weights against llama.cpp's own tokenizer, and the record of each dictation gives the model's count beside the estimate (`chat_tokens`, `chat_tokens_estimated`). The weights of Gemma 4 E4B were fitted on Russian dictations with English terms; for other scripts the estimate is not measured.
+Tokens are estimated, not counted by the model: the characters of each kind (Cyrillic, Latin, digit, whitespace, other) times the model's tokens per character of that kind (`tokenWeights` in its catalog entry), rounded up. A character is a Unicode scalar. Cyrillic is U+0400 to U+04FF, Latin letters and digits are ASCII only, and whitespace is Unicode's White_Space property. The estimate needs no running model, so the adapters and the app use it too. The server (`server/budget.py`) and the app (`TokenEstimate`) each have a copy of it, and the tests of both check the same examples (`shared/token-examples.json`). `server/tools/calibrate_tokens.py` fits the weights against llama.cpp's own tokenizer, and the record of each dictation gives the model's count beside the estimate (`chat_tokens`, `chat_tokens_estimated`). The weights of Gemma 4 E4B were fitted on Russian dictations with English terms; for other scripts the estimate is not measured.
 
 Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.
 
@@ -34,16 +34,16 @@ Adapters clean app-specific formatting first. The server then removes lines made
 
 Each adapter supplies defaults in its manifest. Override them in its config entry: `"adapters": {"telegram": {"enabled": true, "chatHistoryTokenBudget": 600}}`.
 
-| Setting | What it sets | Claude | Telegram |
+| Setting | What it sets | claude-code, claude-chat | telegram |
 |---|---|---|---|
 | `chatHistoryTokenBudget` | Total context budget in tokens; at least 1 | 1000 | 2000 |
 | `chatTermsTokenBudget` | The largest part of the total budget that terms may use; the rest goes to messages | 200 | 200 |
 | `chatDocumentsTokenBudget` | The budget of the open files, apart from the total budget | 1000 | 1000 |
 | `proseOnly` | Exclude lines made mostly of digits and symbols, from the messages and the files | on | on |
 
-Use `enabled` to turn an adapter on or off; both built-in adapters are off in a new config. Budgets are in the selected model's tokens, estimated as above.
+Use `enabled` to turn an adapter on or off. The three built-in adapters are off in a new config. Budgets are in the selected model's tokens, estimated as above.
 
-The app reads the screen (the rows of lists, the outline of a page) from its end, up to the chat budget of the enabled adapters that ask for it, with the same estimate; the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits it. An adapter keeps less text than the screen shows (claude-chat keeps only Claude's replies), so its context can be smaller than its budget. The structure is limited instead: 80 levels of the outline, 80 ancestors of the focused element, 6 lists within 4 levels of the window, 12 DOM classes of an element and 40 processes of the app.
+The app reads the screen (the rows of lists, the outline of a page) from its end, up to the chat budget of the enabled adapters that ask for it, with the same estimate and the same rule (`TokenBudget`): the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits it. An adapter keeps less text than the screen shows (claude-chat keeps only Claude's replies), so its context can be smaller than its budget. The structure is limited instead: 80 levels of the outline, 80 ancestors of the focused element, 6 lists within 4 levels of the window, 12 DOM classes of an element and 40 processes of the app.
 
 ## The built-in adapters
 
@@ -142,7 +142,7 @@ Build the snapshot tool, then run it and focus a text field within 5 seconds. Th
 
 ```
 swift build -c release --package-path macos
-macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
+macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/tools/which_session.py
 ```
 
 `--electron` asks an Electron app for its accessibility tree, as the app does for an enabled adapter's Electron apps; without it the tool sets no attribute of the app. For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--outline-skip AXButton,sr-only` takes the outline as the app does for an adapter with that `outlineSkip`. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

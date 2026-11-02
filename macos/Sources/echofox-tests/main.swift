@@ -1,7 +1,8 @@
-// The checks of EchoFoxCore: `swift run --package-path macos echofox-tests`. An executable, not a test target: XCTest and
-// Swift Testing come only with Xcode. It exits 1 if a check fails.
+// The checks of EchoFoxCore and of FocusSnapshot's token estimate: `swift run --package-path macos echofox-tests`.
+// An executable, not a test target: XCTest and Swift Testing come only with Xcode. It exits 1 if a check fails.
 import Foundation
 import EchoFoxCore
+import FocusSnapshot
 
 var failures = 0
 func check(_ ok: @autoclosure () -> Bool, _ what: String, file: String = #fileID, line: Int = #line) {
@@ -640,6 +641,37 @@ do {
     check(TransferRate.speed(74.4e6) == "74 MB/s" && TransferRate.speed(4.25e6) == "4.2 MB/s", "rate: the speed's words")
     check(TransferRate.left(30) == "less than a minute left" && TransferRate.left(250) == "about 4 min left"
           && TransferRate.left(4800) == "about 1 h 20 min left", "rate: the time's words")
+}
+
+// The token estimate and the budget's rule: the server's tests check the same examples (shared/token-examples.json).
+do {
+    let t = try JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent(
+        "shared/token-examples.json"))) as! [String: Any]
+    let gemma = TokenEstimate((t["weights"] as! [String: Any])["gemma-4-e4b"] as? [String: Double])
+    check(gemma != .fallback, "tokens: the examples' weights")
+    for e in t["estimates"] as! [[String: Any]] {
+        let text = e["text"] as! String, about = e["about"] as! String, tokens = e["tokens"] as! [String: Int]
+        check(TokenEstimate.counts(text) == e["counts"] as! [String: Int],
+              "tokens: \(about): the characters by kind \(TokenEstimate.counts(text))")
+        check(gemma.count(text) == tokens["gemma-4-e4b"], "tokens: \(about): \(gemma.count(text)) with Gemma's weights")
+        check(TokenEstimate(nil).count(text) == tokens["fallback"] && TokenEstimate([:]).count(text) == tokens["fallback"],
+              "tokens: \(about): \(TokenEstimate(nil).count(text)) with the fallback")
+    }
+    for e in t["take"] as! [[String: Any]] {
+        var budget = TokenBudget(e["budget"] as? Int), kept = 0
+        for cost in e["costs"] as! [Int] {
+            if budget.isReached { break }
+            kept += 1
+            budget.add(cost)
+        }
+        check(kept == e["kept"] as? Int && budget.used == e["used"] as? Int,
+              "budget: \(e["about"] as! String): \(kept) items, \(budget.used) tokens")
+    }
+    var none = TokenBudget(nil)
+    none.add(1_000_000)
+    check(!none.isReached, "budget: none is never reached")
+} catch {
+    check(false, "tokens: \(error)")
 }
 
 print(failures == 0 ? "echofox-tests: all checks pass" : "echofox-tests: \(failures) failed")

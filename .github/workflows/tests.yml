@@ -1,7 +1,7 @@
-# The tests of the server and the checks of the app (docs/reference/7-development.md, "CI"), on a clean Mac: by the button
-# (Actions, Run workflow), and before every release (release.yml calls this workflow). Not on a push: the tests run
-# on the author's Mac before each commit, and a push should not spend macOS minutes. They need no model and no
-# llama-server.
+# The build of the app's package, the tests of the server and the checks of the app (docs/reference/7-development.md,
+# "CI"), on a clean Mac: by the button (Actions, Run workflow), and before every release (release.yml calls this
+# workflow). Not on a push: the tests run on the author's Mac before each commit, and a push should not spend macOS
+# minutes. They need no model and no llama-server.
 name: Tests
 on:
   workflow_dispatch:
@@ -15,6 +15,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - name: The build of every target of the app's package
+        # All the products, the app's included: echofox-tests compiles only the targets that it checks, so without this
+        # the EchoFox target would first compile in a release
+        run: swift build --package-path macos
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14"

@@ -11,11 +11,15 @@ It prints the weights for catalog.json and the error of the estimate on the held
 import argparse
 import glob
 import os
+import pathlib
 import random
 import statistics
 import subprocess
+import sys
 
-import budget
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # the server's modules: a tool is in server/tools
+
+import budget  # noqa: E402
 
 
 def tokens(tokenizer, model, path):

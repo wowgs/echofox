@@ -1,7 +1,8 @@
 """The dictation server's metrics: written here (metric()), one JSON object per line, and summarised by this file run
-as a script. "event" is "prepare" (the text before the audio), "piece" (one model request: tokens, speeds, times,
-llama-server's memory), "cancelled", "audio" (a recording's levels) or "recording" (one connection: the model, the
-client, the audio, the stop reason, the wait after the stop).
+as a script. "event" is "prepare" (the text before the audio), "warm" (the text before the audio into the cache of a
+llama-server slot, before any audio), "piece" (one model request: tokens, speeds, times, llama-server's memory),
+"piece_skipped" (a piece with too little speech, not sent to the model), "cancelled", "audio" (a recording's levels)
+or "recording" (one connection: the model, the client, the audio, the stop reason, the wait after the stop).
 
 Usage: server/.venv/bin/python server/metrics.py [--since 2026-10-14T05:00] [--last N] [file]
 Prints, per model: requests, audio, wall time per second of audio, prefill and decode tokens and speeds, time to
