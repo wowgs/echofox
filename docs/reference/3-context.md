@@ -2,18 +2,22 @@
 
 An adapter supplies recent conversation text to help the speech model recognize names and terms. Dictation also works without an adapter. If the conversation cannot be identified reliably, the server proceeds without context. The adapters run while you speak, on a thread of their own. Their context is waited for until the recording stops; if they are still running then, the dictation goes without context. The log gives the adapters' time of each dictation (`adapters: 0.042 s`), also when they end after the stop.
 
-Private dictation never sends a context snapshot or runs an adapter.
+Private dictation sends no identity, gets no read request and runs no adapter.
 
 See also: [configuration](2-config.md), [saved context](5-recordings.md), and [adapter design decisions](../design.md#adapters).
 
 ## How the server finds the conversation
 
 1. At the start of a regular dictation, the app captures the focused app and input element. For an app of an enabled adapter's surfaces, it also reads the identity: the app, the focused window's title, and the address and title of the web page. It sends the identity in the start message. Then the server asks for what the matched surfaces read, and the app reads only that ([What the app reads](#what-the-app-reads)). Input-field values are excluded.
-2. Enabled adapters inspect the snapshot and report whether they can handle it, with a confidence score.
-3. The server asks the most confident adapter to retrieve the conversation.
-4. If no adapter claims the snapshot or the conversation is ambiguous, recognition uses only the normal prompt.
+2. The server matches the identity with the surfaces of the enabled adapters (`server/adapters/surfaces.py`). A surface matches when the app is one of its `apps` and each of its `match` patterns holds. The server answers at once, before it loads the model, with a read request: for each matched surface, what the app reads there. With no matched surface, the request has no surfaces.
+3. The app sends what it read in a content message, between the audio's messages. Then the adapter of each matched surface looks for the conversation, on the adapters' thread. A surface that reads nothing besides the identity needs no content message, and its adapter runs at once.
+4. If no adapter gives a context, or more than one does, recognition uses only the normal prompt. If the content has not come by the stop, the dictation goes without context too, and the recording's errors say "no content by the stop". With more than one context, the errors name the surfaces.
 
 The app reads screen content only when the server's read request asks for it. The server does not choose a conversation just because it is the newest session in an app.
+
+A pattern of `match` is the whole value: `*` is any text, possibly empty, and every other character is itself. So `https://claude.ai/chat/*` matches every chat's address and no other page. A rule whose value the identity does not have fails, for example `url` on a window without a web area.
+
+The read request gives each budget as a number: the user's value in the adapter's config entry, else the manifest's `context`, else the setting's default. These are the same values that limit the adapter's context. A part without a `budget` key gets `null`, and only its structural limits apply. The request also carries the model's `tokenWeights`, for the app's token estimate.
 
 ## What the app reads
 
@@ -71,7 +75,14 @@ A surface's outline and lists are read up to the setting that its manifest names
 
 ## The built-in adapters
 
-The built-in adapters are split by where their context comes from, not by the company or the app: one Claude app can be served by two of them. Each one is enabled, set up and failing on its own, and the client takes the screen data that only the enabled ones ask for (the outline of a Claude Desktop page only for `claude-chat` and `claude-code`, the rows of lists only for `telegram`). A manifest may give a `title` for people ("Claude Code"); without one the app shows the name.
+The built-in adapters are split by where their context comes from, not by the company or the app: one Claude app can be served by two of them. Each one is enabled, set up and failing on its own. The app reads only what a matched surface of an enabled one declares: the outline of a Claude Desktop page for the Code tab or a chat, by its address, the processes of a terminal, and the rows of lists for Telegram. A manifest may give a `title` for people ("Claude Code"); without one the app shows the name.
+
+| Surface | Apps | Match | Reads |
+|---|---|---|---|
+| `claude-code/desktop` | Claude Desktop | `url` `https://claude.ai/epitaxy/*` | The outline, without a budget |
+| `claude-code/terminal` | Ghostty, Terminal, iTerm2, Warp | none | The processes |
+| `claude-chat/desktop` | Claude Desktop | `url` `https://claude.ai/chat/*` | The outline, up to `chatHistoryTokenBudget` |
+| `telegram/desktop` | Telegram Desktop | none | The lists, up to `chatHistoryTokenBudget` |
 
 | Adapter | Supported app | Context source |
 |---|---|---|
@@ -85,7 +96,7 @@ The Code tab exposes a URL of the form `https://claude.ai/epitaxy/local_<id>`. T
 
 If the record is missing, the adapter uses the web-area title only when exactly one transcript matches. This storage format is undocumented and may change.
 
-User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
+User messages, tool calls, tool results and thinking are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses. The adapter's `clean` takes out the tags that Claude Code adds (`<system-reminder>` and others) before it makes the Markdown plain, in the messages and in the open file.
 
 ### The open file in the Code tab (`claude-code`)
 
@@ -93,7 +104,7 @@ The Files panel of the Code tab shows one file: the active tab, as a preview or 
 
 - The panel names the file's path under the session's folder above the file: one pop-up button for each part (`docs`, `reference`, `4-app.md`), then the "View source" button, then the page of the file, a group with the DOM class `epitaxy-document-page`. The adapter takes the pop-up buttons just before that group, at its level.
 - The session's folder is the `cwd` of Desktop's session record. The adapter reads the file there, not the preview on the screen: the preview has lost the Markdown, and the snapshot reads the screen up to the budget. A path with `..`, or one that leads out of the folder through a link, is not read.
-- So the adapter asks for the outline of Claude Desktop only (`"screen": ["outline"]`, `"screenApps"` with Claude Desktop alone): the outline of a terminal is never taken. Its `outlineSkip` leaves out the page of the file (`epitaxy-document-page`), the panel's file tree (`group/file-tree`) and the chat (`epitaxy-chat-panel-body`), whose messages the transcript has.
+- So the surface `desktop` reads the outline of the Code tab, without a budget: the path must not depend on the length of the chat. The surface `terminal` never reads an outline. The outline's `skip` leaves out the page of the file (`epitaxy-document-page`), the panel's file tree (`group/file-tree`) and the chat (`epitaxy-chat-panel-body`), whose messages the transcript has.
 
 The panel's structure is Claude Desktop's own and not documented; it was measured on 2026-11-02 (see [observations](../observations.md#token-estimate-and-screen-reading)). The source view was not measured: if it puts the file's text in another element, that text is read before the path, from the end, and can use the budget up.
 
@@ -102,59 +113,63 @@ The panel's structure is Claude Desktop's own and not documented; it was measure
 Claude Code in a tab of Ghostty, Terminal, iTerm2 or Warp gets the context of its session. Inside tmux or screen it gets none, for now: there the session is not found for sure.
 
 - Each running `claude` writes `~/.claude/sessions/<pid>.json` with its `sessionId`, `name` (the session's title) and `entrypoint` (`cli` in a terminal). These files are Claude Code's own and not documented; they may change.
-- The client's snapshot of a terminal has the focused window's title and the terminal's processes. The candidates are the `cli` sessions among those processes; a `claude` in tmux or screen belongs to the multiplexer's server, so it is never one.
-- Claude Code sets the terminal's title to `✳ <name>`, and the terminals show it in the window's title (Terminal adds the folder, the command and the size). The session is the one candidate whose `name` the title contains; its transcript is `~/.claude/projects/*/<sessionId>.jsonl`. No candidate, or more than one: no claim.
+- The identity of a terminal has the focused window's title, and the surface `terminal` reads the terminal's processes. The candidates are the `cli` sessions among those processes; a `claude` in tmux or screen belongs to the multiplexer's server, so it is never one.
+- Claude Code sets the terminal's title to `✳ <name>`, and the terminals show it in the window's title (Terminal adds the folder, the command and the size). The session is the one candidate whose `name` the title contains; its transcript is `~/.claude/projects/*/<sessionId>.jsonl`. No candidate, or more than one: no context.
 - A new session before its first message has no transcript, and so no messages.
 
 The measurements behind it are in [observations](../observations.md#target-apps-and-accessibility): the title found the focused tab's session in 20 of 20 steps in the four terminals; the words of the visible text chose a wrong pane in tmux, so the text is not used.
 
 ### Claude chats (`claude-chat`)
 
-A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So the manifest requests `"screen": ["outline"]`, and the adapter reads the messages from the outline of the page.
+A chat (`https://claude.ai/chat/<id>`) has no transcript on the Mac. Claude Desktop keeps only the web app's cache, in an undocumented binary format. So its surface reads the outline of the page, and the adapter reads the messages from it. It gives a context only for an address with the chat's id.
 
-In the outline, each message is a group labelled "Message N of M". Claude's replies are in a container with the DOM class `group/message-row`. The adapter keeps their paragraphs, list items and link texts. It leaves out hidden headings, buttons, the status rows of tools such as "Searched the web", and the source chips after sentences. Its `outlineSkip` names them (`AXButton`, `sr-only`, `group/morph`, `group/tag`), so their text does not enter the snapshot at all. It can use only the messages that the window has loaded. This page structure is not documented and may change.
+In the outline, each message is a group labelled "Message N of M". Claude's replies are in a container with the DOM class `group/message-row`. The adapter keeps their paragraphs, list items and link texts. It leaves out hidden headings, buttons, the status rows of tools such as "Searched the web", and the source chips after sentences. The outline's `skip` names them (`AXButton`, `sr-only`, `group/morph`, `group/tag`), so their text does not enter the snapshot at all. The adapter leaves out every element marked `"skipped": true` and does not decide again by role or class. It can use only the messages that the window has loaded. This page structure is not documented and may change.
 
 ### Telegram screen access
 
-The manifest requests `"screen": ["lists"]`. The adapter reads the message list above the input box and takes the chat name from the window title. It can use only messages currently loaded in the window.
+The surface reads the lists of the window. The adapter reads the message list above the input box and takes the chat name from the window title. It can use only messages currently loaded in the window. Without a message in the window, it gives no context.
 
 Config migrations never turn on an adapter that the user did not have on: a new built-in adapter stays off. Adapters for Codex, ChatGPT, Antigravity, and Gemini remain planned.
 
 ## Write an adapter
 
-This is the manifest and the code of interface 2. Interface 3, with surfaces, is designed in [Adapter surfaces](../adapter-surfaces.md). The app already speaks it ([What the app reads](#what-the-app-reads)), and the server does not yet.
+This is interface 3: an adapter is a product, and its surfaces say where the product is on the screen and what is read there ([Adapter surfaces](../adapter-surfaces.md)).
 
 An adapter is a Python package with two required files.
 
-`adapter.json` describes the adapter:
+`adapter.json` describes the adapter. `shared/adapter.schema.json` has its fields, and the server checks each manifest against its rules:
 
 | Fields | Purpose |
 |---|---|
-| `name`, `version`, `author`, `source`, `description` | Identity and source information. |
+| `name`, `version`, `author`, `source`, `description` | Identity and source information. `name` and `version` are required. |
 | `title` | Optional: the adapter's name for people ("Claude Code"); the app shows `name` without it. |
-| `interface` | Adapter API version; currently `2`. |
-| `apps` | Bundle IDs of supported apps. |
-| `electronTree` | Whether its apps build their accessibility tree only on request (Electron): `true` for all of them, or the list of those among `apps` that do. |
-| `reads` | Declared file access. |
-| `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
-| `screenApps` | Optional: those among `apps` whose screen data it needs. Without it, all of them. |
-| `outlineSkip` | Names of the outline's elements that go in without their children: an element whose AX role (`AXButton`) or one of whose DOM classes (`sr-only`) is a name. The client never reads the children, so their text is not in the snapshot. The element itself is marked `"skipped": true`. |
+| `interface` | Adapter API version: `3`. The server refuses another one. |
+| `surfaces` | The places of the product on the screen, at least one, each with the fields below. |
 | `context` | This adapter's default context settings. |
+
+| Fields of a surface | Purpose |
+|---|---|
+| `id` | Unique within the adapter: small letters, digits and `-`. The server names the surface `<adapter>/<id>`. |
+| `title` | For people, in the settings window: "Claude Desktop, Code tab". |
+| `apps` | Bundle IDs of the apps the surface is in, at least one. |
+| `treeOnRequest` | Optional: the apps build their accessibility tree only on request (Electron, Chromium). |
+| `match` | Optional patterns of the identity: `url` of the web area's address, `title` of the focused window's title. |
+| `screen` | Optional: what the app reads after a match. `outline` with `skip` (the names of elements whose children are left out) and `budget`. `lists` with `budget`. `processes`, an empty object. A `budget` names one of the adapter's token budgets, such as `chatHistoryTokenBudget`. |
+| `reads` | The files the adapter reads for this surface, for people: `{"path": a fixed place, "what": what it is}`, `path` optional. |
 
 `adapter.py` contains a subclass of `adapters.Adapter`:
 
 ```
-claim(focus, hints)   -> Claim(adapter, confidence 0..1, reason) | None
-context(focus, hints) -> {about, messages: [{from, text}] newest first, documents?: [{name, text}],
-                          terms?, source?, details?} | None
-clean(text)           -> str   ("" drops the message or the document)
+context(surface, snapshot) -> {about, messages: [{from, text}] newest first, documents?: [{name, text}],
+                               terms?, source?, details?} | None
+clean(text)                -> str   ("" drops the message or the document)
 ```
 
-`focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `documents` are the files open beside the conversation, the most relevant first, and `name` is the file's name, told to the model. `clean` cleans each message and each document. The server leaves out a document that is not an object, has no name, or is empty after `clean`. If `clean` fails, the error goes to the recording's errors, and the documents after it are left out; the messages are handled the same way. `terms` are the names and words of the conversation; they reach the model even when there are no messages. `source` and `details` are saved as recording metadata, not sent to the model.
+`surface` is the `id` of the matched surface. `snapshot` holds the identity and the parts of the content that the surface declares, as the app sends them ([What the app reads](#what-the-app-reads)). `context` returns None when it does not find the conversation for sure. `adapters.screen` reads the snapshot for an adapter: the window's title, the web area, the outline's nodes, the subtree, children and earlier siblings of a node, the nodes that are not skipped, the lists and the processes. `adapters.SPEAKER` names the speaker's own messages, and `adapters.place` gives a fixed place on the disk that a test can move with an environment variable. `about` tells the model where you write. `from` is who wrote each message. `documents` are the files open beside the conversation, the most relevant first, and `name` is the file's name, told to the model. `clean` cleans each message and each document, and it is the one place where an adapter changes a text. The server leaves out a document that is not an object, has no name, or is empty after `clean`. If `clean` fails, the error goes to the recording's errors, and the documents after it are left out; the messages are handled the same way. `terms` are the names and words of the conversation; they reach the model even when there are no messages. `source` and `details` are saved as recording metadata, not sent to the model.
 
 Put adapters in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOFOX_ADAPTERS` to use another folder. An adapter with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed adapter files automatically.
 
-The loader checks the manifest, interface version, and adapter class. It does not isolate the code: adapters run with your user permissions, so only install code you trust.
+The loader checks the manifest, interface version, and adapter class. A broken adapter's surfaces never match, and the info gives its error. It does not isolate the code: adapters run with your user permissions, so only install code you trust.
 
 `adapters/markdown.py` converts Markdown to plain text. It removes code blocks, HTML, and bare links, but keeps inline terms such as identifiers, filenames, flags, and short commands. A link of any scheme keeps only its text. A link to a file (a `file:` URL or a path without a scheme) also gives the name of the file when its text does not name it: the name takes the place of an empty text, or follows the text in brackets. The name is the last part of the path, with `%`-escapes decoded and without the query, the fragment (`#L12`) and a line suffix (`:12`). For example, `[план](file:///Users/a/My%20Plan.md#L3)` becomes "план (My Plan.md)".
 
@@ -176,3 +191,5 @@ The tool takes the snapshot with the app's own code, in its two phases, and prin
 - `--app <bundle id>` takes the snapshot of that running app at once, without bringing it to the front.
 
 Snapshots with an outline or lists contain window text. Treat them as conversation data.
+
+`which_session.py` reads such a snapshot from a file or from its input. It matches the identity with the surfaces of every working adapter, enabled or not. It gives each surface what the snapshot read for it, or for the surface `snapshot` when the tool read by its flags. Then it prints what was found: the surface, what it is, where it was read, the adapter's details, the number of messages, the open files with their length, the first terms and the errors. It never prints the texts. The test client `try_wav.py --snapshot <file>` sends the same snapshot with a recording ([development](7-development.md#test-recognition-on-a-separate-server)).

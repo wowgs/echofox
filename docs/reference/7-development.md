@@ -88,7 +88,7 @@ server/tools/test_server.sh stop
 | `BUNDLE=macos/build/EchoFox.app server/tools/test_server.sh start` | Test the Python and the server of a built app instead of the repository's. |
 | `try_wav.py ... --fast` | Send audio immediately instead of at recording speed. |
 | `try_wav.py ... --options ...` or `--prompt ...` | Override settings for an experiment. |
-| `try_wav.py ... --hint KEY=VALUE` | Send a hint to the adapters in the start message; VALUE is JSON, or else text. For example `--hint 'sessions=["<id>"]'` names Claude Code sessions to the Claude adapter. |
+| `try_wav.py ... --snapshot FILE` | Send the identity of a recorded snapshot (`echofox-snapshot`, see [the chat context](3-context.md#inspect-the-selected-conversation)) in the start message, and answer the server's read request with the snapshot's content, as the app does. The adapters then give the context of that window. |
 
 Input WAV files must be 16 kHz, mono, 16-bit. The client prints server messages and the delay after stopping. It reaches the working server only with `--working`.
 

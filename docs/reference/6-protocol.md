@@ -30,13 +30,12 @@ The client streams audio while recording. The server returns recognized pieces i
 3. The server answers the identity with a read request: what to read of the screen for each surface that matched. With no matched surface, `surfaces` is empty.
 
    ```json
-   {"type": "read", "surfaces": [{"surface": "claude-code/desktop",
-                                  "outline": {"skip": ["epitaxy-document-page"], "budget": 1000},
-                                  "lists": null, "processes": null}],
+   {"type": "read", "surfaces": [{"surface": "claude-chat/desktop",
+                                  "outline": {"skip": ["AXButton", "sr-only", "group/morph", "group/tag"], "budget": 1000}}],
     "tokenWeights": {"cyrillic": 0.238, "latin": 0.199, "digit": 1.649, "space": 0.362, "other": 0.717}}
    ```
 
-   - A part that is null or absent is not read. `outline` asks for the tree of the page or window, without the children of the elements whose AX role or one of whose DOM classes is in `skip`. `lists` asks for the rows of the window's lists. `processes` asks for the app's child processes.
+   - The server leaves out a part that the surface does not read, and the app reads no part that is absent or null. `outline` asks for the tree of the page or window, without the children of the elements whose AX role or one of whose DOM classes is in `skip`. `lists` asks for the rows of the window's lists. `processes` asks for the app's child processes.
    - A `budget` is a number of estimated tokens, counted with `tokenWeights`. A null budget leaves only the structural limits. The server resolves the budgets, so the app does not.
 4. The client reads only what the request asks, of the window it took the identity of, and sends one content message, keyed by the surface:
 
@@ -48,6 +47,8 @@ The client streams audio while recording. The server returns recognized pieces i
    - A surface's content has `outline` for an outline, `lists` and `focusedFrame` for lists, and `processes` (`pid`, `name`) for processes. [The chat context](3-context.md#what-the-app-reads) describes the fields.
    - The audio goes on while the content is read, so the content message comes between two audio messages.
    - The app sends no content after the stop, because the adapters' deadline is the stop. It sends none for an empty request and none in a private dictation.
+   - The server takes the first content message of a recording that asked for one, and of it only the matched surfaces. It ignores a content message that it did not ask for, and a second one. A content message without `surfaces` gets an error, and the recording goes on.
+   - Without content by the stop, the dictation goes without context.
 5. When the recording stops, the client sends `{"type": "stop", "reason": "user"}`. The other reasons are `silence`, `max_duration` and `error`.
 
 The server sends:
