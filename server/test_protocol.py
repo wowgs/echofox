@@ -115,9 +115,10 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.args.previous_text_tokens = 2  # with a token a character of the default weights: the last word whole
         stub, got = await self.run_stream(START, (LOUD + QUIET) * 6)
         first, second = [c[1] for c in stub.calls]
-        self.assertNotIn("said just before", first)
-        self.assertTrue(second.startswith(first))  # the text before the audio first, as the warm-up left it
-        self.assertIn('said just before this piece: "1".', second)  # the stub's text of piece 1 is "gemma-e4b piece 1"
+        self.assertNotIn("<previous_speech>", first)
+        # The tail before the prompt (no context here), so that the instructions are the last before the audio; the
+        # stub's text of piece 1 is "gemma-e4b piece 1"
+        self.assertEqual(second, "<previous_speech>1</previous_speech>\n\n" + first)
         self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["gemma-e4b piece 1", "gemma-e4b piece 2"])
 
     async def test_pieces_are_cut_while_the_speaker_talks_and_the_rest_at_the_stop(self):

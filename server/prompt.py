@@ -65,13 +65,12 @@ def said_before(texts, tokens, weights):
     return " ".join(reversed(kept))
 
 
-def with_said(text, said):
-    """The text of a piece's request: the text before the audio, then what the speaker said just before the piece. It
-    comes after the text that a slot holds from the warm-up, so that the slot's cache still serves that text."""
-    if not said:
-        return text
-    return (text + "\n\nThe speaker said just before this piece: \"" + said + "\". The piece continues it: transcribe "
-            "only the piece's own speech and do not repeat this text.")
+def with_said(block, text_prompt, said):
+    """The text of a piece's request: the context block (or None), what the speaker said just before the piece, then
+    the prompt, so that the last thing the model reads before the audio is the transcription's instructions. The block
+    is the part that a slot holds from the warm-up; the prompt after the tail is read again for each piece."""
+    parts = ([block] if block else []) + ([f"<previous_speech>{said}</previous_speech>"] if said else [])
+    return "\n\n".join(parts + [text_prompt])
 
 
 def line(message):

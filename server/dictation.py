@@ -13,7 +13,8 @@ import resolve
 from audio import seconds
 
 log = logging.getLogger("echofox-server")
-CONTEXT_TOO_BIG = "exceed_context_size_error"  # llama-server's error type for a request over a slot's context
+CONTEXT_TOO_BIG = "exceed_context_size_error"
+TAIL_MARGIN = 32  # the tail's tags, its last word over its budget, and the estimate's error on it (prompt.said_before)  # llama-server's error type for a request over a slot's context
 
 
 class Dictation:
@@ -32,7 +33,7 @@ class Dictation:
         self.room = text_room  # the tokens a request's text may take beside the longest audio (catalog.text_room)
         self.client = client_options or {}  # the start message's own: they win over the adapter's settings too
         self.files = files or recordings.Unsaved()
-        self.text, self.chat_tokens = text_prompt, 0
+        self.text, self.block, self.chat_tokens = text_prompt, None, 0  # the text before the audio; its context block
         self.sounds = fillers.words(meta.get("language", ""), getattr(server, "languages", None))
         model.begin()
 
@@ -44,12 +45,14 @@ class Dictation:
         options = resolve.adapter(context.get("adapter"), self.options, self.server, self.client)
         fits = None
         if self.room is not None:
-            room = self.room - resolve.value("max_tokens_per_piece", self.options, self.server)
+            # the answer's limit, and the tail of the pieces before (previousTextTokens, a word over it and its tags)
+            room = (self.room - resolve.value("max_tokens_per_piece", self.options, self.server)
+                    - resolve.value("previous_text_tokens", self.options, self.server) - TAIL_MARGIN)
             fits = lambda block: len(self.m.tokenize(block + "\n\n" + self.prompt)) <= room  # noqa: E731  the model's count
         block, holds = prompt.context(context, options, self.server, self.meta.get("language"), self.weights, fits)
         if block is None:
             return
-        self.text = block + "\n\n" + self.prompt
+        self.block, self.text = block, block + "\n\n" + self.prompt
         self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))  # the model's count
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, **holds}
 
@@ -94,19 +97,19 @@ class Dictation:
         limit = resolve.value("max_tokens_per_piece", self.options, self.server)
         try:
             try:
-                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.text, said), pcm, limit,
-                                                   self.options, slot, cancel=self.m.cancel)
+                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.block, self.prompt, said), pcm,
+                                                   limit, self.options, slot, cancel=self.m.cancel)
             except RuntimeError as e:
                 if CONTEXT_TOO_BIG not in str(e) or self.text == self.prompt:
                     raise
                 # A text over the model's room (catalog.text_room is computed, not asked of llama-server): the
                 # dictation goes on without its context rather than fail
                 log.warning("%s: piece %d did not fit the model with its context: again without it", self.m.name, piece)
-                self.text = self.prompt
+                self.block, self.text = None, self.prompt
                 self.meta = {**self.meta, "context_dropped": "too big for the model"}
                 meta = {**meta, "context_dropped": "too big for the model"}
-                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.text, said), pcm, limit,
-                                                   self.options, slot, cancel=self.m.cancel)
+                text, timings = await blocking.run(self.m.complete, prompt.with_said(self.block, self.prompt, said), pcm,
+                                                   limit, self.options, slot, cancel=self.m.cancel)
         except asyncio.CancelledError:
             log.warning("%s: the transcription of %.1f s of audio was cancelled after %.2f s", self.m.name, audio,
                         time.monotonic() - t)

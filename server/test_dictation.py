@@ -16,6 +16,7 @@ import resolve
 from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 
+TAIL = 100 + d.TAIL_MARGIN  # the room a dictation keeps for the tail of the pieces before (previousTextTokens)
 ONE_A_CHAR = dict.fromkeys(("cyrillic", "latin", "digit", "space", "other"), 1.0)
 
 
@@ -47,14 +48,14 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         chat = {"messages": [{"from": "Claude", "text": "the newest reply"}, {"from": "Claude", "text": "an older one"}],
                 "documents": [{"name": "big.md", "text": long}], "terms": ["GitHub"]}
         limit = resolve.model_defaults({})["max_tokens_per_piece"]
-        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + 60)
+        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + TAIL + 60)
         await d.prepare(chat)
         self.assertNotIn("File big.md", d.text)
         self.assertIn("Claude: the newest reply", d.text)
         self.assertLessEqual(len(d.text.split()), 60)
         m = self.metrics("prepare")[0]
         self.assertEqual((m["chat_documents"], m["chat_left_for_room"]["documents"]), (0, 1))
-        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + 20)  # room for the prompt and a little
+        d = self.dictation({"chat_documents_token_budget": 10}, room=limit + TAIL + 20)  # the prompt and a little
         await d.prepare(chat)
         self.assertNotIn("an older one", d.text)
         self.assertLessEqual(len(d.text.split()), 20)
