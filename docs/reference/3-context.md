@@ -47,11 +47,11 @@ The app reads the screen (the rows of lists, the outline of a page) from its end
 
 ## The built-in adapters
 
-The built-in adapters are split by where their context comes from, not by the company or the app: one Claude app can be served by two of them. Each one is enabled, set up and failing on its own, and the client takes the screen data that only the enabled ones ask for (the outline of a Claude Desktop chat only for `claude-chat`). A manifest may give a `title` for people ("Claude Code"); without one the app shows the name.
+The built-in adapters are split by where their context comes from, not by the company or the app: one Claude app can be served by two of them. Each one is enabled, set up and failing on its own, and the client takes the screen data that only the enabled ones ask for (the outline of a Claude Desktop page only for `claude-chat` and `claude-code`, the rows of lists only for `telegram`). A manifest may give a `title` for people ("Claude Code"); without one the app shows the name.
 
 | Adapter | Supported app | Context source |
 |---|---|---|
-| `claude-code` | Claude Code sessions: the Code tab of Claude Desktop, and a tab of Ghostty, Terminal, iTerm2 or Warp | The local transcript of the session in focus. Only Claude's completed responses are used. |
+| `claude-code` | Claude Code sessions: the Code tab of Claude Desktop, and a tab of Ghostty, Terminal, iTerm2 or Warp | The local transcript of the session in focus. Only Claude's completed responses are used. In the Code tab, also the Markdown file open in the Files panel, read from the disk. |
 | `claude-chat` | Claude Desktop's chats (claude.ai) | The messages that the window shows, read from the outline of the page. Only Claude's replies are used. |
 | `telegram` | Telegram Desktop | Messages loaded in the open chat, read from the accessibility snapshot. |
 
@@ -62,6 +62,16 @@ The Code tab exposes a URL of the form `https://claude.ai/epitaxy/local_<id>`. T
 If the record is missing, the adapter uses the web-area title only when exactly one transcript matches. This storage format is undocumented and may change.
 
 User messages, tool calls, tool results, thinking, and system tags are excluded. Earlier user dictations were sometimes copied into new results, which is why the adapter uses only final assistant responses.
+
+### The open file in the Code tab (`claude-code`)
+
+The Files panel of the Code tab shows one file: the active tab, as a preview or as source. The adapter gives a Markdown file (`.md`, `.markdown`) as a document of the context, whole, under the documents' budget like any document. Other files are left out.
+
+- The panel names the file's path under the session's folder above the file: one pop-up button for each part (`docs`, `reference`, `4-app.md`), then the "View source" button, then the page of the file, a group with the DOM class `epitaxy-document-page`. The adapter takes the pop-up buttons just before that group, at its level.
+- The session's folder is the `cwd` of Desktop's session record. The adapter reads the file there, not the preview on the screen: the preview has lost the Markdown, and the snapshot reads the screen up to the budget. A path with `..`, or one that leads out of the folder through a link, is not read.
+- So the adapter asks for the outline of Claude Desktop only (`"screen": ["outline"]`, `"screenApps"` with Claude Desktop alone): the outline of a terminal is never taken. Its `outlineSkip` leaves out the page of the file (`epitaxy-document-page`), the panel's file tree (`group/file-tree`) and the chat (`epitaxy-chat-panel-body`), whose messages the transcript has.
+
+The panel's structure is Claude Desktop's own and not documented; it was measured on 2026-11-02 (see [observations](../observations.md#token-estimate-and-screen-reading)). The source view was not measured: if it puts the file's text in another element, that text is read before the path, from the end, and can use the budget up.
 
 ### Claude Code in a terminal (`claude-code`)
 
@@ -99,12 +109,13 @@ An adapter is a Python package with two required files.
 | `interface` | Adapter API version; currently `2`. |
 | `apps` | Bundle IDs of supported apps. |
 | `electronTree` | Whether its apps build their accessibility tree only on request (Electron): `true` for all of them, or the list of those among `apps` that do. |
-
-For these apps of an enabled adapter (the info's `electronApps`), and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a snapshot that finds no focused element.
 | `reads` | Declared file access. |
 | `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
+| `screenApps` | Optional: those among `apps` whose screen data it needs. Without it, all of them. |
 | `outlineSkip` | Names of the outline's elements that go in without their children: an element whose AX role (`AXButton`) or one of whose DOM classes (`sr-only`) is a name. The client never reads the children, so their text is not in the snapshot. The app gives the names of the enabled adapters of the app to the snapshot (`SnapshotPlan.outlineSkip`). The element itself is marked `"skipped": true`. |
 | `context` | This adapter's default context settings. |
+
+For the Electron apps of an enabled adapter (the info's `electronApps`), and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a snapshot that finds no focused element.
 
 `adapter.py` contains a subclass of `adapters.Adapter`:
 

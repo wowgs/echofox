@@ -21,6 +21,8 @@ public struct ServerInfo: Decodable, Equatable {
         public let electronApps: [String]?
         /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
         public let screen: [String]?
+        /// Its apps whose screen it needs; an older server sends none, and then all of its apps.
+        public let screenApps: [String]?
         /// The names (an AX role or a DOM class) of the outline's elements whose children it does not need; an older
         /// server sends none.
         public let outlineSkip: [String]?
@@ -100,11 +102,11 @@ public struct ServerInfo: Decodable, Equatable {
     }
     /// Apps whose window lists an enabled adapter reads (a messenger's messages): the snapshot takes their rows.
     public var listApps: Set<String> {
-        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap(\.apps))
+        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap { $0.screenApps ?? $0.apps })
     }
     /// Apps whose page or window tree an enabled adapter reads (a web app's chat): the snapshot takes its outline.
     public var outlineApps: Set<String> {
-        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("outline") }.flatMap(\.apps))
+        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("outline") }.flatMap { $0.screenApps ?? $0.apps })
     }
 
     /// What the focus snapshot takes of the app `bundleId` at the start of a dictation, as the enabled adapters ask.
@@ -113,7 +115,9 @@ public struct ServerInfo: Decodable, Equatable {
     /// the manifest's, else the setting's default), the biggest of them; the text an adapter keeps is less than what
     /// the screen shows, so its context can be smaller than its budget.
     public func snapshotPlan(for bundleId: String, config: Config? = nil) -> SnapshotPlan {
-        let screen = adapters.filter { $0.enabled && $0.apps.contains(bundleId) && !($0.screen ?? []).isEmpty }
+        let screen = adapters.filter {
+            $0.enabled && ($0.screenApps ?? $0.apps).contains(bundleId) && !($0.screen ?? []).isEmpty
+        }
         let outline = outlineApps.contains(bundleId)
         let skip = screen.filter { ($0.screen ?? []).contains("outline") }.flatMap { $0.outlineSkip ?? [] }
         let knob = settings?.first { $0.key == "chatHistoryTokenBudget" }

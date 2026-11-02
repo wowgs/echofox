@@ -7,6 +7,7 @@ adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
                 "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
                 focused window (a messenger's messages); "outline", the tree of the focused web page or window, for
                 messages that are not in lists (a chat in a web app); see FOCUS in adapters/__init__.py],
+                "screenApps": [those among "apps" whose screen it needs (optional; without it, all of them)],
                 "outlineSkip": [names of the outline's elements whose subtree the client leaves out: an element
                 whose AX role or one of whose DOM classes is a name goes in alone, without its children, whose text
                 never enters the snapshot],
@@ -56,6 +57,11 @@ class Package:
         tree, apps = self.manifest.get("electronTree"), self.manifest.get("apps") or []
         return list(apps) if tree is True else [a for a in apps if a in tree] if isinstance(tree, list) else []
 
+    def screen_apps(self):
+        """The apps of "apps" whose screen the adapter needs (manifest "screenApps"; without it, all of them)."""
+        some, apps = self.manifest.get("screenApps"), self.manifest.get("apps") or []
+        return [a for a in apps if a in some] if isinstance(some, list) else list(apps)
+
     def info(self, enabled):
         """For the app: what the adapter is, says about itself, and whether it works."""
         m = self.manifest
@@ -64,7 +70,7 @@ class Package:
                 "description": m.get("description"), "apps": m.get("apps") or [],
                 "electronTree": bool(self.electron_apps()), "electronApps": self.electron_apps(),
                 "reads": m.get("reads") or [],
-                "screen": m.get("screen") or [], "outlineSkip": m.get("outlineSkip") or [],
+                "screen": m.get("screen") or [], "screenApps": self.screen_apps(), "outlineSkip": m.get("outlineSkip") or [],
                 "context": m.get("context") or {}, "error": self.error}
 
 
@@ -87,6 +93,9 @@ def load(folder, builtin):
         unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
         if unknown:
             raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
+        some = m.get("screenApps", m.get("apps") or [])
+        if not (isinstance(some, list) and set(some) <= set(m.get("apps") or [])):
+            raise ValueError("\"screenApps\" is not a list of its \"apps\"")
         skip = m.get("outlineSkip", [])
         if not (isinstance(skip, list) and all(isinstance(s, str) and s for s in skip)):
             raise ValueError("\"outlineSkip\" is not a list of names")

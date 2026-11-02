@@ -886,10 +886,17 @@ struct AdapterPage: View {
             let tree = adapter.electronApps ?? (adapter.electronTree ? adapter.apps : [])
             if !screen.isEmpty || !tree.isEmpty {
                 Section("From the screen") {
+                    // Its kinds of screen text; for an adapter that reads the screen of only some of its apps, one row per app
+                    let some = adapter.screenApps.flatMap { Set($0) == Set(adapter.apps) ? nil : $0 }
                     ForEach(screen, id: \.self) { s in
-                        Label { Text(s == "lists" ? "Message lists" : s == "outline" ? "Page text" : s) } icon: {
-                            SidebarIcon {
-                                Image(systemName: s == "lists" ? "list.bullet.rectangle" : "doc.text").resizable().scaledToFit()
+                        let kind = s == "lists" ? "Message lists" : s == "outline" ? "Page text" : s
+                        if let some {
+                            ForEach(some, id: \.self) { id in AppRow(bundleId: id, note: kind.lowercased()) }
+                        } else {
+                            Label { Text(kind) } icon: {
+                                SidebarIcon {
+                                    Image(systemName: s == "lists" ? "list.bullet.rectangle" : "doc.text").resizable().scaledToFit()
+                                }
                             }
                         }
                     }

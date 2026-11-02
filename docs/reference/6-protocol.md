@@ -47,15 +47,15 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
  "languages": [{"code", "name", "notes", "fillers"}],
  "commonNotes": [lines],
  "adapters": [{"name", "title", "enabled", "builtin", "version", "author", "source", "description", "apps",
-               "electronTree", "electronApps", "reads", "screen", "context", "error"}],
+               "electronTree", "electronApps", "reads", "screen", "screenApps", "outlineSkip", "context", "error"}],
  "models": ["<name>"],
- "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "variant",
+ "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "tokenWeights", "variant",
            "variants": [{"id", "name", "bytes", "memoryBytes", "default", "downloaded", "downloading"}]},
  "settings": [{"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
                "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
-The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant; `default` is true for the catalog's default variant. `model.variant` identifies the active variant.
+The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `screen` names what of the screen it needs (`lists`, `outline`), `screenApps` are its apps whose screen that is, and `outlineSkip` names the outline's elements that go in without their children. `model.tokenWeights` are the model's tokens per character of each kind, for the screen's token budget. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant; `default` is true for the catalog's default variant. `model.variant` identifies the active variant.
 
 `settings` describes each setting that the settings window can show and change:
 

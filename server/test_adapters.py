@@ -52,9 +52,9 @@ class Fixture(unittest.TestCase):
         os.utime(f, (t, t))
         return f
 
-    def desktop_record(self, desktop_id, cli, title):
+    def desktop_record(self, desktop_id, cli, title, cwd="/x"):
         with open(os.path.join(self.store, "org", "account", f"{desktop_id}.json"), "w") as fh:
-            json.dump({"sessionId": desktop_id, "cliSessionId": cli, "cwd": "/x", "title": title}, fh)
+            json.dump({"sessionId": desktop_id, "cliSessionId": cli, "cwd": cwd, "title": title}, fh)
 
 
     def claude_running(self, pid, session, name, entrypoint="cli"):
@@ -70,9 +70,27 @@ def terminal(title, pids, bundle="com.mitchellh.ghostty"):
             "processes": [{"pid": 101, "name": "zsh"}] + [{"pid": p, "name": "claude"} for p in pids]}
 
 
-def code_tab(desktop_id, title="Local Speech"):
-    return {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/epitaxy/{desktop_id}",
-                                                     "title": f"{title} - Claude Code"}}
+def code_tab(desktop_id, title="Local Speech", panel=None):
+    tab = {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/epitaxy/{desktop_id}",
+                                                    "title": f"{title} - Claude Code"}}
+    if panel is not None:
+        tab["outline"] = {"root": "webArea", "complete": True, "nodes": panel}
+    return tab
+
+
+def files_panel(*path):
+    """The end of the Code tab's outline with the Files panel showing the file at `path` under the session's folder, as
+    in a snapshot of Claude Desktop (2026-11-02), with the claude-code manifest's outlineSkip: the file tree and the
+    page go in without their children."""
+    return [{"depth": 15, "role": "AXGroup", "subrole": "AXLandmarkRegion", "description": "Files"},
+            {"depth": 16, "role": "AXGroup"},
+            {"depth": 17, "role": "AXOutline", "description": "Project files", "domClasses": ["group/file-tree"], "skipped": True},
+            {"depth": 17, "role": "AXSplitter", "description": "Resize file tree"},
+            {"depth": 16, "role": "AXGroup"}] \
+        + [{"depth": 17, "role": "AXPopUpButton", "title": p} for p in path] \
+        + [{"depth": 17, "role": "AXButton", "description": "View source"},
+           {"depth": 17, "role": "AXGroup", "domClasses": ["flex-1", "select-text", "epitaxy-document-page"], "skipped": True},
+           {"depth": 2, "role": "AXGroup", "subrole": "AXEmptyGroup"}]
 
 
 class ClaudeCodeTest(Fixture):
@@ -367,6 +385,35 @@ class ClaudeDesktopTest(Fixture):
         ranked = adapters.claims(code_tab("local_abc"), {"sessions": ["s1"]})
         self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude-code", 1.0)])  # one adapter: the Code tab wins over named sessions
 
+    def test_the_markdown_file_that_the_files_panel_shows_goes_in_whole_from_the_session_folder(self):
+        folder = os.path.join(self.dir.name, "repo")
+        os.makedirs(os.path.join(folder, "docs", "reference"))
+        with open(os.path.join(folder, "docs", "reference", "4-app.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Use the Mac app\n\nTap **right Option** to start.\n")
+        with open(os.path.join(folder, "main.swift"), "w") as fh:
+            fh.write("let x = 1\n")
+        self.put("a", "cli-1", [reply("m1", "Готово.")])
+        self.desktop_record("local_abc", "cli-1", "Local Speech", cwd=folder)
+        c = adapters.context(code_tab("local_abc", panel=files_panel("docs", "reference", "4-app.md")))
+        self.assertEqual(c["documents"], [{"name": "docs/reference/4-app.md",
+                                           "text": "Use the Mac app.\nTap right Option to start."}])
+        self.assertEqual((c["details"]["openFile"], c["messages"][0]["text"]), ("docs/reference/4-app.md", "Готово."))
+        for panel in (files_panel("main.swift"),             # not Markdown
+                      files_panel("docs", "gone.md"),         # no such file
+                      files_panel("..", "repo", "x.md"),      # not under the folder
+                      files_panel(),                          # no path before the page
+                      files_panel("docs", "reference", "4-app.md")[:-3]):  # no page: the panel shows no file
+            self.assertNotIn("documents", adapters.context(code_tab("local_abc", panel=panel)), panel[-3:])
+
+    def test_a_link_out_of_the_session_folder_is_not_followed(self):
+        folder, outside = os.path.join(self.dir.name, "repo"), os.path.join(self.dir.name, "secret.md")
+        os.makedirs(folder)
+        with open(outside, "w") as fh:
+            fh.write("secret\n")
+        os.symlink(outside, os.path.join(folder, "notes.md"))
+        self.desktop_record("local_abc", "cli-1", "Local Speech", cwd=folder)
+        self.assertNotIn("documents", adapters.context(code_tab("local_abc", panel=files_panel("notes.md"))))
+
     def test_a_bad_desktop_id_reads_no_file(self):
         self.assertIsNone(sys.modules["echofox_adapter_claude_code.desktop"].record("local_../../etc"))
 
@@ -548,8 +595,14 @@ class TelegramTest(Fixture):
         with open(os.path.join(d, "adapter.json"), "w") as f:
             json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["outline"], "outlineSkip": "AXButton"}, f)
         self.assertIn("outlineSkip", registry.packages()["peek"].error)
+        with open(os.path.join(d, "adapter.json"), "w") as f:
+            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["outline"], "screenApps": ["y"]}, f)
+        self.assertIn("screenApps", registry.packages()["peek"].error)  # not one of its apps
         chat = registry.packages()["claude-chat"].info({"claude-chat"})
-        self.assertEqual(chat["outlineSkip"], ["AXButton", "sr-only", "group/morph", "group/tag"])
+        self.assertEqual((chat["outlineSkip"], chat["screenApps"]),
+                         (["AXButton", "sr-only", "group/morph", "group/tag"], [DESKTOP]))  # all its apps, without screenApps
+        code = registry.packages()["claude-code"].info({"claude-code"})
+        self.assertEqual((code["screen"], code["screenApps"]), (["outline"], [DESKTOP]))  # not its terminals
 
 
 class HungAdapterTest(unittest.IsolatedAsyncioTestCase):

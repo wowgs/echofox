@@ -22,9 +22,10 @@ do {
     check(info.sampleRate == 16000 && info.textWaitSeconds == 180, "info: the audio and the wait")
     check(info.model?.title == "Gemma 4 E4B", "info: the model's name for people")
     check(info.proposedLanguage("ru") == "ru" && info.proposedLanguage("xx") == "en", "info: the first start's language")
-    check(info.snapshotApps == ["com.anthropic.claudefordesktop", "com.tdesktop.Telegram"]
-          && info.treeApps == ["com.anthropic.claudefordesktop"] && info.listApps == ["com.tdesktop.Telegram"],
-          "info: apps, trees and lists")
+    check(info.snapshotApps == ["com.anthropic.claudefordesktop", "com.mitchellh.ghostty", "com.tdesktop.Telegram"]
+          && info.treeApps == ["com.anthropic.claudefordesktop"] && info.listApps == ["com.tdesktop.Telegram"]
+          && info.outlineApps == ["com.anthropic.claudefordesktop"],
+          "info: apps, trees, lists and outlines (only of an adapter's screenApps)")
     check(info.languages.first.map { [$0.code, $0.name] } == ["cs", "Czech"] && info.languages.count == 20,
           "info: the languages")
     check(info.commonNotes?.first?.contains("{LANGUAGE}") == true, "info: the notes of every language, not filled in")
@@ -157,16 +158,18 @@ do {
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     check(info.snapshotPlan(for: "com.anthropic.claudefordesktop") == SnapshotPlan(full: true, tree: true, lists: false, outline: true,
-                                                                                         outlineSkip: ["AXButton", "sr-only"],
+                                                                                         outlineSkip: ["AXButton", "sr-only", "epitaxy-document-page"],
                                                                                          screenBudget: 1000, tokenWeights: info.model?.tokenWeights),
-          "plan: Claude Desktop, its tree and its outline, without the children of the adapter's outlineSkip")
+          "plan: Claude Desktop, its tree and its outline, without the children of the adapters' outlineSkip")
+    check(info.snapshotPlan(for: "com.mitchellh.ghostty") == SnapshotPlan(full: true, tree: false, lists: false, outline: false),
+          "plan: a terminal of claude-code, whose screen it does not need (screenApps): no outline, no budget")
     check(info.snapshotPlan(for: "com.anthropic.claudefordesktop").screenBudget == 1000
           && info.snapshotPlan(for: "com.anthropic.claudefordesktop").tokenWeights?["cyrillic"] == 0.238,
           "plan: the screen up to the adapter's chat budget (the setting's default), counted with the model's weights")
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-plan-\(getpid()).json")
-    try Data(#"{"version": 11, "adapters": {"claude-chat": {"enabled": true, "chatHistoryTokenBudget": 300}}}"#.utf8).write(to: file)
+    try Data(#"{"version": 11, "adapters": {"claude-chat": {"enabled": true, "chatHistoryTokenBudget": 300}, "claude-code": {"enabled": true, "chatHistoryTokenBudget": 200}}}"#.utf8).write(to: file)
     check(info.snapshotPlan(for: "com.anthropic.claudefordesktop", config: Config.load(from: file)).screenBudget == 300,
-          "plan: the config's entry sets the screen's budget")
+          "plan: the config's entries set the screen's budget, the biggest of the app's screen adapters")
     try? FileManager.default.removeItem(at: file)
     check(info.snapshotPlan(for: "com.tdesktop.Telegram") == SnapshotPlan(full: true, tree: false, lists: true, outline: false,
                                                                            screenBudget: 1000, tokenWeights: info.model?.tokenWeights),

@@ -1,10 +1,10 @@
 {
   "name": "claude-code",
   "title": "Claude Code",
-  "version": "2.1",
+  "version": "2.2",
   "author": "echofox",
   "source": "https://github.com/wowgs/echofox",
-  "description": "Reads the transcript of the Claude Code session in focus: the Code tab of Claude Desktop, or a terminal's tab.",
+  "description": "Reads the transcript of the Claude Code session in focus: the Code tab of Claude Desktop, or a terminal's tab. In the Code tab it also reads the Markdown file open beside the chat.",
   "interface": 2,
   "apps": [
     "com.anthropic.claudefordesktop",
@@ -19,9 +19,20 @@
   "reads": [
     "~/Library/Application Support/Claude/claude-code-sessions",
     "~/.claude/sessions",
-    "~/.claude/projects"
+    "~/.claude/projects",
+    "The session's folder: the Markdown file open beside the chat"
   ],
-  "screen": [],
+  "screen": [
+    "outline"
+  ],
+  "screenApps": [
+    "com.anthropic.claudefordesktop"
+  ],
+  "outlineSkip": [
+    "epitaxy-document-page",
+    "group/file-tree",
+    "epitaxy-chat-panel-body"
+  ],
   "context": {
     "chatHistoryTokenBudget": 1000,
     "chatTermsTokenBudget": 200

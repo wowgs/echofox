@@ -2,7 +2,8 @@
 
 - Claude Desktop's Code tab, the session in focus (confidence 1.0). Ways to the session: the web area's URL → Desktop's
   record of the session → its Claude Code transcript ("desktop store"); without a record, the web area's title → the
-  one transcript with that title ("title"); several transcripts with that title: no context.
+  one transcript with that title ("title"); several transcripts with that title: no context. The Markdown file that
+  the tab's Files panel shows goes in as a document, read from the session's folder (the record's "cwd"; desktop.py).
 - A terminal's tab (Ghostty, Terminal, iTerm2, Warp) with Claude Code in it (confidence 1.0): the claude among the
   terminal's processes whose session's name the window's title shows ("terminal title", terminal.py); not in tmux or
   screen.
@@ -51,14 +52,21 @@ class ClaudeCode(Adapter):
         local = desktop.code_tab(focus)
         if not local:
             return as_context(transcripts.context_of(transcripts.session_file(sessions(hints)), "named sessions"))
-        cli = (desktop.record(local) or {}).get("cliSessionId")
+        rec = desktop.record(local) or {}
+        cli = rec.get("cliSessionId")
         where = transcripts.session_file([cli]) if cli else None
         if where:
-            return as_context(transcripts.context_of(where, "desktop store"), desktopSession=local)
-        title = str(desktop.web_area(focus).get("title") or "")
-        if title.endswith(desktop.TITLE_SUFFIX):
-            return as_context(transcripts.context_of(transcripts.titled_session(title[:-len(desktop.TITLE_SUFFIX)]), "title"))
-        return {"about": ABOUT, "details": {"desktopSession": local}}  # claimed, but no transcript found
+            found = as_context(transcripts.context_of(where, "desktop store"), desktopSession=local)
+        else:
+            title = str(desktop.web_area(focus).get("title") or "")
+            found = as_context(transcripts.context_of(transcripts.titled_session(title[:-len(desktop.TITLE_SUFFIX)]), "title")) \
+                if title.endswith(desktop.TITLE_SUFFIX) else None
+        found = found or {"about": ABOUT, "details": {"desktopSession": local}}  # claimed, but no transcript found
+        doc = desktop.open_markdown(focus, rec.get("cwd"))
+        if doc:
+            found["documents"] = [doc]
+            found["details"]["openFile"] = doc["name"]
+        return found
 
     def clean(self, text):
         return markdown.plain(text)
