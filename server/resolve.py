@@ -70,6 +70,12 @@ def value(name, options, server):
     return getattr(server, name, tuning.BY_NAME[name].default)
 
 
+def budget(name, key, options, server, client_options=None):
+    """A budget of the read request (adapters.read): the knob `key` (its key in a manifest) of adapter `name`'s context
+    in a recording with `options` (model()), the same value that limits that context."""
+    return value(tuning.BY_KEY[key].name, adapter(name, options, server, client_options), server)
+
+
 def own_prompt(raw, model_entry):
     """The prompt's template of a recording, if it has its own: the client's (a start message's "prompt"), else the
     user's of the model (its registry entry's), at most constants.MAX_PROMPT characters; "" when neither gives one,

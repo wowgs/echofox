@@ -1,6 +1,6 @@
 # Build and develop EchoFox
 
-Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md).
+Build the app, run local checks, or test recognition against a separate server. Related docs: [the dictation server](1-server.md), [the menu bar app](4-app.md), [the protocol](6-protocol.md), [fixtures from live windows](8-fixtures.md).
 
 You use EchoFox as everyone does: the release from GitHub, in `/Applications`. Its server, Python and `llama-server` are inside it. The repository is for changing the code: the tests, the test server and the build of a release.
 
@@ -56,6 +56,8 @@ server/.venv/bin/python -m unittest discover -s server
 A test closes every file and socket it opens: the tests workflow fails when the log shows a `ResourceWarning`.
 
 Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the start of a llama-server in `llama_process.py` with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
+
+`server/test_fixtures.py` also runs every adapter on the fixtures from live windows of this Mac ([fixtures](8-fixtures.md)). Without the `fixtures/` folder, as in CI, that test is skipped with a message.
 
 Build every target of the app's package, then run the app's checks:
 

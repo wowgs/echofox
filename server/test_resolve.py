@@ -34,6 +34,14 @@ class ResolveTest(unittest.TestCase):
         self.assertEqual(resolve.value("chat_documents_token_budget", telegram, server), 1000)
         self.assertEqual(resolve.adapter(None, {budget: 7}, server)[budget], 7)  # no adapter: the recording's
 
+    def test_a_read_requests_budget_is_the_value_that_limits_the_adapters_context(self):
+        server = args()
+        server.adapter_config = {"telegram": resolve.adapter_config({"chatHistoryTokenBudget": 300})}
+        self.assertEqual(resolve.budget("claude-chat", "chatHistoryTokenBudget", {}, server), 1000)  # the manifest's
+        self.assertEqual(resolve.budget("telegram", "chatHistoryTokenBudget", {}, server), 300)  # the user's entry
+        self.assertEqual(resolve.budget("telegram", "chatHistoryTokenBudget", {}, server,
+                                        {"chat_history_token_budget": 5}), 5)  # the client's
+
     def test_a_knobs_value_is_the_options_else_the_servers_else_the_fallback(self):
         server = argparse.Namespace(piece_seconds=12.0)
         self.assertEqual(resolve.value("piece_seconds", {"piece_seconds": 9.0}, server), 9.0)

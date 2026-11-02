@@ -27,7 +27,7 @@ At the hotkey, the app reads the identity of an app of an enabled adapter's surf
 
 | Field | What |
 |---|---|
-| `app` | `bundleId`, `pid`, `name` |
+| `app` | `bundleId`, `pid`, `name`, and `version`: its `CFBundleShortVersionString`, read from its `Info.plist` on the disk |
 | `window` | `title` of the focused window |
 | `webArea` | `url` and `title` of the nearest web area above the focused element, if any |
 
@@ -195,7 +195,12 @@ The tool takes the snapshot with the app's own code, in its two phases, and prin
 - Without `--read` and these flags, the tool prints the identity only.
 - `--electron` asks the app for its accessibility tree first, as the app does for a surface with `treeOnRequest`. Without it the tool sets no attribute of the app.
 - `--app <bundle id>` takes the snapshot of that running app at once, without bringing it to the front.
+- `--app <bundle id> --list` prints every window of that app with its identity, `{"windows": [identity, …]}`, in the app's order of its windows. Nothing comes to the front.
+- `--app <bundle id> --window <N>` takes the snapshot of the window at index `N` of that list instead of the focused one, for example with `--read`. The window that holds the app's focused element gets its web area as at the hotkey: the nearest one above that element. Another window gets the first web area of its tree, breadth first, that is not empty: one with an element two levels under it. In Claude Desktop 4.4212.0 (2026-11-02), the window's first web area was the app's own empty page (a `file:` address), and the page of claude.ai came after it in another branch. The search looks at 10,000 elements at most and at each element once.
+- The exit code is 2 for a wrong usage, 3 when `--list` or `--window` has no Accessibility permission, and 4 when the `--app` is not running.
 
 Snapshots with an outline or lists contain window text. Treat them as conversation data.
+
+`server/tools/fixtures.py` reads the windows of the adapters' apps with `--list` and `--window`, and keeps the snapshots of test conversations as fixtures ([fixtures from live windows](8-fixtures.md)).
 
 `which_session.py` reads such a snapshot from a file or from its input. It matches the identity with the surfaces of every working adapter, enabled or not. It gives each surface what the snapshot read for it, or for the surface `snapshot` when the tool read by its flags. Then it prints what was found: the surface, what it is, where it was read, the adapter's details, the number of messages, the open files with their length, the first terms and the errors. It never prints the texts. The test client `try_wav.py --snapshot <file>` sends the same snapshot with a recording ([development](7-development.md#test-recognition-on-a-separate-server)).

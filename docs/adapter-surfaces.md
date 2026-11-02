@@ -53,7 +53,7 @@ The core reads the same fields for every app of an enabled adapter's surfaces, a
 
 | Field | What |
 |---|---|
-| `app` | `bundleId`, `pid`, `name` |
+| `app` | `bundleId`, `pid`, `name`, and `version`: its `CFBundleShortVersionString`, read from its `Info.plist` on the disk |
 | `window` | `title` of the focused window |
 | `webArea` | `url` and `title` of the nearest web area above the focused element, if any |
 
@@ -147,7 +147,8 @@ An adapter's page shows one section per surface: its title, its apps, its `match
 ## Checks and tests
 
 - Shared examples in `shared/` for both sides: identities with the surfaces that must match, the read requests, and the token estimate of sample texts with its expected counts.
-- Recorded snapshots, cut down and without private text, as fixtures for the adapters' tests: the Code tab with the Files panel, a Claude chat, a Telegram chat, a terminal.
+- Hand-written snapshots in the adapters' tests, which CI runs.
+- Fixtures from live windows: real snapshots of each surface, of test conversations on this Mac, with the parse that the owner accepted. They stay on this Mac, and a tool checks them again after an app update ([fixtures](reference/8-fixtures.md)).
 
 ## Assumptions and open questions
 

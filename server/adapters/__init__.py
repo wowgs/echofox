@@ -18,7 +18,7 @@ are not prose (prose()) go afterwards when the adapter's setting proseOnly says 
 prose (adapters/markdown.py has why).
 
 IDENTITY, the same fields for every app of an enabled adapter's surfaces, and nothing for other apps:
-  {"app": {"bundleId", "pid", "name"},
+  {"app": {"bundleId", "pid", "name", "version": its CFBundleShortVersionString},
    "window": {"title"}  (the focused window),
    "webArea": {"url", "title"}  (the nearest web area above the focused element, if any)}
 CONTENT, for each surface, only what its manifest's "screen" declares (never the text of input fields):

@@ -23,8 +23,8 @@ struct AdapterPage: View {
 
     /// The identity: what the app reads at every dictation in an app of an enabled adapter, before the server
     /// matches a surface (FocusSnapshot.capture). The same for every adapter, so it is said once, here.
-    static let identityNote = "When it is on, EchoFox reads the app's name, the window title, and the page's address "
-        + "and title whenever you dictate in one of the apps below."
+    static let identityNote = "When it is on, EchoFox reads the app's name and version, the window title, and the "
+        + "page's address and title whenever you dictate in one of the apps below."
 
     var body: some View {
         Form {

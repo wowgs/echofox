@@ -181,14 +181,11 @@ class Session:
 
     def read_request(self):
         """The surfaces of the enabled adapters that the start's identity is on, and the read request's surfaces: what
-        the client reads there, with the budgets of the adapter's options (resolve.adapter), the same as its
+        the client reads there, with the budgets of the adapter's options (resolve.budget), the same as its
         context's."""
         surfaces = adapters.match(self.start.identity, self.args.adapters)
-
-        def budget(adapter, key):
-            options = resolve.adapter(adapter, self.start.options, self.args, self.start.client_options)
-            return resolve.value(tuning.BY_KEY[key].name, options, self.args)
-        return surfaces, adapters.read(surfaces, budget)
+        return surfaces, adapters.read(surfaces, lambda adapter, key: resolve.budget(
+            adapter, key, self.start.options, self.args, self.start.client_options))
 
     async def ask_to_read(self):
         """The read request, at once, before the model loads: the client reads the matched surfaces while the speaker

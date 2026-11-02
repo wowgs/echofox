@@ -1,9 +1,10 @@
 // The focus snapshot: what the dictation's target looks like when the dictation starts, in two phases
-// (docs/adapter-surfaces.md). At the hotkey, capture() reads the identity: the app, its focused window's title and the
-// address and title of the web area above the focused element. Then the server matches the identity with the surfaces
-// of the enabled adapters and asks for what those surfaces read (EchoFoxCore's ReadRequest), and read() reads it of the
-// same window: the outline of the page or window, the rows of the window's lists, the app's child processes. Service
-// fields go in, never the text of input fields.
+// (docs/adapter-surfaces.md). At the hotkey, capture() reads the identity: the app with its version, its focused
+// window's title and the address and title of the web area above the focused element. Then the server matches the
+// identity with the surfaces of the enabled adapters and asks for what those surfaces read (EchoFoxCore's
+// ReadRequest), and read() reads it of the same window: the outline of the page or window, the rows of the window's
+// lists, the app's child processes. Service fields go in, never the text of input fields. For the tools, windows()
+// gives the same first phase for every window of an app, without bringing anything to the front.
 //
 // Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps build their
 // accessibility tree only on request (ElectronTree). After AXManualAccessibility was set, the focused element appeared
@@ -83,8 +84,9 @@ public enum FocusSnapshot {
 
     /// The first phase: the identity, and the elements that the text and the second phase need later.
     public struct Capture {
-        /// {"app": {bundleId, pid, name}, "window": {title}, "webArea": {url, title}}, the parts that exist; nil when
-        /// the identity was not asked for (an app of no enabled adapter, a private dictation) or no app is in front.
+        /// {"app": {bundleId, pid, name, version}, "window": {title}, "webArea": {url, title}}, the parts that exist;
+        /// nil when the identity was not asked for (an app of no enabled adapter, a private dictation) or no app is in
+        /// front.
         public let identity: [String: Any]?
         /// The element with the keyboard focus, where the text goes later, and its app, for the log too.
         public let focused: AXUIElement?
@@ -122,25 +124,96 @@ public enum FocusSnapshot {
             return Capture(identity: nil, focused: focused, pid: pid, bundleId: front.bundleIdentifier, trusted: trusted,
                            tookMs: took(), window: nil, webArea: nil)
         }
-        var out: [String: Any] = ["app": ["bundleId": front.bundleIdentifier ?? "", "pid": Int(pid),
-                                          "name": front.localizedName ?? ""]]
         let window = element(app, "AXFocusedWindow")
+        let webArea = above(focused).webArea
+        return Capture(identity: self.identity(of: front, window: window, webArea: webArea), focused: focused, pid: pid,
+                       bundleId: front.bundleIdentifier, trusted: trusted, tookMs: took(), window: window,
+                       webArea: webArea)
+    }
+
+    /// The first phase for every window of `target`, in the app's order of its windows (AXWindows), without bringing
+    /// anything to the front: for the tools, which read windows that are not in focus too. Each window's identity is
+    /// the one that capture() reads when that window has the focus. Its web area is the one above the app's focused
+    /// element when that element is in the window, as at the hotkey; otherwise it is the page in the
+    /// window's tree (webArea(in:)). Only that window gets the focused element, so only its lists have a
+    /// focusedFrame. With enableElectron, an Electron app is asked for its tree first, as capture() asks it.
+    public static func windows(of target: NSRunningApplication, enableElectron: Bool = false) -> [Capture] {
+        let started = Date()
+        let first = capture(identity: false, enableElectron: enableElectron, of: target)
+        let pid = target.processIdentifier
+        let focusedAt = above(first.focused, toWindow: true)
+        let all = value(AXUIElementCreateApplication(pid), "AXWindows") as? [AXUIElement] ?? []
+        return all.map { w in
+            let holdsFocus = focusedAt.window.map { CFEqual($0, w) } ?? false
+            let webArea = holdsFocus ? focusedAt.webArea
+                : self.webArea(in: w, children: children, role: { string($0, "AXRole") })
+            return Capture(identity: identity(of: target, window: w, webArea: webArea),
+                           focused: holdsFocus ? first.focused : nil, pid: pid, bundleId: target.bundleIdentifier,
+                           trusted: first.trusted, tookMs: Int(Date().timeIntervalSince(started) * 1000), window: w,
+                           webArea: webArea)
+        }
+    }
+
+    /// The identity of an app's window and web area: the parts that exist.
+    static func identity(of app: NSRunningApplication, window: AXUIElement?, webArea: AXUIElement?) -> [String: Any] {
+        var out: [String: Any] = ["app": compact(["bundleId": app.bundleIdentifier ?? "", "pid": Int(app.processIdentifier),
+                                                  "name": app.localizedName ?? "", "version": version(of: app)])]
         if let w = window { out["window"] = compact(["title": string(w, "AXTitle")]) }
+        if let a = webArea { out["webArea"] = compact(["url": url(a), "title": string(a, "AXTitle")]) }
+        return out
+    }
+
+    /// The app's version for people (CFBundleShortVersionString), read from its Info.plist on the disk each time. A
+    /// Bundle object would keep the first version it read for the life of this process, and the apps update while the
+    /// menu bar app runs. After an update that waits for the app's restart, the disk has the new version while the old
+    /// one still runs.
+    static func version(of app: NSRunningApplication) -> String? {
+        guard let url = app.bundleURL?.appendingPathComponent("Contents/Info.plist"),
+              let info = NSDictionary(contentsOf: url) else { return nil }
+        return info["CFBundleShortVersionString"] as? String
+    }
+
+    /// The nearest web area above the focused element, at most maxAncestors up; the walk ends at the window. With
+    /// `toWindow`, the walk goes on above the web area to the window, and gives the window too.
+    static func above(_ focused: AXUIElement?, toWindow: Bool = false) -> (webArea: AXUIElement?, window: AXUIElement?) {
         var webArea: AXUIElement?
         var e = focused
         for _ in 0..<maxAncestors {
             guard let p = e.flatMap({ element($0, "AXParent") }) else { break }
             e = p
             let role = string(p, "AXRole")
-            if role == "AXWebArea" {
-                out["webArea"] = compact(["url": url(p), "title": string(p, "AXTitle")])
+            if role == "AXWindow" { return (webArea, p) }
+            if role == "AXWebArea" && webArea == nil {
                 webArea = p
-                break
+                if !toWindow { break }
             }
-            if role == "AXWindow" { break }
         }
-        return Capture(identity: out, focused: focused, pid: pid, bundleId: front.bundleIdentifier, trusted: trusted,
-                       tookMs: took(), window: window, webArea: webArea)
+        return (webArea, nil)
+    }
+
+    /// The page in the tree under `root`: the first web area breadth first that is not empty, else the first empty
+    /// one. An empty web area has no element two levels under it. In Claude Desktop 4.4212.0 (2026-11-02), the window
+    /// had two web areas in two branches of its tree: first the app's own page (a file: address) with one empty group
+    /// in it, then the page of claude.ai, which is the one above the focused element at the hotkey. The search does
+    /// not look inside a web area, looks at maxElements elements at most, and at each element once, so that a tree
+    /// with a cycle ends. Apart from Accessibility, so that the checks can search a made-up tree.
+    public static func webArea<Node: Hashable>(in root: Node, children: (Node) -> [Node],
+                                               role: (Node) -> String?) -> Node? {
+        var queue = [root], seen: Set<Node> = [root], next = 0, empty: Node?
+        while next < queue.count {
+            for c in children(queue[next]) where !seen.contains(c) {
+                if seen.count > maxElements { return empty }
+                seen.insert(c)
+                if role(c) == "AXWebArea" {
+                    if children(c).contains(where: { !children($0).isEmpty }) { return c }
+                    empty = empty ?? c
+                } else {
+                    queue.append(c)
+                }
+            }
+            next += 1
+        }
+        return empty
     }
 
     /// The second phase: what `request` asks of one surface, read of the captured window, with the estimate of the

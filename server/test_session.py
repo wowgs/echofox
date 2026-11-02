@@ -12,7 +12,7 @@ from fakes import args, stub_models
 
 MODELS = {"gemma-e4b": {"llamaServer": "http://h:1"},
           "own": {"llamaServer": "http://h:2", "prompt": "Model's {LANGUAGE}."}}
-IDENTITY = {"app": {"bundleId": "com.example.app", "pid": 1, "name": "App"}}
+IDENTITY = {"app": {"bundleId": "com.example.app", "pid": 1, "name": "App", "version": "2.5.1"}}
 
 
 def start(**m):
@@ -65,15 +65,16 @@ class FilesTest(unittest.IsolatedAsyncioTestCase):
         return session.Session(None, None, None, a, session.parse_start({"type": "start", **m}, stub_models(MODELS), a),
                                make_stream=object), a
 
-    async def test_a_saved_recording_gets_its_folder_and_its_record_with_the_microphone(self):
-        s, a = self.session(language="ru")
+    async def test_a_saved_recording_gets_its_folder_and_its_record_with_the_microphone_and_the_identity(self):
+        s, a = self.session(language="ru", identity=IDENTITY)
         self.assertTrue(s.files.saved)
         self.assertEqual(s.id, os.path.relpath(s.files.dir, a.recordings))
         s.texts, s.stop_reason = ["one", "two"], "user"
         await s.finish()
         record = json.loads(pathlib.Path(s.files.dir, "adapter.json").read_text(encoding="utf-8"))
-        self.assertEqual((record["id"], record["language"], record["text"], record["stopReason"], record["input"]),
-                         (s.id, "ru", "one two", "user", {"inputVolume": 40, "device": None}))
+        self.assertEqual((record["id"], record["language"], record["text"], record["stopReason"], record["input"],
+                          record["identity"]),
+                         (s.id, "ru", "one two", "user", {"inputVolume": 40, "device": None}, IDENTITY))
 
     async def test_a_private_or_unsaved_recording_writes_no_folder_and_asks_nothing_of_macos(self):
         for s, a in (self.session(private=True), self.session(save=False)):

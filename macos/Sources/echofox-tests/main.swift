@@ -342,6 +342,26 @@ do {
         list((0..<(max + 10)).map { _ in FakeNode(fields: ["role": "AXRow"]) })]))
     check(rows(long.lists[0]).count == max - 1 && long.lists[0]["rowCount"] as? Int == max + 10 && long.cuts == [.elements],
           "lists: the bound of elements counts the search and the rows, \(rows(long.lists[0]).count), \(long.cuts)")
+
+    // The page of a window without the focus: the first web area that is not empty, as in Claude Desktop, where the
+    // app's own empty page comes first in another branch (2026-11-02).
+    func page(_ window: FakeNode) -> FakeNode? {
+        FocusSnapshot.webArea(in: window, children: { $0.kids }, role: { $0.fields["role"] as? String })
+    }
+    let shell = FakeNode(fields: ["role": "AXWebArea", "url": "file:///app/index.html"], kids: [FakeNode(fields: ["role": "AXGroup"])])
+    let site = FakeNode(fields: ["role": "AXWebArea", "url": "https://claude.ai/chat/x"], kids: [
+        FakeNode(fields: ["role": "AXGroup"], kids: [text("hello")])])
+    let electron = FakeNode(fields: ["role": "AXWindow"], kids: [
+        FakeNode(fields: ["role": "AXGroup"], kids: [shell]),
+        FakeNode(fields: ["role": "AXGroup"], kids: [FakeNode(fields: ["role": "AXGroup"], kids: [site])])])
+    electron.kids.append(electron)  // a cycle in the search
+    check(page(electron) === site, "page: the first web area that is not empty, a cycle searched once")
+    check(page(FakeNode(fields: ["role": "AXWindow"], kids: [shell])) === shell, "page: an empty web area when it is the only one")
+    let inner = FakeNode(fields: ["role": "AXWebArea"], kids: [FakeNode(fields: ["role": "AXGroup"], kids: [text("frame")])])
+    let outer = FakeNode(fields: ["role": "AXWebArea"], kids: [FakeNode(fields: ["role": "AXGroup"], kids: [inner])])
+    check(page(FakeNode(fields: ["role": "AXWindow"], kids: [outer])) === outer, "page: the outermost, not one inside it")
+    check(page(FakeNode(fields: ["role": "AXWindow"], kids: [FakeNode(fields: ["role": "AXGroup"], kids: (0..<max).map { _ in
+        FakeNode(fields: ["role": "AXImage"]) } + [site])])) == nil, "page: the search looks at maxElements elements at most")
 }
 
 // The server's messages.

@@ -18,11 +18,11 @@ The client streams audio while recording. The server returns recognized pieces i
    ```json
    {"type": "start", "model": "<name>", "language": "ru", "sampleRate": 16000, "encoding": "pcm_s16le",
     "client": "<name>",
-    "identity": {"app": {"bundleId": "…", "pid": 501, "name": "Claude"}, "window": {"title": "…"},
+    "identity": {"app": {"bundleId": "…", "pid": 501, "name": "Claude", "version": "4.4212.0"}, "window": {"title": "…"},
                  "webArea": {"url": "https://claude.ai/epitaxy/…", "title": "…"}}}
    ```
 
-   - `identity` tells which app, window and page the dictation goes into (see [the chat context](3-context.md#how-the-server-finds-the-conversation)). `window` is the focused window. `webArea` is the nearest web area above the focused element. A part that does not exist is left out. The app sends an identity only for an app of an enabled adapter's surfaces.
+   - `identity` tells which app, window and page the dictation goes into (see [the chat context](3-context.md#how-the-server-finds-the-conversation)). `app.version` is the app's `CFBundleShortVersionString`, read from its `Info.plist` on the disk. `window` is the focused window. `webArea` is the nearest web area above the focused element. A part that does not exist is left out. The app sends an identity only for an app of an enabled adapter's surfaces.
    - If `model` is omitted, the server uses the first model in the registry.
    - `"private": true` makes a private dictation: the server saves nothing, runs no adapter and writes no text into its log. The app sends no identity with it.
    - An experiment can also send `prompt` and `options`. These override model settings. The app never sends them.

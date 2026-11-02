@@ -61,7 +61,7 @@
                          "help": "Names and terms first, then the newest messages."}]},
   "start": {"type": "start", "model": "gemma-e4b", "language": "ru", "sampleRate": 16000, "encoding": "pcm_s16le",
             "client": "echofox-mac",
-            "identity": {"app": {"bundleId": "com.anthropic.claudefordesktop", "pid": 501, "name": "Claude"},
+            "identity": {"app": {"bundleId": "com.anthropic.claudefordesktop", "pid": 501, "name": "Claude", "version": "4.4212.0"},
                          "window": {"title": "Claude"},
                          "webArea": {"url": "https://claude.ai/epitaxy/local_0f8e2a6c-1b3d-4e5f-8a7b-9c0d1e2f3a4b", "title": "Local Speech - Claude Code"}}},
   "read": {"type": "read", "surfaces": [{"surface": "claude-code/desktop", "outline": {"skip": ["epitaxy-document-page"], "budget": null}}],
