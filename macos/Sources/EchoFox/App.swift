@@ -205,7 +205,6 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     func allowAccessibility() {
         permissions.askAccessibility()
-        permissions.openSettings(.accessibility)
     }
 
     func allowMicrophone() {
