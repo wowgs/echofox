@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wowgs/echofox/shared/adapter.schema.json",
+  "title": "EchoFox adapter manifest, adapter.json, interface 3",
+  "description": "An adapter is a product the speaker writes into (Claude Code, Claude chats, Telegram). Its surfaces say where the product is on the screen, how the core recognizes it there, and what is read there (docs/adapter-surfaces.md). The server's registry checks every manifest against this file, and the server's info gives the surfaces to the app as they are here.",
+  "type": "object",
+  "required": ["name", "version", "interface", "surfaces"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "The adapter's key in the config (adapters.<name>)."},
+    "title": {"type": "string", "description": "Its name for people; without it, the app shows the name."},
+    "version": {"type": "string"},
+    "author": {"type": "string"},
+    "source": {"type": "string", "description": "Where its code comes from, a URL."},
+    "description": {"type": "string", "description": "For people, in the settings window: what it reads, in a sentence or two."},
+    "interface": {"const": 3, "description": "The adapter interface; the server refuses another one."},
+    "surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/surface"},
+      "description": "The places of the product on the screen. Their ids are unique within the adapter."
+    },
+    "context": {
+      "type": "object",
+      "description": "The defaults of the adapter's context settings: knobs of server/tuning.py with the adapter as owner, such as chatHistoryTokenBudget. The user's entry in the config (adapters.<name>) changes them."
+    }
+  },
+  "$defs": {
+    "surface": {
+      "type": "object",
+      "required": ["id", "title", "apps"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9-]+$", "description": "Unique within the adapter. The core names the surface <adapter>/<id>."},
+        "title": {"type": "string", "description": "For people, in the settings window: \"Claude Desktop, Code tab\"."},
+        "apps": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Bundle ids of the apps the surface is in."},
+        "treeOnRequest": {"type": "boolean", "default": false, "description": "The apps build their accessibility tree only on request (Electron, Chromium): the app asks them for it when they start or come to the front."},
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional rules on the identity. Every given rule must hold. A pattern: * is any text, possibly empty; every other character is itself; the whole value must match.",
+          "properties": {
+            "url": {"type": "string", "description": "A pattern of the web area's address (identity webArea.url): https://claude.ai/epitaxy/*."},
+            "title": {"type": "string", "description": "A pattern of the focused window's title (identity window.title)."}
+          }
+        },
+        "screen": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What the app reads after a match, besides the identity. Nothing: the surface needs the identity only.",
+          "properties": {
+            "outline": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The tree under the web area of the focused element, or under the focused window without one, flat with depths, read from its end.",
+              "properties": {
+                "skip": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "An element whose AX role or one of whose DOM classes is a name goes in without its children; their text is never read."},
+                "budget": {"type": "string", "description": "The key of the adapter's knob that limits the text read, in estimated tokens (chatHistoryTokenBudget). Without it, only the structural limits apply."}
+              }
+            },
+            "lists": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The rows of the lists in the focused window (a messenger's messages), the last rows of each, read from the end.",
+              "properties": {
+                "budget": {"type": "string", "description": "As for the outline."}
+              }
+            },
+            "processes": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The app's child processes: pid and name.",
+              "properties": {}
+            }
+          }
+        },
+        "reads": {
+          "type": "array",
+          "description": "The files the adapter reads for this surface, for people.",
+          "items": {
+            "type": "object",
+            "required": ["what"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"type": "string", "description": "A fixed place, with ~ for the home folder."},
+              "what": {"type": "string", "description": "What it is: \"The session's transcript\"."}
+            }
+          }
+        }
+      }
+    }
+  }
+}
