@@ -22,7 +22,7 @@ from audio import seconds, wav_header
 from constants import RATE, SAMPLE_BYTES
 
 HEADER_EVERY_BYTES = 5 * RATE * SAMPLE_BYTES  # the WAV header is brought up to date every 5 s of audio
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
 class Recording:

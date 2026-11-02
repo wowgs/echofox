@@ -35,7 +35,7 @@ MATCH = {"url", "title"}
 SCREEN = {"outline": {"skip", "budget"}, "lists": {"budget"}, "processes": set()}
 READ = {"path", "what"}
 BUILTIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builtin")
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
 def user_dir():

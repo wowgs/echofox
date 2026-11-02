@@ -17,7 +17,7 @@ import time
 
 import constants
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 _path = constants.path(constants.METRICS)
 
 

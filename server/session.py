@@ -30,7 +30,7 @@ WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording 
 MIC_INFO_WAIT_S = 15        # for the input device's description at the end
 CLIENT_NAME_CHARS = 40
 STOP_REASONS = ("user", "silence", "max_duration", "error")
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
 @dataclass

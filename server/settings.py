@@ -25,7 +25,7 @@ import languages
 import metrics
 import tuning
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 MODEL_DEFAULT = {"gemma-e4b": {"catalog": catalog.DEFAULT,
                                "llamaServer": f"http://{constants.HOST}:{constants.WORKING_LLAMA_PORT}"}}
 

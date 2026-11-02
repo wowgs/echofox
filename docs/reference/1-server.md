@@ -7,7 +7,7 @@ The dictation server turns microphone audio into text. The Mac app handles recor
   <img alt="Long recordings are processed in pieces while you speak, leaving less work after you stop." src="../../img/dictation-timeline.svg">
 </picture>
 
-The server runs as the app's child process, listening on `ws://127.0.0.1:8090`. It sends audio to its own child process, `llama-server`, which runs Gemma 4 E4B on the Mac's GPU. The app starts the server with `gemma_voice.py --parent`: the server ends when its standard input closes, that is when the app ends, and on SIGTERM, which the app sends at its quit. Before it ends, the server stops its llama-server. Its output goes to `~/Library/Logs/EchoFox/gemma-voice.log`, llama-server's to `llama-server.log` next to it.
+The server runs as the app's child process, listening on `ws://127.0.0.1:8090`. It sends audio to its own child process, `llama-server`, which runs Gemma 4 E4B on the Mac's GPU. The app starts the server with `echofox-server.py --parent`: the server ends when its standard input closes, that is when the app ends, and on SIGTERM, which the app sends at its quit. Before it ends, the server stops its llama-server. Its output goes to `~/Library/Logs/EchoFox/echofox-server.log`, llama-server's to `llama-server.log` next to it.
 
 See also: [configuration](2-config.md), [conversation context](3-context.md), [protocol](6-protocol.md), and [development](7-development.md).
 
@@ -69,7 +69,7 @@ A download uses one connection per file: more connections were not faster on the
 
 | File | Purpose |
 |---|---|
-| `gemma_voice.py` | Starts the server. |
+| `echofox-server.py` | Starts the server. |
 | `protocol.py` | One connection of a client: reads its first message and hands it on. |
 | `info.py` | The server's info: the models, languages, adapters and settings. |
 | `variants.py` | The download and removal messages of a model's variant, and the list of a model's variants for the info. |
@@ -93,6 +93,6 @@ A download uses one connection per file: more connections were not faster on the
 
 ## Logs and metrics
 
-- The log of the server is `~/Library/Logs/EchoFox/gemma-voice.log`. The log of `llama-server` is `~/Library/Logs/EchoFox/llama-server.log`.
-- The server writes its metrics to `~/Library/Logs/EchoFox/gemma-voice-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
+- The log of the server is `~/Library/Logs/EchoFox/echofox-server.log`. The log of `llama-server` is `~/Library/Logs/EchoFox/llama-server.log`.
+- The server writes its metrics to `~/Library/Logs/EchoFox/echofox-server-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
 - `server/.venv/bin/python server/metrics.py` prints a summary for each model and the last requests.

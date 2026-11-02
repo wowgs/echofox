@@ -398,7 +398,7 @@ class CleanTest(Fixture):
         self.assertNotIn("messages", c)
         a.found = {"documents": [{"name": "a.md", "text": "One."}, {"name": "x", "text": "boom"},
                                  {"name": "c.md", "text": "Three."}]}
-        with self.assertLogs("gemma_voice", "ERROR"):
+        with self.assertLogs("echofox-server", "ERROR"):
             c = adapters.context({}, on)
         self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}])  # none after the failed clean
         self.assertIn("docs.clean: RuntimeError: boom", c["errors"])
@@ -503,15 +503,15 @@ class UserAdapterTest(Fixture):
         msgs = "return {'about': 'a', 'messages': [{'from': 'A', 'text': 'one'}, {'from': 'A', 'text': 'two'}]}"
         self.install("badcontext", code=base.format(context="raise KeyError('k')", clean="return text"))
         self.install("good", code=base.format(context=msgs, clean="return text"))
-        with self.assertLogs("gemma_voice", "ERROR") as logs:
+        with self.assertLogs("echofox-server", "ERROR") as logs:
             c = found(EXAMPLE, ["badcontext", "good"])
         self.assertIn("adapter badcontext: context failed", logs.output[0])
         self.assertEqual((c["adapter"], len(c["messages"])), ("good", 2))
         self.assertIn("badcontext.context: KeyError", c["errors"][0])
-        with self.assertLogs("gemma_voice", "ERROR"):
+        with self.assertLogs("echofox-server", "ERROR"):
             self.assertEqual(found(EXAMPLE, ["badcontext"]), {"errors": ["badcontext.context: KeyError: 'k'"]})
         self.install("badclean", code=base.format(context=msgs, clean="raise ValueError('v')"))
-        with self.assertLogs("gemma_voice", "ERROR") as logs:
+        with self.assertLogs("echofox-server", "ERROR") as logs:
             c = found(EXAMPLE, ["badclean"])
         self.assertIn("adapter badclean: clean failed", logs.output[0])
         self.assertEqual(c["messages"], [])
@@ -774,7 +774,7 @@ class WhichSessionTest(Fixture):
         report = self.tool().report
         self.install("broken", code="from adapters import Adapter\nclass B(Adapter):\n"
                                     "    def context(self, s, n): raise KeyError('x')\n    def clean(self, t): return t\n")
-        with self.assertLogs("gemma_voice", "ERROR"):
+        with self.assertLogs("echofox-server", "ERROR"):
             lines = report(EXAMPLE)
         self.assertIn("error: broken.context: KeyError: 'x'", lines)  # errors only: no context to print
         folder = os.path.join(self.dir.name, "repo")
@@ -810,7 +810,7 @@ class HungAdapterTest(unittest.IsolatedAsyncioTestCase):
                              {"errors": ["the adapters still run for an earlier dictation"]})  # no second thread
             release.set()
             adapters._running.result(5)
-            with self.assertLogs("gemma_voice", "INFO") as logs:
+            with self.assertLogs("echofox-server", "INFO") as logs:
                 self.assertEqual(await adapters.context_until({}, [], stop=asyncio.Event()), {"adapter": "slow"})
                 await asyncio.sleep(0.01)
             self.assertTrue(any("adapters:" in line for line in logs.output), logs.output)

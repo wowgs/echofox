@@ -195,7 +195,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_text_that_reaches_the_limit_stays(self):
         fake = FakeLlamaServer(decode=1000)
         try:
-            with self.assertLogs("gemma_voice", "WARNING") as logs:
+            with self.assertLogs("echofox-server", "WARNING") as logs:
                 text = await self.dictation(model=fake.model()).piece(LOUD * 2, 1, 2)
         finally:
             fake.close()

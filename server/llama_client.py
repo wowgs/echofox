@@ -17,7 +17,7 @@ import llama_process
 import tuning
 from audio import wav
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 SHORT_TIMEOUT_S = 10  # /tokenize, /props
 # llama-server's request field of each sampler knob (tuning.SAMPLER, by its name in the code): the request keeps its
 # fields when a knob is renamed, and a sampler knob without a field here fails every request (test_llama_client.py)

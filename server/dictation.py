@@ -15,7 +15,7 @@ import metrics
 import tuning
 from audio import seconds, wav
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
 def prompt(language, custom="", entry=None, configured=None):

@@ -12,7 +12,7 @@ import urllib.request
 
 import catalog
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 CHUNK = 1 << 20                 # bytes read at a time
 FREE_MARGIN = 1_000_000_000     # the disk keeps this much free after a download
 TIMEOUT_S = 60                  # one read of the connection

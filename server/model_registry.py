@@ -15,7 +15,7 @@ import constants
 import llama_process
 from llama_client import LlamaModel
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 UNKNOWN = object()  # Models.active before the first activation, and after the registry changed
 RETRY_S = 2  # how often the menu's model is made the one in memory again while it is not: after a client's recording
              # on another model, or while it cannot start (its files are missing, for one)

@@ -8,7 +8,7 @@
 import Foundation
 
 public enum ServerProcess {
-    public static let logInHome = LogFolder.inHome + "/gemma-voice.log"
+    public static let logInHome = LogFolder.inHome + "/echofox-server.log"
     /// The launchd agents of the versions that ran the server and the model without the app.
     public static let legacyAgents = ["echofox.gemma-voice", "echofox.llama-server"]
     /// A server that ran at least this long ended for a reason of its own (a changed port): it starts again at once.
@@ -31,7 +31,7 @@ public enum ServerProcess {
         let python = r.appendingPathComponent("python/bin/python3"), server = r.appendingPathComponent("server")
         let fm = FileManager.default
         guard fm.isExecutableFile(atPath: python.path),
-              fm.fileExists(atPath: server.appendingPathComponent("gemma_voice.py").path) else { return nil }
+              fm.fileExists(atPath: server.appendingPathComponent("echofox-server.py").path) else { return nil }
         return (python, server)
     }
 
@@ -46,7 +46,7 @@ public enum ServerProcess {
     /// The bundled server of this app version. Python writes no bytecode: the bundle carries it (build-app.sh), and
     /// a new file would break the app's signature. The version goes to the server's log.
     public static func launch(python: URL, server: URL, version: String) -> Launch {
-        Launch(executable: python, arguments: [server.appendingPathComponent("gemma_voice.py").path, "--parent"],
+        Launch(executable: python, arguments: [server.appendingPathComponent("echofox-server.py").path, "--parent"],
                environment: ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": version], directory: server)
     }
 

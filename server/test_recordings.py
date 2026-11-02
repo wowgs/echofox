@@ -24,12 +24,12 @@ class RecordingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             rec = recordings.Recording(d)
             rec.wav.close()  # as if the disk were full: every write fails
-            with self.assertLogs("gemma_voice", "ERROR"):
+            with self.assertLogs("echofox-server", "ERROR"):
                 rec.write(LOUD)
             rec.write(LOUD)  # no error any more: the audio is given up
             os.chmod(rec.dir, 0o500)
             try:
-                with self.assertLogs("gemma_voice", "ERROR"):
+                with self.assertLogs("echofox-server", "ERROR"):
                     rec.save("pieces.jsonl", b"x")
             finally:
                 os.chmod(rec.dir, 0o700)

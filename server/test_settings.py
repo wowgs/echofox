@@ -66,7 +66,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             for bad, level in (({"telegram": {"enabled": True, "chatHistoryTokens": 600}}, "WARNING"),
                                ({"telegram": {"enabled": True, "chatHistoryTokenBudget": -1}}, "ERROR")):
                 self.write(f, adapters=bad)
-                with self.assertLogs("gemma_voice", "WARNING") as logs:
+                with self.assertLogs("echofox-server", "WARNING") as logs:
                     self.assertEqual(s.file_settings(f)["adapters"], {"telegram": {"enabled": True}})
                 self.assertEqual([r.levelname for r in logs.records], [level])
 
@@ -76,7 +76,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             self.write(f, models={"a": {"llamaServer": "http://h", "options": {"noRepeatNgramSize": 10}}},
                        server={"maxRecordingSeconds": 25, "pieceSeconds": 15, "saveRecordings": "many", "colour": "red"},
                        languages={"ru": {"fillers": "э"}})
-            with self.assertLogs("gemma_voice", "WARNING") as logs:
+            with self.assertLogs("echofox-server", "WARNING") as logs:
                 self.assertEqual(s.file_settings(f), {"maxRecordingSeconds": 25.0, "languages": {"ru": {}},
                                                       "models": {"a": {"llamaServer": "http://h", "options": {}}}})
         # unknown: colour, pieceSeconds (a constant), the model's option; wrong: saveRecordings, the fillers
@@ -89,7 +89,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             text = json.dumps({"version": constants.CONFIG_VERSION + 1, "adapters": {"telegram": {"enabled": True}},
                                "newThing": {"x": 1}, "server": {"port": 9000, "newKnob": 2}})
             pathlib.Path(f).write_text(text)
-            with self.assertLogs("gemma_voice", "WARNING"):
+            with self.assertLogs("echofox-server", "WARNING"):
                 self.assertEqual(s.file_settings(f), {"adapters": {"telegram": {"enabled": True}}, "port": 9000})
             s.migrate(f)
             self.assertEqual(pathlib.Path(f).read_text(), text)  # nothing of it written over
@@ -160,7 +160,7 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(llamas.calls, [("start", A), ("stop", A), ("start", B)])
             pathlib.Path(f).write_text("{not JSON")  # a hand edit gone wrong: the settings stay, the model too
             os.utime(f, ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))
-            with self.assertLogs("gemma_voice", "ERROR"):
+            with self.assertLogs("echofox-server", "ERROR"):
                 self.assertTrue(await w.check())
             await models.follow_menu()
             self.assertEqual((models.selected, llamas.calls[-1]), ("big", ("start", B)))
@@ -218,7 +218,7 @@ class MigrateTest(unittest.TestCase):
                              "pieceSeconds": 15, "maxRecordingSeconds": 600}}
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump(v4, fh)
-            with self.assertLogs("gemma_voice", "INFO") as logs:
+            with self.assertLogs("echofox-server", "INFO") as logs:
                 s.migrate(f)
             c = json.loads(pathlib.Path(f).read_text(encoding="utf-8"))
             self.assertEqual(list(c), [k for k in v4 if k != "adapterDefaults"])

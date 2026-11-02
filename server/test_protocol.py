@@ -146,7 +146,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             env.start()
             before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
             try:
-                with self.assertLogs("gemma_voice", level="INFO") as logs:
+                with self.assertLogs("echofox-server", level="INFO") as logs:
                     stub, got = await self.run_stream({**START, "private": True, "identity": CODE_TAB}, LOUD,
                                                       between=CONTENT)
             finally:

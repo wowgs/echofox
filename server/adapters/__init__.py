@@ -44,7 +44,7 @@ import os
 import re
 import time
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 SPEAKER = "the speaker"  # who wrote the speaker's own messages, told to the model
 SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+")

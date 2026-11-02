@@ -28,7 +28,7 @@ EXIT_WAIT=$(c STOP_WAIT_S)
 if [[ -n ${BUNDLE:-} ]]; then PY=${BUNDLE:A}/Contents/Resources/python/bin/python3 SRV=${BUNDLE:A}/Contents/Resources/server
   export PYTHONDONTWRITEBYTECODE=1  # as the app does: nothing new in the signed bundle
 else PY=$SERVER/.venv/bin/python SRV=$SERVER; fi
-pids() { pgrep -f "gemma_voice.py --config $STATE/config.json" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
+pids() { pgrep -f "echofox-server.py --config $STATE/config.json" || true; pgrep -f "llama-server.*--port $LLAMA_PORT" || true; }
 stop_tests() { for p in $(pids); do kill $p; done; for i in {1..50}; do [[ -z $(pids) ]] && break; sleep 0.1; done; }
 case ${1:-start} in
   stop)
@@ -40,7 +40,7 @@ case ${1:-start} in
   start)
     stop_tests
     mkdir -p $STATE $LOGS
-    $PY - $CONFIG $STATE/config.json http://127.0.0.1:$LLAMA_PORT $PORT $LOGS/gemma-voice-test-metrics.jsonl \
+    $PY - $CONFIG $STATE/config.json http://127.0.0.1:$LLAMA_PORT $PORT $LOGS/echofox-server-test-metrics.jsonl \
       $STATE/recordings <<'PY'
 import json, os, sys
 src, dst, url, port, metrics, recordings = sys.argv[1:7]
@@ -71,8 +71,8 @@ print("\n".join(llama_process.command(models.entries[name], models.models_folder
     osascript -e 'quit app "EchoFox"' 2>/dev/null || true
     for i in {1..$EXIT_WAIT}; do lsof -nP -iTCP:$WORKING_PORT -sTCP:LISTEN -t >/dev/null 2>&1 || break; sleep 1; done
     nohup "${llama[@]}" > $LOGS/llama-server-test.log 2>&1 &
-    nohup $PY $SRV/gemma_voice.py --config $STATE/config.json --ignore-selection \
-      > $LOGS/gemma-voice-test.log 2>&1 &
+    nohup $PY $SRV/echofox-server.py --config $STATE/config.json --ignore-selection \
+      > $LOGS/echofox-server-test.log 2>&1 &
     for i in {1..120}; do curl -sf http://127.0.0.1:$LLAMA_PORT/health >/dev/null && break; sleep 1; done
     curl -sf http://127.0.0.1:$LLAMA_PORT/health >/dev/null || { echo "the test llama-server does not answer; see $LOGS/llama-server-test.log" >&2; exit 1; }
     echo "started: ws://127.0.0.1:$PORT, llama-server :$LLAMA_PORT; EchoFox is quit until 'stop'";;

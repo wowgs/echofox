@@ -20,7 +20,7 @@ import settings
 import vad
 from model_registry import Models
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the app that starts the server (macos ServerProcess), for the log
 
 
