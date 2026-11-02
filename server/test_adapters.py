@@ -245,7 +245,8 @@ class ScreenTest(unittest.TestCase):
 class ClaudeCodeTest(Fixture):
     def test_only_claudes_final_replies_newest_first(self):
         self.put("b", "new", [
-            {"type": "custom-title", "customTitle": "Тесты"},
+            {"type": "custom-title", "customTitle": "Старое имя"},
+            {"type": "custom-title", "customTitle": "Тесты"},                                     # renamed: the last wins
             {"type": "user", "message": {"content": "Запусти тесты в CI"}},                       # the user: never
             reply("m1", "Запускаю npm test.", "tool_use"),                                        # between tool calls
             {"type": "assistant", "message": {"id": "m1", "stop_reason": "tool_use", "content": [{"type": "tool_use", "name": "Bash"}]}},

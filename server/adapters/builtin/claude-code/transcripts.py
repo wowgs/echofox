@@ -101,9 +101,9 @@ def read(f):
     replies, title = [], None
     with open(f, encoding="utf-8", errors="replace") as fh:
         for line in fh:
-            if title is None and '"custom-title"' in line:
+            if '"custom-title"' in line:  # the last one is the session's name now: a rename appends another line
                 try:
-                    title = json.loads(line).get("customTitle")
+                    title = json.loads(line).get("customTitle") or title
                 except ValueError:
                     pass
             m = message(line)
