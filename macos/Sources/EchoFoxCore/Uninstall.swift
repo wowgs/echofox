@@ -14,10 +14,16 @@ public enum Uninstall {
 
     public static let bundleId = "uk.wowgs.echofox"
 
+    /// The order in which the server removes the downloaded variants: the variant in use last, because the server
+    /// unloads it only after the running recording; the others keep their order.
+    public static func removalOrder(_ variants: [String], inUse: String?) -> [String] {
+        variants.filter { $0 != inUse } + variants.filter { $0 == inUse }
+    }
+
     /// The items that exist on this Mac, in the order they go.
     public static func items(home: URL, recordings: URL, labeled: URL, withRecordings: Bool) -> [Item] {
         var out: [Item] = []
-        for p in [".echofox", "Library/Application Support/EchoFox", "Library/Logs/EchoFox",
+        for p in [".echofox", "Library/Application Support/EchoFox", LogFolder.inHome,
                   "Library/Caches/\(bundleId)", "Library/HTTPStorages/\(bundleId)"] {
             out.append(Item(url: home.appendingPathComponent(p), toTrash: false))
         }

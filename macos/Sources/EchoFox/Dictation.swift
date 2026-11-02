@@ -1,16 +1,15 @@
-// One dictation: the focus snapshot, the microphone, and one WebSocket to the dictation server (the protocol is in
-// docs/reference/6-protocol.md; the messages in EchoFoxCore/Messages.swift). Sending goes through one serial queue, so the
-// start message (which waits for the snapshot) goes first and the audio and the stop follow in order. Everything else
-// runs on the main thread.
+// One dictation: the focus snapshot, the microphone, and one ServerConnection to the dictation server (the protocol is
+// in docs/reference/6-protocol.md; the messages in EchoFoxCore/Messages.swift). Sending goes through one serial queue,
+// so the start message (which waits for the snapshot) goes first and the audio and the stop follow in order.
+// Everything else runs on the main thread. The App's DictationQueue (EchoFoxCore) follows its phases.
 import FocusSnapshot
 import Foundation
 import EchoFoxCore
 
 final class Dictation {
-    enum Phase { case recording, waiting, finished }
     static let client = "echofox-mac"
 
-    private(set) var phase = Phase.recording
+    private(set) var phase = DictationPhase.recording
     private(set) var texts: [String] = []
     private(set) var errors: [String] = []
     private(set) var capture: FocusSnapshot.Capture?
@@ -28,7 +27,7 @@ final class Dictation {
     private let queue = DispatchQueue(label: "echofox.dictation.send")
     private let recorder: Recorder
     private let microphone: String
-    private var task: URLSessionWebSocketTask?
+    private let connection: ServerConnection
     private var lastSpeech = Date()
     private var silenceTimer: Timer?
     private var textTimer: Timer?
@@ -42,16 +41,14 @@ final class Dictation {
         self.sampleRate = server?.sampleRate ?? Tuning.defaultSampleRate
         self.textWait = server?.textWaitSeconds ?? Tuning.defaultTextWaitSeconds
         self.plan = plan
-        let (input, why) = AudioInputs.chosen(config.microphone)
-        self.recorder = Recorder(sampleRate: Double(sampleRate), device: input?.id)
-        self.microphone = "\(input?.name ?? "macOS's input") (\(why))"
+        let microphone = AudioInputs.chosen(config.microphone)
+        self.recorder = Recorder(sampleRate: Double(sampleRate), microphone: microphone)
+        self.microphone = "\(microphone.name) (\(microphone.why))"
+        self.connection = ServerConnection(url: config.serverURL)
     }
 
     func start() {
-        let task = URLSession.shared.webSocketTask(with: config.serverURL)
-        self.task = task
-        task.resume()
-        receive()
+        connection.open { [weak self] event in self?.received(event) }
         let config = self.config, rate = self.sampleRate, isPrivate = self.isPrivate
         let plan = isPrivate ? SnapshotPlan.none : self.plan  // a private dictation reads nothing of the screen
         queue.async { [weak self] in
@@ -64,13 +61,13 @@ final class Dictation {
                       + "lists \((capture.snapshot["lists"] as? [Any])?.count ?? 0), "
                       + "outline \(((capture.snapshot["outline"] as? [String: Any])?["nodes"] as? [Any])?.count ?? 0) elements, "
                       + "\(capture.snapshot["tookMs"] ?? "?") ms")
-            self?.send(.string(ClientMessage.start(model: config.model, language: config.language, sampleRate: rate,
-                                                   client: Dictation.client, snapshot: isPrivate ? [:] : capture.snapshot,
-                                                   isPrivate: isPrivate)))
+            self?.send(text: ClientMessage.start(model: config.model, language: config.language, sampleRate: rate,
+                                                 client: Dictation.client, snapshot: isPrivate ? [:] : capture.snapshot,
+                                                 isPrivate: isPrivate))
         }
         do {
             try recorder.start(
-                onPCM: { [weak self] pcm in self?.queue.async { self?.send(.data(pcm)) } },
+                onPCM: { [weak self] pcm in self?.queue.async { self?.send(audio: pcm) } },
                 onLost: { [weak self] why in DispatchQueue.main.async { self?.recorderLost(why) } })
         } catch {
             finish(error: "microphone: \(error.localizedDescription)")
@@ -87,7 +84,7 @@ final class Dictation {
     func stop(_ reason: ClientMessage.StopReason) {
         guard phase == .recording else { return }
         endRecording()
-        queue.async { [weak self] in self?.send(.string(ClientMessage.stop(reason))) }
+        queue.async { [weak self] in self?.send(text: ClientMessage.stop(reason)) }
         Log.write("stop: \(reason.rawValue), \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
         onPhase(self)
     }
@@ -128,40 +125,29 @@ final class Dictation {
         recorder.stop()
         silenceTimer?.invalidate()
         textTimer?.invalidate()
-        task?.cancel(with: .normalClosure, reason: nil)
+        connection.close()  // no event of the server comes after it
         onPhase(self)
     }
 
     // MARK: The connection
 
-    private func send(_ message: URLSessionWebSocketTask.Message) {
-        task?.send(message) { [weak self] error in
-            guard let error, let self, !self.sendFailed else { return }
-            self.sendFailed = true
-            Log.write("send failed: \(error.localizedDescription)")
-        }
+    /// On the send queue. The first failed send goes to the log.
+    private func send(text: String) { connection.send(text) { [weak self] in self?.failed($0) } }
+    private func send(audio: Data) { connection.send(audio) { [weak self] in self?.failed($0) } }
+
+    private func failed(_ error: Error) {
+        guard !sendFailed else { return }
+        sendFailed = true
+        Log.write("send failed: \(error.localizedDescription)")
     }
 
-    private func receive() {
-        task?.receive { [weak self] result in
-            DispatchQueue.main.async { self?.received(result) }
-        }
-    }
-
-    private func received(_ result: Result<URLSessionWebSocketTask.Message, Error>) {
-        guard phase != .finished else { return }
-        switch result {
-        case .failure(let error):
+    private func received(_ event: ServerConnection.Event) {
+        switch event {
+        case .ended(let error):
             finish(error: "the dictation server at \(config.serverURL.absoluteString): \(error.localizedDescription)")
-            return
-        case .success(.string(let s)):
+        case .text(let s):
             handle(s)
-        case .success(.data(let d)):
-            handle(String(decoding: d, as: UTF8.self))
-        case .success:
-            break
         }
-        if phase != .finished { receive() }
     }
 
     private func handle(_ message: String) {

@@ -12,6 +12,18 @@ struct AudioInput: Equatable {
     var device: MicrophoneChoice.Device { MicrophoneChoice.Device(uid: uid, builtIn: builtIn) }
 }
 
+/// The microphone of a choice (AudioInputs.chosen): the recording, the menu's volume and the recorder's check all
+/// take it from here.
+struct ChosenInput {
+    /// The chosen device; nil: macOS's input.
+    let input: AudioInput?
+    /// Why this one: the choice, or the fallback when the chosen device is gone.
+    let why: String
+    /// The device to record from or set the volume of: the chosen one, else macOS's input now; nil if there is none.
+    var device: AudioDeviceID? { input?.id ?? AudioInputs.defaultInput() }
+    var name: String { input?.name ?? "macOS's input" }
+}
+
 enum AudioInputs {
     /// Every device with input channels.
     static func all() -> [AudioInput] {
@@ -39,12 +51,12 @@ enum AudioInputs {
             && id != 0 ? id : nil
     }
 
-    /// The device the config's choice names, or nil for macOS's input. A device that is gone falls back to the
-    /// built-in microphone, then to macOS's input; `why` says which.
-    static func chosen(_ choice: String) -> (input: AudioInput?, why: String) {
+    /// The microphone the config's choice names. A device that is gone falls back to the built-in microphone, then to
+    /// macOS's input; `why` says which.
+    static func chosen(_ choice: String) -> ChosenInput {
         let inputs = all()
         let (i, why) = MicrophoneChoice.resolve(choice, among: inputs.map(\.device))
-        return (i.map { inputs[$0] }, why)
+        return ChosenInput(input: i.map { inputs[$0] }, why: why)
     }
 
     /// The device's input volume, 0…1, as macOS's Sound settings show it: the device's own control (kAudioDevice

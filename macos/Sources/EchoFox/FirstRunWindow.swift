@@ -75,7 +75,7 @@ final class FirstRunWindow: NSObject, NSWindowDelegate {
         w.center()
         w.delegate = self
         window = w
-        MainMenu.bringForward(w)
+        DockPresence.bringForward(w)
     }
 
     func windowWillClose(_ notification: Notification) {

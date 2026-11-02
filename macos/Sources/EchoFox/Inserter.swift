@@ -12,25 +12,17 @@ import FocusSnapshot
 final class Inserter {
     typealias Result = InsertionResult
 
-    /// The waits, in seconds. Not tuned: set by hand on 2026-10-15; only Claude Desktop was tried with them.
-    enum Wait {
-        static let check: TimeInterval = 0.5        // for a way's text to show in the box
-        static let background: TimeInterval = 1.5   // the same, for an app in the background
-        static let focus: TimeInterval = 1.0        // for the box's app to come to the front with the focus in the box
-        static let poll: TimeInterval = 0.05
-        static let restore: TimeInterval = 1.0      // before the clipboard comes back (an app may read it late)
-        static let accessibility: Float = 1.0       // the longest one Accessibility call may take
-    }
-
     static let shared = Inserter()
     static let inputRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"]
     static let typedChunk = 16  // characters per keyboard event when typing (a keyboard event carries only a few)
 
     private let queue = DispatchQueue(label: "echofox.insert")
-    fileprivate lazy var clipboard = Clipboard(restoreAfter: Wait.restore) { [weak self] body in self?.queue.async(execute: body) }
+    fileprivate lazy var clipboard = Clipboard(restoreAfter: Tuning.clipboardRestoreSeconds) { [weak self] body in
+        self?.queue.async(execute: body)
+    }
 
     private init() {
-        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Wait.accessibility)
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Tuning.accessibilityCallSeconds)
     }
 
     /// Inserts on the insertion queue and calls `done` on the main thread with what happened.
@@ -53,7 +45,7 @@ final class Inserter {
         guard AXUIElementSetAttributeValue(e, kAXSelectedTextAttribute as CFString, text as CFString) == .success
         else { return nil }
         guard let b = before else { return .accessibilityUnchecked }
-        return Self.grew(e, from: b, within: Wait.check) ? .accessibility : nil
+        return Self.grew(e, from: b, within: Tuning.insertCheckSeconds) ? .accessibility : nil
     }
 
     /// b. Cmd+V into the box: to the frontmost app if the box's app is in front, else to that app in the background.
@@ -65,10 +57,10 @@ final class Inserter {
         let before = Self.length(box)
         clipboard.lend(text) { Self.paste(to: front ? nil : pid) }
         if front {
-            return before.map { Self.grew(box, from: $0, within: Wait.check) } == true ? .paste : .pasteUnchecked
+            return before.map { Self.grew(box, from: $0, within: Tuning.insertCheckSeconds) } == true ? .paste : .pasteUnchecked
         }
         guard let b = before else { return nil }
-        return Self.grew(box, from: b, within: Wait.background) ? .pasteInBackground : nil
+        return Self.grew(box, from: b, within: Tuning.insertBackgroundCheckSeconds) ? .pasteInBackground : nil
     }
 
     /// c. The box's whole value through Accessibility, only if the box is empty. The result if the text went in.
@@ -80,7 +72,8 @@ final class Inserter {
               AXUIElementSetAttributeValue(box, kAXValueAttribute as CFString, text as CFString) == .success
         else { return nil }
         // An empty box may still count a character (Claude Desktop's: 1), so the check is against its own length.
-        return Self.grew(box, from: before, within: Wait.background) || Self.holds(box, text) ? .valueInBackground : nil
+        return Self.grew(box, from: before, within: Tuning.insertBackgroundCheckSeconds) || Self.holds(box, text)
+            ? .valueInBackground : nil
     }
 
     /// c. Cmd+V as keyboard events through Accessibility to the box's app (AXUIElementPostKeyboardEvent, deprecated
@@ -95,7 +88,7 @@ final class Inserter {
                 ok = ok && post(app, 0, key, DarwinBoolean(down)) == .success
             }
         }
-        return ok && Self.grew(box, from: before, within: Wait.background) ? .axKeysInBackground : nil
+        return ok && Self.grew(box, from: before, within: Tuning.insertBackgroundCheckSeconds) ? .axKeysInBackground : nil
     }
 
     private typealias PostKey = @convention(c) (AXUIElement, CGCharCode, CGKeyCode, DarwinBoolean) -> AXError
@@ -118,7 +111,7 @@ final class Inserter {
                 e?.postToPid(pid)
             }
         }
-        return Self.grew(box, from: before, within: Wait.background) ? .typedInBackground : nil
+        return Self.grew(box, from: before, within: Tuning.insertBackgroundCheckSeconds) ? .typedInBackground : nil
     }
 
     /// d. Brings the box's app to the front with the focus in the box, pastes, and takes the speaker back to the app
@@ -130,7 +123,7 @@ final class Inserter {
         let backBox = back.flatMap { Self.focused(in: $0.processIdentifier) }
         app.activate()
         AXUIElementSetAttributeValue(box, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        let ready = Self.within(Wait.focus) {
+        let ready = Self.within(Tuning.insertFocusSeconds) {
             NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
                 && Self.focused(in: pid).map { CFEqual($0, box) } == true
         }
@@ -138,7 +131,7 @@ final class Inserter {
         var r: Result?
         if ready {
             clipboard.lend(text) { Self.paste(to: nil) }
-            r = before.map { Self.grew(box, from: $0, within: Wait.check) } == true
+            r = before.map { Self.grew(box, from: $0, within: Tuning.insertCheckSeconds) } == true
                 ? .pasteBroughtToFront : .pasteBroughtToFrontUnchecked
         }
         if let back, back.processIdentifier != ProcessInfo.processInfo.processIdentifier {
@@ -202,12 +195,13 @@ final class Inserter {
         within(seconds) { (length(e) ?? from) > from }
     }
 
-    /// Whether `condition` holds within `seconds`, checked every Wait.poll. On the insertion queue, not the main one.
+    /// Whether `condition` holds within `seconds`, checked every Tuning.insertPollSeconds. On the insertion queue, not
+    /// the main one.
     static func within(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
         let until = Date().addingTimeInterval(seconds)
         repeat {
             if condition() { return true }
-            Thread.sleep(forTimeInterval: Wait.poll)
+            Thread.sleep(forTimeInterval: Tuning.insertPollSeconds)
         } while Date() < until
         return condition()
     }

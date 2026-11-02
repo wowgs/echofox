@@ -1,9 +1,9 @@
 // The app's log, ~/Library/Logs/EchoFox/app.log. It never holds the dictated text, only its length.
+import EchoFoxCore
 import Foundation
 
 enum Log {
-    static let folder = "Library/Logs/EchoFox"  // the server's logs are there too (server/constants.py LOGS)
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(folder)/app.log")
+    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(LogFolder.inHome)/app.log")
     private static let queue = DispatchQueue(label: "echofox.log")
     private static let stamp: DateFormatter = {
         let f = DateFormatter()

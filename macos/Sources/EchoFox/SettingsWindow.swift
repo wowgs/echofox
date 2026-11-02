@@ -57,7 +57,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             }
             window = w
         }
-        if let window { MainMenu.bringForward(window) }
+        if let window { DockPresence.bringForward(window) }
     }
 
     /// The server's info changed: the window shows it.
@@ -124,7 +124,7 @@ final class SettingsModel: ObservableObject {
     func microphoneChanged() {
         config = actions?.config ?? config
         inputs = AudioInputs.all()
-        let device = AudioInputs.chosen(config.microphone).input?.id ?? AudioInputs.defaultInput()
+        let device = AudioInputs.chosen(config.microphone).device
         volume = device.flatMap(AudioInputs.volume)
     }
 

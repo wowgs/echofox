@@ -6,11 +6,11 @@ enum RecordTest {
     /// `choice`: a microphone choice instead of the config's ("builtin", "system", a device's UID).
     static func run(seconds: Double, out: String, choice: String? = nil) -> Never {
         let config = Config.load()
-        let (input, why) = AudioInputs.chosen(choice ?? config.microphone)
+        let microphone = AudioInputs.chosen(choice ?? config.microphone)
         let lock = NSLock()
         var samples = 0, peak: Int16 = 0, callbacks = 0
-        let recorder = Recorder(sampleRate: Double(Tuning.defaultSampleRate), device: input?.id)
-        var result: [String: Any] = ["microphone": input?.name ?? "macOS's input", "why": why,
+        let recorder = Recorder(sampleRate: Double(Tuning.defaultSampleRate), microphone: microphone)
+        var result: [String: Any] = ["microphone": microphone.name, "why": microphone.why,
                                      "choice": choice ?? config.microphone,
                                      "inputs": AudioInputs.all().map { "\($0.name) [\($0.uid)]\($0.builtIn ? " built-in" : "")" }]
         do {
@@ -29,7 +29,7 @@ enum RecordTest {
         } catch {
             result["error"] = "\(error)"
         }
-        if let device = input?.id ?? AudioInputs.defaultInput(), let v = AudioInputs.volume(device) {
+        if let device = microphone.device, let v = AudioInputs.volume(device) {
             result["inputVolume"] = v
             result["inputVolumeSetsBack"] = AudioInputs.setVolume(v, of: device)  // the same value: nothing changes
         }

@@ -14,7 +14,7 @@ import EchoFoxCore
 
 final class Recorder {
     private let format: AVAudioFormat
-    private let device: AudioDeviceID?
+    private let microphone: ChosenInput
     private var unit: AudioUnit?
     private var bound: AudioDeviceID = 0
     private var converter: AVAudioConverter?
@@ -30,10 +30,10 @@ final class Recorder {
     private(set) var stats = (calls: 0, renderErrors: 0, lastStatus: OSStatus(0), convertErrors: 0, tooLong: 0)
     private(set) var formats = ""
 
-    /// `device`: the microphone to record; nil: macOS's input at the start.
-    init(sampleRate: Double, device: AudioDeviceID? = nil) {
+    /// `microphone`: the microphone to record (its device, or macOS's input at the start).
+    init(sampleRate: Double, microphone: ChosenInput) {
         format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
-        self.device = device
+        self.microphone = microphone
     }
 
     /// Starts the microphone; `onPCM` gets each converted buffer (on an audio thread), `onLost` why the microphone
@@ -41,7 +41,7 @@ final class Recorder {
     func start(onPCM: @escaping (Data) -> Void, onLost: @escaping (String) -> Void) throws {
         self.onPCM = onPCM
         self.onLost = onLost
-        guard let id = device ?? AudioInputs.defaultInput() else { throw MessageError("no microphone") }
+        guard let id = microphone.device else { throw MessageError("no microphone") }
         do {
             try open(id)
         } catch {
@@ -101,7 +101,7 @@ final class Recorder {
         }
         c.downmix = true  // a device with several channels gives one
         converter = c
-        var maxFrames: UInt32 = 4096
+        var maxFrames = Tuning.recorderBufferFrames
         size = UInt32(MemoryLayout<UInt32>.size)
         _ = AudioUnitGetProperty(u, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFrames, &size)
         let capacity = max(maxFrames, Tuning.recorderBufferFrames)

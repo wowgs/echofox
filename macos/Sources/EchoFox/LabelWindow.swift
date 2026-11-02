@@ -8,12 +8,18 @@ import EchoFoxCore
 import SwiftUI
 
 final class LabelWindow: NSObject, NSWindowDelegate {
+    /// The window's share of the screen's width and height, its smallest size, and its distance from the screen's
+    /// edges, in points.
+    static let widthShare = 1.0 / 3, heightShare = 0.45
+    static let minWidth = 420.0, minHeight = 320.0
+    static let margin = 16.0
+
     private var window: NSWindow?
     private var model: LabelModel?
 
     func show(recordings: URL, labeled: URL) {
         if let window {
-            MainMenu.bringForward(window)
+            DockPresence.bringForward(window)
             return
         }
         let model = LabelModel(recordings: recordings, labeled: labeled)
@@ -23,13 +29,13 @@ final class LabelWindow: NSObject, NSWindowDelegate {
         w.title = "Label Recordings"
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
-        w.minSize = NSSize(width: Tuning.labelWindowMinWidth, height: Tuning.labelWindowMinHeight)
+        w.minSize = NSSize(width: Self.minWidth, height: Self.minHeight)
         w.contentView = NSHostingView(rootView: LabelView(model: model))
         w.setFrameAutosaveName("LabelRecordings")  // a frame the user chose wins over the corner
         w.delegate = self
         self.window = w
         self.model = model
-        MainMenu.bringForward(w)
+        DockPresence.bringForward(w)
         model.load()
     }
 
@@ -38,9 +44,9 @@ final class LabelWindow: NSObject, NSWindowDelegate {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let w = max(Tuning.labelWindowMinWidth, area.width * Tuning.labelWindowWidthShare)
-        let h = max(Tuning.labelWindowMinHeight, area.height * Tuning.labelWindowHeightShare)
-        let m = Tuning.labelWindowMargin
+        let w = max(minWidth, area.width * widthShare)
+        let h = max(minHeight, area.height * heightShare)
+        let m = margin
         return NSRect(x: area.maxX - w - m, y: area.minY + m, width: w, height: h)
     }
 
@@ -104,7 +110,9 @@ final class LabelModel: ObservableObject {
             p.play()
             player = p
             playing = true
-            timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.tick() }
+            timer = Timer.scheduledTimer(withTimeInterval: Tuning.labelProgressSeconds, repeats: true) { [weak self] _ in
+                self?.tick()
+            }
         } catch {
             self.error = "cannot play \(item.audio.lastPathComponent): \(error.localizedDescription)"
         }
@@ -178,7 +186,7 @@ struct LabelView: View {
         .padding(.horizontal, 22)
         .padding(.top, 34)
         .padding(.bottom, 18)
-        .frame(minWidth: Tuning.labelWindowMinWidth - 44, minHeight: Tuning.labelWindowMinHeight - 52)
+        .frame(minWidth: LabelWindow.minWidth - 44, minHeight: LabelWindow.minHeight - 52)
     }
 
     private func card(_ item: LabelItem) -> some View {

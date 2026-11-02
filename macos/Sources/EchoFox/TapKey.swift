@@ -11,13 +11,9 @@ final class TapKey {
     private var logics: [(Action, TapLogic)] = [(.dictation, TapLogic())]
     private var monitors: [Any] = []
 
-    /// The keys of the actions, from the config; two actions never share a key (the first keeps it).
+    /// The keys of the actions, from the config; two actions never share a key (HotkeyAssignment).
     func set(_ keys: [(Action, TapKeyChoice?)]) {
-        var taken = Set<TapKeyChoice>()
-        logics = keys.compactMap { action, key in
-            guard let key, taken.insert(key).inserted else { return nil }
-            return (action, TapLogic(key: key))
-        }
+        logics = HotkeyAssignment.assign(keys).map { action, key in (action, TapLogic(key: key)) }
     }
 
     func start() {

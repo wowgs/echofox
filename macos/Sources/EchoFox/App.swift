@@ -1,8 +1,9 @@
 // The app's coordinator: a tap of a hotkey starts a dictation (the dictation's key) or a private dictation (its own
 // key: the screen is not read, nothing is saved), and the next tap of either stops it; the text goes where the
 // Inserter's rule says. The model runs in the dictation server; the app takes the focus snapshot, records, sends and
-// inserts. It holds the parts and connects them: Permissions, Server (what the server offers), TapKey, MenuBar,
-// SettingsWindow, Dictation, Inserter, and ConfigStore, the one owner of the config file.
+// inserts. It holds the parts and connects them: Permissions, ServerRunner (the server, its child process),
+// ServerInfoClient (what the server offers), TapKey, MenuBar, SettingsWindow, Dictation in a DictationQueue,
+// Inserter, ModelDownloads, and ConfigStore, the one owner of the config file.
 import AppKit
 import AVFoundation
 import FocusSnapshot
@@ -12,7 +13,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let store = ConfigStore()
     private let downloads = ModelDownloads()
     private let permissions = Permissions()
-    private let server = Server()
+    private let infoClient = ServerInfoClient()
     private let key = TapKey()
     private lazy var menu = MenuBar(actions: self)
     private let labeling = LabelWindow()
@@ -20,19 +21,19 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     private let firstRun = FirstRunWindow()
     private let updater = Updater()
     private let prepareQueue = DispatchQueue(label: "echofox.prepare")
-    private var current: Dictation?
-    private var waiting: [Dictation] = []
+    private var dictations = DictationQueue<Dictation>()
     private var lastError: String?
     /// The dictation server, the app's child process (ServerProcess); nil for an app that carries none.
-    private var serverProcess: ServerRunner?
+    private let serverProcess = ServerRunner.bundled(version: App.version)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("started, pid \(ProcessInfo.processInfo.processIdentifier), version \(App.version)")
-        if refuseMisplaced() { return }
+        if AppLocation.refuseIfMisplaced() { return }
         firstRun.configExisted = FileManager.default.fileExists(atPath: Config.url.path)  // before anything writes it
         MainMenu.install(settings: #selector(openSettingsFromMenu), target: self)
-        MainMenu.watch()
-        startServer()
+        DockPresence.watch()
+        serverProcess?.onStart = { [weak self] in self?.askServer() }
+        serverProcess?.start()
         store.onError = { [weak self] e in
             self?.lastError = e
             self?.menu.update()
@@ -54,38 +55,38 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         key.onTap = { [weak self] action in self?.toggle(isPrivate: action == .privateDictation) }
         keysChanged()
         permissions.onChange = { [weak self] in self?.permissionsChanged() }
-        server.onChange = { [weak self] in
+        infoClient.onChange = { [weak self] in
             self?.prepareAll()
             self?.menu.update()
             self?.settings.refresh()
-            self?.firstRun.showIfNeeded(self?.server.info)
+            self?.firstRun.showIfNeeded(self?.infoClient.info)
         }
         firstRun.askServer = { [weak self] in self?.askServer() }
         // A removal that leaves no variant downloaded opens the first start's window again (when the info says so)
         downloads.onEnd { [weak self] _, job, isDownload in if !isDownload, job.error == nil { self?.firstRun.allowAgain() } }
-        updater.busy = { [unowned self] in self.current != nil || !self.waiting.isEmpty }
+        updater.busy = { [unowned self] in self.dictations.busy }
         updater.onChange = { [weak self] in self?.menu.update() }
         updater.start()
         permissions.start()
         permissionsChanged()  // the permissions the app already has: the dictation keys start now
-        server.refresh(store.config.serverURL)
+        infoClient.refresh(store.config.serverURL)
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
                 guard let self, let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self.server.refresh(self.store.config.serverURL, ifOlderThan: Tuning.serverInfoMaxAgeSeconds)
+                self.infoClient.refresh(self.store.config.serverURL, ifOlderThan: Tuning.serverInfoMaxAgeSeconds)
                 self.prepare(app)
             }
         }
         menu.update()
     }
 
-    /// A click on the app's Dock icon (the one shown while a window is open, MainMenu, or the Dock's recent apps), or
+    /// A click on the app's Dock icon (the one shown while a window is open, DockPresence, or the Dock's recent apps), or
     /// opening the app again from Finder: a minimized window comes back; with no window, Settings opens.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         let minimized = NSApp.windows.filter(\.isMiniaturized)
         if !minimized.isEmpty {
             minimized.forEach { $0.deminiaturize(nil) }
-        } else if !MainMenu.hasWindow {
+        } else if !DockPresence.hasWindow {
             openSettings()
         }
         return true
@@ -108,13 +109,13 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     private func state() -> MenuState {
         let config = store.config
-        let input = AudioInputs.chosen(config.microphone).input
-        let device = input?.id ?? AudioInputs.defaultInput()
-        return MenuState(recording: current != nil, privateRecording: current?.isPrivate == true, waiting: !waiting.isEmpty,
-                         accessibility: permissions.accessibility,
-                         microphone: permissions.microphone, lastError: lastError, config: config, server: server.info,
-                         serverProblem: server.problem, microphoneName: input?.name ?? "macOS's input",
-                         inputVolume: device.flatMap(AudioInputs.volume), update: updater.ready)
+        let microphone = AudioInputs.chosen(config.microphone)
+        let current = dictations.current
+        return MenuState(recording: current != nil, privateRecording: current?.isPrivate == true,
+                         waiting: !dictations.waiting.isEmpty, accessibility: permissions.accessibility,
+                         microphone: permissions.microphone, lastError: lastError, config: config, server: infoClient.info,
+                         serverProblem: infoClient.problem, microphoneName: microphone.name,
+                         inputVolume: microphone.device.flatMap(AudioInputs.volume), update: updater.ready)
     }
 
     private func permissionsChanged() {
@@ -137,7 +138,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     }
 
     private func prepare(_ app: NSRunningApplication) {
-        guard permissions.accessibility, let id = app.bundleIdentifier, server.info?.treeApps.contains(id) == true
+        guard permissions.accessibility, let id = app.bundleIdentifier, infoClient.info?.treeApps.contains(id) == true
         else { return }
         let pid = app.processIdentifier
         prepareQueue.async { ElectronTree.enable(pid: pid) }
@@ -146,7 +147,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     // MARK: Dictation
 
     private func toggle(isPrivate: Bool) {
-        if let d = current {
+        if let d = dictations.current {
             d.stop(.user)
             return
         }
@@ -158,23 +159,18 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         }
         let config = store.config
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-        let info = server.info
-        if info == nil { server.refresh(config.serverURL) }
+        let info = infoClient.info
+        if info == nil { infoClient.refresh(config.serverURL) }
         let d = Dictation(config: config, server: info, plan: info?.snapshotPlan(for: front, config: config) ?? .none, isPrivate: isPrivate)
         if isPrivate { Log.write("a private dictation: the screen is not read, nothing is saved") }
         d.onPhase = { [weak self] d in self?.changed(d) }
-        current = d
+        dictations.start(d)
         d.start()
         menu.update()
     }
 
     private func changed(_ d: Dictation) {
-        if d === current, d.phase != .recording {
-            current = nil
-            waiting.append(d)
-        }
-        if d.phase == .finished {
-            waiting.removeAll { $0 === d }
+        if dictations.changed(d, to: d.phase) {
             finished(d)
             updater.idle()
         }
@@ -199,8 +195,8 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func checkForUpdates() { updater.check() }
 
     func uninstall() {
-        Uninstaller.confirmAndRun(info: server.info, serverURL: store.config.serverURL,
-                                  folders: store.config.folders(server.info))
+        Uninstaller.confirmAndRun(info: infoClient.info, serverURL: store.config.serverURL, downloads: downloads,
+                                  folders: store.config.folders(infoClient.info))
     }
 
     func allowAccessibility() {
@@ -217,8 +213,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     /// The recorded microphone's input volume: the device's own control, the same as in macOS's Sound settings.
     func setInputVolume(_ value: Float) {
-        let input = AudioInputs.chosen(store.config.microphone).input
-        guard let device = input?.id ?? AudioInputs.defaultInput() else { return }
+        guard let device = AudioInputs.chosen(store.config.microphone).device else { return }
         if !AudioInputs.setVolume(value, of: device) { Log.write("the microphone's input volume cannot be set") }
     }
 
@@ -228,7 +223,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
 
     // MARK: SettingsActions
 
-    func serverState() -> (info: ServerInfo?, problem: String?) { (server.info, server.problem) }
+    func serverState() -> (info: ServerInfo?, problem: String?) { (infoClient.info, infoClient.problem) }
 
     var config: Config { store.config }
 
@@ -237,69 +232,17 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func refreshServer() {
         DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.serverConfigApplySeconds) { [weak self] in
             guard let self else { return }
-            self.server.refresh(self.store.config.serverURL)
+            self.infoClient.refresh(self.store.config.serverURL)
         }
     }
 
-    func askServer() { server.refresh(store.config.serverURL) }
+    func askServer() { infoClient.refresh(store.config.serverURL) }
 
     /// "0.2 (180)": CFBundleShortVersionString and CFBundleVersion, which build-app.sh takes from git.
     static let version: String = {
         let info = Bundle.main.infoDictionary ?? [:]
         return "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
     }()
-
-    /// An app that carries the server but runs from a disk image or App Translocation asks to be moved to
-    /// Applications and quits (ServerProcess.misplaced); true then.
-    private func refuseMisplaced() -> Bool {
-        let app = Bundle.main.bundleURL
-        guard ServerProcess.bundled(resources: Bundle.main.resourceURL) != nil else { return false }
-        let readOnly = (try? app.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
-        guard let why = ServerProcess.misplaced(app: app.path, readOnlyVolume: readOnly) else { return false }
-        Log.write("not started \(why), \(app.path): the server needs the app in one place")
-        let alert = NSAlert()
-        alert.messageText = "Move EchoFox to Applications"
-        alert.informativeText = "EchoFox is running \(why). Its dictation server needs EchoFox to stay in one place. "
-            + "Drag EchoFox to the Applications folder, then open it from there."
-        alert.addButton(withTitle: "Quit")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-        NSApp.terminate(nil)
-        return true
-    }
-
-    /// The app that carries the server starts it as its child process (ServerProcess), after it removed the launchd
-    /// agents of the versions that ran the server without the app; launchctl waits, so that runs off the main thread.
-    /// An app without a server of its own starts none: it uses the server at the config's address.
-    private func startServer() {
-        guard let (python, serverFolder) = ServerProcess.bundled(resources: Bundle.main.resourceURL) else { return }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let runner = ServerRunner(launch: ServerProcess.launch(python: python, server: serverFolder, version: App.version),
-                                  log: home.appendingPathComponent(ServerProcess.logInHome))
-        runner.onStart = { [weak self] in self?.askServer() }
-        serverProcess = runner
-        DispatchQueue.global(qos: .userInitiated).async {
-            for (command, file) in ServerProcess.legacyRemoval(domain: "gui/\(getuid())", home: home)
-            where FileManager.default.fileExists(atPath: file.path) {
-                let code = App.launchctl(command)
-                try? FileManager.default.removeItem(at: file)
-                Log.write("server: the launchd agent \(file.lastPathComponent) of an older version removed, bootout exit \(code)")
-            }
-            DispatchQueue.main.async { runner.start() }
-        }
-    }
-
-    @discardableResult
-    private static func launchctl(_ args: [String]) -> Int32 {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = args
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return -1 }
-        p.waitUntilExit()
-        return p.terminationStatus
-    }
 
     /// The hotkeys from the config: the dictation's key and the private dictation's.
     private func keysChanged() {
@@ -314,7 +257,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     func write(_ path: [String], _ value: Any, _ done: String) -> Bool { store.set(path, to: value, done) }
 
     func openLabeling() {
-        let (recordings, labeled) = store.config.folders(server.info)
+        let (recordings, labeled) = store.config.folders(infoClient.info)
         labeling.show(recordings: recordings, labeled: labeled)
     }
 

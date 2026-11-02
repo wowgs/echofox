@@ -1,5 +1,5 @@
 // The dictation server that the app carries (macos/build-app.sh): Python and the server's code in the app's
-// Contents/Resources. The app starts it as its own child process and owns it (docs/design.md, "Processes"): the
+// Contents/Resources. The app starts it as its own child process and owns it (docs/design.md, "Architecture"): the
 // server starts the model's llama-server as its child, and both end with the app. The server holds the read end of a
 // pipe as its standard input (--parent), so it ends also when the app ends without quitting. A server that ends while
 // the app runs is started again (restartDelay). An app that runs from a disk image or from App Translocation starts
@@ -8,7 +8,7 @@
 import Foundation
 
 public enum ServerProcess {
-    public static let logInHome = "Library/Logs/EchoFox/gemma-voice.log"
+    public static let logInHome = LogFolder.inHome + "/gemma-voice.log"
     /// The launchd agents of the versions that ran the server and the model without the app.
     public static let legacyAgents = ["echofox.gemma-voice", "echofox.llama-server"]
     /// A server that ran at least this long ended for a reason of its own (a changed port): it starts again at once.
