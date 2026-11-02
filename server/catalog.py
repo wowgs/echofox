@@ -21,9 +21,11 @@ defaults (docs/design.md, "Settings"):
                      own mmproj; Q8_0 is ggml-org's
   defaultVariant     the variant of a registry entry that names none
   memoryBytes        a variant's memory while it is loaded: llama-server's own footprint and the model file in memory.
-                     Q8_0: 2.13 GiB and 7.46 GiB (footprint, mincore; Apple M5, 2026-10-25); Q4_0: 2.19 GB footprint
-                     (one run, ggml-org's Q4_0) and the QAT file, 5.15 GB, taken as all in memory as Q8_0's was: not
-                     measured for the QAT file
+                     Q8_0: 2.13 GiB and 7.46 GiB (footprint, mincore; Apple M5, 2026-10-25) with two slots of 8,192
+                     tokens; one slot of 32,768 tokens took 2,982 MB of footprint instead of 2,131 MB (footprint -p,
+                     2026-11-02), so 0.89 GB more. Q4_0: 2.19 GB footprint (one run, ggml-org's Q4_0, two slots of
+                     8,192), the same 0.89 GB more taken for the cache (not measured with Q4_0), and the QAT file,
+                     5.15 GB, taken as all in memory as Q8_0's was: not measured for the QAT file
   languages          the codes of the languages its prompt names (languages.json has their names)
   prompt             the prompt's template; {LANGUAGE} becomes the language's name. Gemma 4's is Google's speech
                      recognition prompt and formatting rules from the model card, and one rule of ours, punctuation

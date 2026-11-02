@@ -34,7 +34,7 @@
             "sha256": "7498a37cb619e55f2fcf87eb931f56e99389ed6d432e4c5c66110694c0d65578"
           }
         },
-        "memoryBytes": 7350000000
+        "memoryBytes": 8240000000
       },
       "q8_0": {
         "name": "Q8_0",
@@ -50,7 +50,7 @@
             "sha256": "f77995e4b6a569ab8f0d1bfdb7e8da4a0fa5b9e6f309b9bf3bdb76164d75e29f"
           }
         },
-        "memoryBytes": 10400000000
+        "memoryBytes": 11290000000
       }
     },
     "languages": [
