@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" width="900" height="470">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<title>A dictation with surfaces: identity, the read request, the content</title>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555555"/></marker></defs>
+<g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" fill="#1a1a1a">
+<rect x="16" y="16" width="250" height="48" rx="6" fill="#eef4ff" stroke="#3b6fd8" stroke-width="1.5"/>
+<text x="28" y="45" font-size="14" font-weight="600">The app (screen reader)</text>
+<rect x="634" y="16" width="250" height="48" rx="6" fill="#fff4e8" stroke="#d9822b" stroke-width="1.5"/>
+<text x="646" y="45" font-size="14" font-weight="600">The server (adapters' core)</text>
+<line x1="141" y1="64" x2="141" y2="454" stroke="#3b6fd8" stroke-width="1.5" stroke-dasharray="4 4"/>
+<line x1="759" y1="64" x2="759" y2="454" stroke="#d9822b" stroke-width="1.5" stroke-dasharray="4 4"/>
+<rect x="24" y="80" width="234" height="58" rx="6" fill="#ffffff" stroke="#3b6fd8" stroke-width="1.5"/>
+<text x="36" y="102">1. Hotkey. Identity: app,</text>
+<text x="36" y="122">window title, page address</text>
+<line x1="258" y1="152" x2="750" y2="152" stroke="#555555" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="290" y="144">start {identity}</text>
+<rect x="642" y="166" width="234" height="78" rx="6" fill="#ffffff" stroke="#d9822b" stroke-width="1.5"/>
+<text x="654" y="188">2. Match the surfaces of the</text>
+<text x="654" y="208">enabled adapters: apps, page</text>
+<text x="654" y="228">address, window title</text>
+<line x1="642" y1="262" x2="150" y2="262" stroke="#555555" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="200" y="254">read {per matched surface: what to read, skip, budget}</text>
+<rect x="24" y="276" width="234" height="58" rx="6" fill="#ffffff" stroke="#3b6fd8" stroke-width="1.5"/>
+<text x="36" y="298">3. Read only that: outline,</text>
+<text x="36" y="318">lists or processes</text>
+<line x1="258" y1="348" x2="750" y2="348" stroke="#555555" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="290" y="340">content {per surface}, with the audio going on</text>
+<rect x="642" y="362" width="234" height="78" rx="6" fill="#ffffff" stroke="#d9822b" stroke-width="1.5"/>
+<text x="654" y="384">4. The matched adapter: its</text>
+<text x="654" y="404">conversation, its sources</text>
+<text x="654" y="424">(disk or screen), clean</text>
+</g>
+</svg>

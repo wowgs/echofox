@@ -98,6 +98,8 @@ Config migrations never turn on an adapter that the user did not have on: a new 
 
 ## Write an adapter
 
+This is interface 2. The next interface, with surfaces, is designed in [Adapter surfaces](../adapter-surfaces.md) and not built yet.
+
 An adapter is a Python package with two required files.
 
 `adapter.json` describes the adapter:

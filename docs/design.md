@@ -115,6 +115,8 @@ An adapter adds the context of the app: recent messages, names and terms. Withou
 
 The help of context on recognition is not measured on a labeled set yet, so the product does not promise that an adapter improves accuracy.
 
+The next adapter interface makes an adapter a product with surfaces: where the product is on the screen, and what is read there ([Adapter surfaces](adapter-surfaces.md)).
+
 Proposed, not built: installation from a GitHub link and a catalog of adapters, a hint to enable an adapter for a detected app, the source of the last context in the menu, adapters in other languages through a separate process.
 
 ## Privacy

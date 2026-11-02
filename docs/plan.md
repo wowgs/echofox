@@ -28,6 +28,15 @@ Before the repository opens:
 - The oldest supported macOS: everything is built for 26, but the app has run only on 27.
 - Quality, speed and memory of Q4_0 against Q8_0 on one labeled set.
 
+## Structure
+
+The code is moved to a clean structure before new features. The order:
+
+1. **A safety net.** CI builds the app's target, not only its checks. Shared examples tie the Swift and Python copies of the token estimate and of the budgets. Recorded snapshots become fixtures of the adapters' tests.
+2. **Adapter surfaces.** Interface 3, as in [Adapter surfaces](adapter-surfaces.md). It removes `hints` and `try_wav.py --hint`; the test client sends a recorded snapshot.
+3. **The server's modules.** One responsibility each: the model's client, its process and the registry of models apart; one owner of the recording's files, of the options' resolution and of the models' folder; what is specific to one model goes into the catalog. The entry point, the logger and the logs are renamed from `gemma_voice` to `echofox-server`.
+4. **The app's targets.** The decisions that are still in the `EchoFox` target move to `EchoFoxCore` with checks. The settings window and `App.swift` are split. One WebSocket client. Every write of the config goes through `SettingStore`, so a value equal to the default is never written.
+
 ## Next features
 
 | Feature | State |
@@ -40,7 +49,6 @@ Before the repository opens:
 | Faster labeling | Proposals: short series and choosing doubtful pieces, in [training](research/training.md#easier-labeling). |
 | An adapter catalog and install from GitHub | Install from a folder works. Adapters in other languages only on a real need. |
 | Update reminders | The menu's first line says that an update is ready. Proposed: a mark on the menu bar fox (approved art, needs a drawing) and release notes in the update window (a signed feed needs them signed too). |
-| Claude Code sessions named by the client | The Claude adapter takes the sessions a client names in `hints`. No client sends them now; only `try_wav.py --hint` reaches this path. Open: keep it for a future client, or remove it. |
 
 ## Experiments without a chosen answer
 

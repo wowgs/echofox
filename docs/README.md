@@ -27,6 +27,7 @@ The reference pages describe the current implementation. The pages below explain
 - [Requirements](requirements.md): the target behavior, with stable FR and NFR numbers.
 - [Observations](observations.md): dated measurements and observations behind the decisions.
 - [Plan](plan.md): the work that is left.
+- [Adapter surfaces](adapter-surfaces.md): the design of the next adapter interface, not built yet.
 
 ## Research
 
