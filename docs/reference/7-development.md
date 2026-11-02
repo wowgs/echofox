@@ -55,7 +55,7 @@ server/.venv/bin/python -m unittest discover -s server
 
 A test closes every file and socket it opens: the tests workflow fails when the log shows a `ResourceWarning`.
 
-Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the start of a llama-server in `llama.py` with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
+Tests run in a sandbox (`server/sandbox.py`, which every test module imports first). The sandbox has a temporary home folder, replaces the start of a llama-server in `llama_process.py` with a fake, and refuses the ports of the working server and of the test server. So the tests never touch your config, recordings, metrics, adapters or servers. The sandbox knows no adapter: a test of an adapter sets up what that adapter reads.
 
 Build every target of the app's package, then run the app's checks:
 

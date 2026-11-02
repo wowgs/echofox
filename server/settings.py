@@ -1,11 +1,13 @@
 """The server's settings and the config file it shares with its clients (docs/reference/2-config.md; its version is
 constants.CONFIG_VERSION). Each setting has one owner (docs/design.md, "Settings"), and the user's change of it is at
 that owner; the knobs that are constants (tuning.py) are not in the file. A setting's value: the file's, else the
-default. The server reads the "server" section and the registries; the app's own settings it does not read.
+default. The server reads the "server" section, the registries, and of the app's settings only the model chosen in the
+menus ("model"); the app's other settings it does not read.
 
 The server watches the file (ConfigWatcher), and each setting has a level:
   "recording" settings take effect at the next recording;
-  "model" settings (the model registry, the models folder) after the running recording;
+  "model" settings (the model registry, the models folder, the menu's model) after the running recording: the watcher
+  hands them to the model registry (model_registry.Models), which decides what is in memory;
   "process" settings (host, port) end the process after the running recording; the app starts it again.
 """
 import argparse
@@ -147,6 +149,8 @@ SETTINGS = [
     Setting("port", "port", int, lambda v: 0 < v < 65536, constants.WORKING_PORT, "process", "server"),
     Setting("models", "models", dict, clean_models, MODEL_DEFAULT,
             "model"),
+    # The app's setting, the model chosen in the menus; without it, the registry's first (Models.name_for)
+    Setting("model", "model", str, bool, None, "model"),
     Setting("adapters", "adapters", dict, clean_adapters, {}, "recording"),
     Setting("languages", "languages", dict, clean_languages, {}, "recording"),
     Setting("saveRecordings", "save_recordings", bool, lambda v: True, True, "recording", "server",
@@ -164,17 +168,13 @@ SETTINGS = [
 BY_KEY = {s.key: s for s in SETTINGS}
 
 
-def model_defaults(entry):
-    """The defaults of the model's knobs and its constants: its catalog entry's options, by name."""
-    return tuning.parse(catalog.of(entry).get("options"), "model", "catalog options", constants_too=True)
-
-
-def schema(st, model_entry=None):
+def schema(st, model_entry=None, models_folder=None):
     """The settings a client may show and change (info's "settings"), each with its owner, its owner's default and the
-    value in force: the server's settings and its storage; the settings of `model_entry` (the menu's model), its
-    catalog's defaults and its options; the adapters' settings with their fallbacks (each adapter's own defaults are
-    in info's adapters, "context"). The constants are not settings and are not here."""
-    defaults = model_defaults(model_entry) if model_entry else {}
+    value in force: the server's settings and its storage (the models folder in force is the model registry's,
+    `models_folder`); the settings of `model_entry` (the menu's model), its catalog's defaults and its options; the
+    adapters' settings with their fallbacks (each adapter's own defaults are in info's adapters, "context"). The
+    constants are not settings and are not here."""
+    defaults = catalog.model_defaults(model_entry) if model_entry else {}
     own = tuning.parse((model_entry or {}).get("options"), "model") if model_entry else {}
     out = []
     for k in (k for k in tuning.KNOBS if k.user):
@@ -189,7 +189,7 @@ def schema(st, model_entry=None):
         if not s.title:
             continue
         kind = "boolean" if s.kind is bool else "folder" if s.folder else "string"
-        now = getattr(st, s.name, s.default)
+        now = (models_folder or s.default) if s.key == "modelsFolder" else getattr(st, s.name, s.default)
         shown = constants.path(s.default) if s.kind is str else s.default
         out.append({"key": s.key, "owner": "server", "group": "storage", "kind": kind, "title": s.title,
                     "default": s.default, **({"value": now} if now not in (s.default, shown) else {}),
@@ -282,7 +282,6 @@ def recording_settings(now, into=None):
             setattr(st, s.name, now[s.key])
     st.recordings = constants.path(now["recordings"])
     st.labeled = constants.path(now["labeled"])
-    st.models_folder = constants.path(now["modelsFolder"])
     st.adapters = [name for name, e in now["adapters"].items() if e.get("enabled")]
     st.adapter_options = {name: tuning.adapter_options(e) for name, e in now["adapters"].items()}
     return st
@@ -292,23 +291,6 @@ def apply(now, into=None):
     """The settings in force for the running server: the recording settings' namespace, and the metrics file."""
     metrics.configure(now["metrics"])
     return recording_settings(now, into)
-
-
-def selected_model(config_path, models):
-    """The model chosen in the menus ("model" in the config), if this server has it; None if the config names another
-    one. A config without "model", or no config yet (the first start), means the server's default: the registry's
-    first model, the one a start message without a model gets."""
-    entries = getattr(models, "entries", None) or {}
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            name = (json.load(f) or {}).get("model")
-    except FileNotFoundError:
-        name = None
-    except (OSError, ValueError, AttributeError):
-        return None
-    if name is None:
-        return next(iter(entries), None)
-    return name if isinstance(name, str) and name in entries else None
 
 
 def migrate(path):
@@ -564,19 +546,14 @@ MIGRATIONS = {2: from_2, 3: from_3, 4: from_4, 5: from_5, 6: from_6, 7: from_7, 
 
 
 class ConfigWatcher:
-    """Applies changes of the config file (see the levels above) and, with `follow`, keeps in memory only the model
-    chosen in the menus. `current`: the settings in force; `st`: the recording settings' namespace."""
+    """Applies changes of the config file (see the levels above): the recording settings to `st`, the recording
+    settings' namespace; the model settings to the model registry (`models`, model_registry.Models), which decides
+    what is in memory; a change of host or port sets `stop`. `current`: the settings in force, which `models` was
+    made with."""
 
-    def __init__(self, path, models, st, current, stop, follow=True):
+    def __init__(self, path, models, st, current, stop):
         self.path, self.models, self.st, self.current, self.stop = path, models, st, current, stop
-        self.follow = follow
-        self.seen = self._mtime()  # before the first model loads, so a change during that load is not lost
-        self._select()
-
-    def _select(self):
-        """The menu's model, from this server's config file, kept in `models.selected`."""
-        self.models.selected = selected_model(self.path, self.models)
-        return self.models.selected
+        self.seen = self._mtime()
 
     def _mtime(self):
         try:
@@ -584,51 +561,35 @@ class ConfigWatcher:
         except OSError:
             return None
 
-    async def follow_selection(self):
-        """After the running recording, only the menu's model stays in memory."""
-        now = self._select()
-        if now == self.models.active:
-            return
-        async with self.models.recording:
-            log.info("the menu's model is %s: only it stays in memory", now or "not on this server")
-            try:
-                await self.models.activate(now)
-            except Exception:
-                log.exception("cannot make %s the model in memory", now)
-
     async def check(self):
         """One look at the file; True while the server goes on."""
         mtime = self._mtime()
-        if mtime != self.seen:
-            self.seen = mtime
-            from_file = file_settings(self.path)
-            if from_file is not None:
-                now = resolve(from_file)
-                changed = {k for k in BY_KEY if now and now[k] != self.current[k]}
-                if changed:
-                    levels = {BY_KEY[k].level for k in changed}
-                    log.info("config %s changed: %s", self.path,
-                             ", ".join(f"{k} {self.current[k]!r} -> {now[k]!r}" for k in sorted(changed)))
-                    async with self.models.recording:  # after the running recording
-                        if "process" in levels:
-                            log.info("host or port changed: the server ends; the app starts it again")
-                            if not self.stop.done():
-                                self.stop.set_result(None)
-                            return False
-                        apply(now, self.st)
-                        if "model" in levels:
-                            self.models.reconfigure(now["models"], constants.path(now["modelsFolder"]))
-                            log.info("models: %s", ", ".join(now["models"]))
-                        self.current.clear()
-                        self.current.update(now)
-        if self.follow:
-            await self.follow_selection()
-        else:
-            self._select()
+        if mtime == self.seen:
+            return True
+        self.seen = mtime
+        from_file = file_settings(self.path)
+        if from_file is None:
+            return True
+        now = resolve(from_file)
+        changed = {k for k in BY_KEY if now[k] != self.current[k]}
+        if not changed:
+            return True
+        levels = {BY_KEY[k].level for k in changed}
+        log.info("config %s changed: %s", self.path,
+                 ", ".join(f"{k} {self.current[k]!r} -> {now[k]!r}" for k in sorted(changed)))
+        async with self.models.recording:  # after the running recording
+            if "process" in levels:
+                log.info("host or port changed: the server ends; the app starts it again")
+                if not self.stop.done():
+                    self.stop.set_result(None)
+                return False
+            apply(now, self.st)
+            if "model" in levels:
+                self.models.configure(now["models"], now["modelsFolder"], now["model"])
+            self.current.clear()
+            self.current.update(now)
         return True
 
     async def run(self):
-        if self.follow:
-            await self.follow_selection()
         while await self.check():
             await asyncio.sleep(constants.CONFIG_CHECK_S)

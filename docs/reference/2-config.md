@@ -25,14 +25,14 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
 }
 ```
 
-This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The app writes only the values that differ from their defaults: a choice of a default in the app takes its key out of the file. The server logs an invalid setting and uses its default. If the file is not valid JSON, the server keeps its current settings. A key that a version does not know is left out and kept in the file; a wrong value is replaced by its default, and the server logs it. The rules for changing the file over versions are in the [design](../design.md#the-config-file-over-versions); the keys and their types are in `shared/config.schema.json`.
+This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The app writes only the values that differ from their defaults: a choice of a default in the app takes its key out of the file. The server logs an invalid setting and uses its default. If the file is not valid JSON, the server keeps its current settings and the selected model. A key that a version does not know is left out and kept in the file; a wrong value is replaced by its default, and the server logs it. The rules for changing the file over versions are in the [design](../design.md#the-config-file-over-versions); the keys and their types are in `shared/config.schema.json`.
 
 ## Settings reference
 
 | Key | Purpose |
 |---|---|
 | `version` | The config's format, 11. It changes only for a change that an older version would read wrong. The server brings a file of an older format to 11 once at its start and keeps the old file as `config.json.v<N>.bak`; a file of a newer format is read key by key. Format 11 left out a model's `launchd`. Format 10 left out a model's `prompt` and the Russian `notes` that were copies of format 9's defaults. Format 9 has the recording's time limit in seconds (`maxRecordingSeconds`). Format 8 renamed the adapter `claude` to `claude-code`; `claude-chat`, new in it, stays off until the user turns it on. |
-| `model` | Selected model: a name in `models`. Without it, the server uses the first model of its registry. |
+| `model` | Selected model: a name in `models`. Without `model`, the first model in `models` is selected. With a name that is not in `models`, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |
 | `microphone` | `builtin` (default) keeps using the built-in microphone when a headset connects. `system` follows the macOS input selection. A device UID selects a specific microphone; if unavailable, the app falls back to the built-in microphone. |
@@ -64,4 +64,4 @@ The server checks the file every 2 seconds.
 - Changes to `models`, `model`, or `modelsFolder` apply after the current recording.
 - Changing `host` or `port` stops the server after the current recording; the app then starts it again.
 
-The server has no command-line flags for settings. `--config` only names the file; `--ignore-selection`, for the test server, makes it ignore the menu's choice of model.
+The server has no command-line flags for settings. `--config` only names the file. `--ignore-selection` is for the test server. With it, the server ignores the menu's choice of model and never starts or stops a llama-server. At its start, it waits until the llama-server of the first model in `models` answers.

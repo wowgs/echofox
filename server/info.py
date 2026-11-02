@@ -9,12 +9,16 @@ from variants import variants
 
 def info(args, models=None):
     """What a client needs to know of this server: the protocol, the audio, the waits, the languages the menu's model
-    names (with their notes and hesitation sounds) and the notes of every language, the adapters (with their context defaults), the menu's model (its
-    catalog entry, prompt template and variants), and the settings it may show and change (settings.schema)."""
+    names (with their notes and hesitation sounds) and the notes of every language, the adapters (with their context
+    defaults), the menu's model (its catalog entry, prompt template and variants), and the settings it may show and
+    change (settings.schema). The menu's model is the registry's (Models.selected); when the menu names no model of
+    this server, the default (Models.name_for), so that the settings window shows a model's settings. No `models`
+    (the tests): no model."""
     enabled = set(getattr(args, "adapters", None) or [])
-    entries = getattr(models, "entries", None) or {}
-    name = getattr(models, "selected", None) or next(iter(entries), None)
+    entries = models.entries if models else {}
+    name = (models.selected or models.name_for(None)) if models else None
     entry = entries.get(name) if name else None
+    folder = models.models_folder if models else None
     model = catalog.of(entry)
     codes = model.get("languages") or languages.codes()
     table = languages.table()
@@ -31,6 +35,6 @@ def info(args, models=None):
                       "title": model.get("name"),
                       "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
                       "tokenWeights": model.get("tokenWeights"),
-                      **(variants(entry, getattr(args, "models_folder", None)) if entry else {})},
-            "settings": settings.schema(args, entry)}
+                      **(variants(entry, folder) if entry else {})},
+            "settings": settings.schema(args, entry, folder)}
 

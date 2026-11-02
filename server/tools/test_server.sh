@@ -58,15 +58,15 @@ if os.environ.get("VARIANT"):  # another variant of every model, for the test
         m["variant"] = os.environ["VARIANT"]
 json.dump(config, open(dst, "w"), indent=1)
 PY
-    # The test llama-server: the chosen model's variant (VARIANT=q4_0 picks another) from the catalog, on the test port.
+    # The test llama-server: the chosen model's variant (VARIANT=q4_0 picks another) from the catalog, on the test port;
+    # the model that the server's info names (the menu's, else the default), in the registry's models folder.
     llama=(${(f)"$(cd $SRV && $PY -c '
-import json, sys
-import constants, llama
-c = json.load(open(sys.argv[1]))
-name = c.get("model") if c.get("model") in c["models"] else next(iter(c["models"]))
-entry = c["models"][name]
-folder = constants.path((c.get("server") or {}).get("modelsFolder") or constants.MODELS_FOLDER)
-print("\n".join(llama.command(entry, folder)))' $STATE/config.json)"})
+import sys
+import llama_process, model_registry, settings
+now = settings.resolve(settings.file_settings(sys.argv[1]) or {})
+models = model_registry.Models(now["models"], models_folder=now["modelsFolder"], chosen=now["model"])
+name = models.selected or models.name_for(None)
+print("\n".join(llama_process.command(models.entries[name], models.models_folder)))' $STATE/config.json)"})
     # EchoFox first: its dictation server ends after its running recording, and its llama-server with it.
     osascript -e 'quit app "EchoFox"' 2>/dev/null || true
     for i in {1..$EXIT_WAIT}; do lsof -nP -iTCP:$WORKING_PORT -sTCP:LISTEN -t >/dev/null 2>&1 || break; sleep 1; done

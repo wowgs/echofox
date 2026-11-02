@@ -69,7 +69,7 @@ Each setting has an owner: the component that defines what it means and its defa
 | Adapter | `adapter.json`, field `context` | `adapters.<name>` |
 | Model | `server/catalog.json` | `models.<name>.prompt`, `models.<name>.options` |
 | Language | `server/languages.json` | `languages.<code>` |
-| Server | `server/tuning.py` | `server` |
+| Server | `server/settings.py`, `server/tuning.py` | `server` |
 | App | the Swift code | the top level of the config |
 
 The order: an experiment's start options, then the user's change, then the owner's default. Limits of the model, such as the longest audio, apply in any case. The app sends no experiment options; only the test client does.

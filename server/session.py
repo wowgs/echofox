@@ -19,7 +19,6 @@ import constants
 import languages
 import metrics
 import recordings
-import settings
 import tuning
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
 from dictation import Dictation, prompt
@@ -60,8 +59,8 @@ def parse_start(m, models, args=None):
     if name is None:
         raise ValueError(f"no model {m.get('model')}; this server has: {', '.join(models.entries)}")
     entry = models.entries[name]
-    client = tuning.parse_options(m.get("options"))
-    options = tuning.resolve(settings.model_defaults(entry), tuning.parse(entry.get("options"), "model"), client=client)
+    client = tuning.parse(m.get("options"))
+    options = tuning.resolve(catalog.model_defaults(entry), tuning.parse(entry.get("options"), "model"), client=client)
     language = str(m.get("language") or "")
     own = (m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or "").strip()[:constants.MAX_PROMPT]
     return Start(model=name, entry=entry, options=options, language=language, own_prompt=own,

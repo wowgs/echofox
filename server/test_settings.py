@@ -1,162 +1,42 @@
-"""Tests of settings.py and llama.Models: the config file, its changes, and one model in memory. Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of settings.py: the config file, its changes, and what the watcher hands to the model registry. Run:
+server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import json
 import os
 import pathlib
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
-from unittest import mock
 
-import catalog
 import constants
-import llama
 import metrics
-import info
-import variants
 import settings as s
 import tuning
-from fakes import FakeLlama, StubModel, real_wait_healthy
+from fakes import FakeLlama, StubModel
+from model_registry import Models
 
 
 A, B = "http://127.0.0.1:1", "http://127.0.0.1:2"  # llama-servers on this Mac, which the server starts
-
-
-class ModelsTest(unittest.IsolatedAsyncioTestCase):
-    async def test_one_model_in_memory_at_a_time(self):
-        entries = {"a": {"llamaServer": A}, "b": {"llamaServer": B}}
-        with FakeLlama() as llamas:
-            models = llama.Models(entries, make=StubModel)
-            a = await models.get("a")
-            self.assertIs(await models.get("a"), a)  # made once, started once
-            self.assertEqual(llamas.calls, [("start", A)])
-            await models.get("b")
-            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
-            models.close()  # the server ends: its llama-server too
-            self.assertEqual(llamas.calls[-1], ("stop", B))
-
-    async def test_another_variant_starts_again_and_one_that_ended_starts_again(self):
-        entries = {"a": {"llamaServer": A}}
-        with FakeLlama() as llamas:
-            models = llama.Models(entries, make=StubModel)
-            await models.get("a")
-            models.entries["a"] = {"llamaServer": A, "variant": "q4_0"}  # another variant or models folder
-            await models.get("a")
-            self.assertEqual(llamas.calls, [("start", A), ("stop", A), ("start", A)])
-            llamas.procs[-1].returncode = 1  # it crashed
-            await models.get("a")
-            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", A)])
-
-    async def test_an_idle_model_leaves_memory_and_the_next_recording_loads_it_first(self):
-        saved = constants.IDLE_POLL_S
-        constants.IDLE_POLL_S = 0.01
-        try:
-            with FakeLlama() as llamas:
-                models = llama.Models({"a": {"llamaServer": A}}, make=StubModel)
-                await models.get("a")
-                idle = asyncio.create_task(models.unload_when_idle(lambda: 0.05))
-                await asyncio.sleep(0.2)
-                self.assertEqual(llamas.calls, [("start", A), ("stop", A)])
-                self.assertEqual(models.active, "a")  # still the chosen one: the menu's choice loads nothing again
-                await models.get("a")  # a recording: the model loads first
-                self.assertEqual(llamas.calls[-1], ("start", A))
-                idle.cancel()
-                never = asyncio.create_task(models.unload_when_idle(lambda: 0))  # 0: it stays
-                await asyncio.sleep(0.1)
-                never.cancel()
-                self.assertEqual(llamas.calls[-1], ("start", A))
-        finally:
-            constants.IDLE_POLL_S = saved
-
-    async def test_a_model_on_another_computer_is_only_asked(self):
-        with FakeLlama() as llamas:
-            await llama.Models({"far": {"llamaServer": "http://ubu.example:8080"}}, make=StubModel).get("far")
-            self.assertEqual(llamas.calls, [])
-
-
-class VariantTest(unittest.TestCase):
-    def setUp(self):
-        self.folder = tempfile.mkdtemp(prefix="models-", dir=os.path.dirname(constants.path("~/x")))
-        self.binary = os.path.join(self.folder, "llama-server")
-        open(self.binary, "w").close()
-        os.chmod(self.binary, 0o755)
-        self.saved = constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER
-        constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER = self.binary, os.path.join(self.folder, "none")
-
-    def tearDown(self):
-        constants.LLAMA_SERVER, llama.BUNDLED_LLAMA_SERVER = self.saved
-
-    def test_the_bundles_llama_server_comes_first(self):
-        self.assertEqual(llama.llama_server(), self.binary)  # no bundled one: the installed app's
-        bundled = os.path.join(self.folder, "bundled-llama-server")
-        open(bundled, "w").close()
-        os.chmod(bundled, 0o755)
-        llama.BUNDLED_LLAMA_SERVER = bundled
-        self.assertEqual(llama.llama_server(), bundled)
-
-    def put(self, *names, repo="gemma-4-E4B-it-GGUF"):
-        d = os.path.join(self.folder, repo)
-        os.makedirs(d, exist_ok=True)
-        for n in names:
-            open(os.path.join(d, n), "w").close()
-
-    def test_a_registry_entry_has_its_catalogs_default_variant_unless_it_names_one(self):
-        self.assertEqual(catalog.variant({"catalog": "gemma-4-e4b"})[0], "q4_0")
-        vid, spec = catalog.variant({"catalog": "gemma-4-e4b", "variant": "q8_0"})
-        self.assertEqual((vid, spec["files"]["model"]["file"]), ("q8_0", "gemma-4-E4B-it-Q8_0.gguf"))
-        problems = []
-        models = {"a": {"llamaServer": "http://h:1", "variant": "q2_k"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}}
-        self.assertEqual(s.clean_models(models, lambda *p: problems.append(p)),
-                         {"a": {"llamaServer": "http://h:1"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}})
-        self.assertEqual([wrong for _, wrong in problems], [True])  # a wrong variant: the model stays, without it
-        # A variant's own source (Google's QAT), else the catalog entry's (ggml-org's)
-        self.assertEqual(catalog.files({"variant": "q4_0"}, "/m"),
-                         {"model": "/m/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B_q4_0-it.gguf",
-                          "mmproj": "/m/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B-it-mmproj.gguf"})
-        self.assertEqual(catalog.url({}, "gemma-4-E4B_q4_0-it.gguf"),
-                         "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/"
-                         "4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B_q4_0-it.gguf")
-        self.assertEqual(catalog.url({"variant": "q8_0"}, "gemma-4-E4B-it-Q8_0.gguf"),
-                         "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/"
-                         "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q8_0.gguf")
-
-    def test_the_command_runs_the_variants_files(self):
-        entry = {"llamaServer": "http://127.0.0.1:8092", "catalog": "gemma-4-e4b"}
-        with self.assertRaisesRegex(RuntimeError, "files of variant q4_0 are missing"):
-            llama.command(entry, self.folder)
-        self.put("gemma-4-E4B-it-Q8_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
-        self.put("gemma-4-E4B_q4_0-it.gguf", "gemma-4-E4B-it-mmproj.gguf", repo="gemma-4-E4B-it-qat-q4_0-gguf")
-        a = llama.command({**entry, "variant": "q8_0"}, self.folder)
-        self.assertEqual(a[:9], [self.binary, "-m", f"{self.folder}/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q8_0.gguf",
-                                 "--mmproj", f"{self.folder}/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf",
-                                 "--host", "127.0.0.1", "--port", "8092"])
-        self.assertEqual(a[9:], catalog.of(entry)["llamaServer"]["args"])
-        self.assertEqual(llama.command(entry, self.folder)[2],
-                         f"{self.folder}/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B_q4_0-it.gguf")
-
-    def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
-        f = os.path.join(self.folder, "config.json")
-        with open(f, "w") as fh:
-            json.dump({"version": constants.CONFIG_VERSION, "models": {"gemma-e4b": {"variant": "q4_0"}}}, fh)
-        self.assertEqual(s.file_settings(f)["models"]["gemma-e4b"], {**s.MODEL_DEFAULT["gemma-e4b"], "variant": "q4_0"})
-
-    def test_the_info_says_which_variants_are_downloaded(self):
-        self.put("gemma-4-E4B_q4_0-it.gguf", "gemma-4-E4B-it-mmproj.gguf", repo="gemma-4-E4B-it-qat-q4_0-gguf")
-        self.put("mmproj-gemma-4-E4B-it-BF16.gguf")  # Q8_0's mmproj alone: not a whole variant
-        v = variants.variants({"catalog": "gemma-4-e4b"}, self.folder)
-        self.assertEqual(v["variant"], "q4_0")
-        self.assertEqual([x.get("default") for x in v["variants"]], [True, None])
-        self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
-                         [("q4_0", True, 5154941280 + 991552256), ("q8_0", False, 8031242688 + 991552256)])
 
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):
     def write(self, f, **c):
         pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, **c}))
         os.utime(f, ns=(time.time_ns(), time.time_ns()))
+
+    def test_a_wrong_variant_leaves_the_model_without_it(self):
+        problems = []
+        models = {"a": {"llamaServer": "http://h:1", "variant": "q2_k"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}}
+        self.assertEqual(s.clean_models(models, lambda *p: problems.append(p)),
+                         {"a": {"llamaServer": "http://h:1"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}})
+        self.assertEqual([wrong for _, wrong in problems], [True])  # a wrong variant: the model stays, without it
+
+    def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "config.json")
+            self.write(f, models={"gemma-e4b": {"variant": "q4_0"}})
+            self.assertEqual(s.file_settings(f)["models"]["gemma-e4b"], {**s.MODEL_DEFAULT["gemma-e4b"], "variant": "q4_0"})
 
     def test_the_file_wins_then_the_defaults(self):
         models = {"a": {"llamaServer": "http://h:1"}}
@@ -170,8 +50,9 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
             models = {"a": {"llamaServer": "http://h:1", "prompt": "P", "options": {"topK": 5}}}
             self.write(f, model="a", models=models, silenceStopSeconds=60, languages={"ru": {"fillers": ["э"]}},
                        server={"maxRecordingSeconds": 25, "port": 9000, "saveRecordings": False})
-            self.assertEqual(s.file_settings(f), {"models": models, "saveRecordings": False, "maxRecordingSeconds": 25.0,
-                                                  "port": 9000, "languages": {"ru": {"fillers": ["э"]}}})
+            self.assertEqual(s.file_settings(f), {"model": "a", "models": models, "saveRecordings": False,
+                                                  "maxRecordingSeconds": 25.0, "port": 9000,
+                                                  "languages": {"ru": {"fillers": ["э"]}}})
 
     def test_an_adapters_entry_may_set_its_context_budgets_and_nothing_else(self):
         now = s.resolve({"adapters": {"telegram": {"enabled": True, "chatHistoryTokenBudget": 600},
@@ -229,8 +110,8 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
         class FakeModels:
             recording = asyncio.Lock()
 
-            def reconfigure(self, entries, models_folder=None):
-                calls.append(("reconfigure", entries))
+            def configure(self, entries, models_folder, chosen):
+                calls.append(("configure", entries, models_folder, chosen))
 
         saved = metrics.configure(constants.METRICS)  # the watcher sets it from the file; restored below
         try:
@@ -240,128 +121,49 @@ class SettingsTest(unittest.IsolatedAsyncioTestCase):
                 current = s.resolve({})
                 st = s.recording_settings(current)
                 stop = asyncio.get_running_loop().create_future()
-                w = s.ConfigWatcher(f, FakeModels(), st, current, stop, follow=False)
+                w = s.ConfigWatcher(f, FakeModels(), st, current, stop)
                 self.write(f, server={"maxRecordingSeconds": 25, "saveRecordings": False})  # recording settings
                 self.assertTrue(await w.check())
                 self.assertEqual((st.max_recording_seconds, st.save_recordings, calls), (25.0, False, []))
                 models = {"b": {"llamaServer": "http://h:2"}}
                 self.write(f, server={"maxRecordingSeconds": 25, "saveRecordings": False}, models=models)  # a model setting
                 self.assertTrue(await w.check())
-                self.assertEqual(calls, [("reconfigure", models)])
-                self.write(f, server={"maxRecordingSeconds": 25, "port": 9999, "saveRecordings": False}, models=models)
+                self.assertEqual(calls, [("configure", models, constants.MODELS_FOLDER, None)])
+                self.write(f, server={"maxRecordingSeconds": 25, "saveRecordings": False}, models=models, model="b")
+                self.assertTrue(await w.check())  # the menu's model: a model setting too
+                self.assertEqual(calls[-1], ("configure", models, constants.MODELS_FOLDER, "b"))
+                self.write(f, server={"maxRecordingSeconds": 25, "port": 9999, "saveRecordings": False}, models=models,
+                           model="b")
                 self.assertFalse(await w.check())  # the process ends
                 self.assertTrue(stop.done())
                 self.write(f, server={"port": 9998})
                 stop2 = asyncio.get_running_loop().create_future()
                 stop2.set_result(None)  # already stopping (a signal): a second stop is no error
-                w2 = s.ConfigWatcher(f, FakeModels(), st, dict(current), stop2, follow=False)
+                w2 = s.ConfigWatcher(f, FakeModels(), st, dict(current), stop2)
                 self.write(f, server={"port": 9997})
                 self.assertFalse(await w2.check())
         finally:
             metrics.configure(saved)
 
-    async def test_a_change_made_while_the_first_model_loads_is_not_lost(self):
-        with tempfile.TemporaryDirectory() as d:
+    async def test_the_registry_follows_the_menus_model_and_keeps_it_when_the_file_cannot_be_read(self):
+        with FakeLlama() as llamas, tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
-            self.write(f)
-            current = s.resolve({})
-            st = s.recording_settings(current)
-
-            class SlowModels:
-                recording = asyncio.Lock()
-                entries, active = {}, llama.UNKNOWN
-
-                async def activate(self, name):
-                    await asyncio.sleep(0)
-                    self_test.write(f, server={"maxRecordingSeconds": 26})  # while the model loads
-
-            self_test = self
-            w = s.ConfigWatcher(f, SlowModels(), st, current, asyncio.get_running_loop().create_future())
-            await w.follow_selection()
+            entries = {"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}
+            self.write(f, model="e4b", models=entries)
+            current = s.resolve(s.file_settings(f))
+            models = Models(current["models"], make=StubModel, chosen=current["model"])
+            w = s.ConfigWatcher(f, models, s.recording_settings(current), current, None)
+            await models.follow_menu()
+            self.write(f, model="big", models=entries)
             await w.check()
-            self.assertEqual(st.max_recording_seconds, 26.0)
-
-
-class SelectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_the_info_names_the_menus_model_of_the_servers_own_config_file(self):
-        # A server started with --config (the test server) reads its own file, not the default one
-        with FakeLlama(), tempfile.TemporaryDirectory() as d:
-            f = os.path.join(d, "other-config.json")
-            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "big"}))
-            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
-            st = s.recording_settings(s.resolve({}))
-            s.ConfigWatcher(f, models, st, {}, None, follow=False)
-            self.assertEqual(info.info(st, models)["model"]["name"], "big")
-
-    async def test_only_the_model_chosen_in_the_menus_is_in_memory(self):
-        with FakeLlama() as llamas, tempfile.TemporaryDirectory() as d:
-            f = os.path.join(d, "config.json")
-            choose = lambda model: pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION,
-                                                                          "model": model}))
-            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
-            w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
-            choose("e4b")
-            await w.follow_selection()
-            self.assertEqual(llamas.calls, [("start", A)])
-            choose("big")
-            await w.follow_selection()
-            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
-            choose("none of them")  # a name not in the registry: no model in memory
-            await w.follow_selection()
-            self.assertEqual(llamas.calls[-1], ("stop", B))
-            os.remove(f)  # no config yet, as at the first start: the server's default model, the registry's first
-            await w.follow_selection()
-            self.assertEqual((models.selected, llamas.calls[-1]), ("e4b", ("start", A)))
-            # a config without "model": the same
-            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION}))
-            await w.follow_selection()
-            self.assertEqual(models.selected, "e4b")
-            models.manage = False  # a test server never starts or stops a llama-server
-            n = len(llamas.calls)
-            await models.get("big")
-            self.assertEqual(len(llamas.calls), n)
-
-    async def test_a_recording_on_the_active_model_starts_nothing_and_the_menus_model_comes_back(self):
-        with FakeLlama() as llamas, tempfile.TemporaryDirectory() as d:
-            f = os.path.join(d, "config.json")
-            pathlib.Path(f).write_text(json.dumps({"version": constants.CONFIG_VERSION, "model": "e4b"}))
-            models = llama.Models({"e4b": {"llamaServer": A}, "big": {"llamaServer": B}}, make=StubModel)
-            w = s.ConfigWatcher(f, models, s.recording_settings(s.resolve({})), {}, None)
-            await w.follow_selection()
-            n = len(llamas.calls)
-            await models.get("e4b")
-            await models.get("e4b")
-            self.assertEqual(len(llamas.calls), n)  # the active model: nothing started for each recording
-            await models.get("big")  # a client asked for another model
-            self.assertEqual(llamas.calls[-2:], [("stop", A), ("start", B)])
-            await w.follow_selection()  # the menu's model is not in memory any more: it comes back
-            self.assertEqual(llamas.calls[-2:], [("stop", B), ("start", A)])
-
-
-class ProcessTest(unittest.TestCase):
-    def test_a_wait_for_a_loading_model_ends_when_the_server_ends(self):
-        import threading
-        closing = threading.Event()
-        threading.Timer(0.2, closing.set).start()
-        t = time.monotonic()
-        with mock.patch.object(llama.urllib.request, "urlopen", side_effect=OSError("not yet")):
-            self.assertFalse(real_wait_healthy("http://127.0.0.1:9", 60, closing))
-        self.assertLess(time.monotonic() - t, 2)
-
-
-    def test_end_stops_a_child_that_ignores_sigterm(self):
-        saved = llama.STOP_WAIT_S
-        llama.STOP_WAIT_S = 0.5
-        try:
-            proc = subprocess.Popen([sys.executable, "-c", "import signal, time; "
-                                     "signal.signal(signal.SIGTERM, signal.SIG_IGN); print(1, flush=True); time.sleep(60)"],
-                                    stdout=subprocess.PIPE)
-            proc.stdout.readline()  # it ignores SIGTERM from now on
-            llama.end(proc)
-            self.assertEqual(proc.returncode, -9)
-            proc.stdout.close()
-        finally:
-            llama.STOP_WAIT_S = saved
+            await models.follow_menu()
+            self.assertEqual(llamas.calls, [("start", A), ("stop", A), ("start", B)])
+            pathlib.Path(f).write_text("{not JSON")  # a hand edit gone wrong: the settings stay, the model too
+            os.utime(f, ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))
+            with self.assertLogs("gemma_voice", "ERROR"):
+                self.assertTrue(await w.check())
+            await models.follow_menu()
+            self.assertEqual((models.selected, llamas.calls[-1]), ("big", ("start", B)))
 
 
 class MigrateTest(unittest.TestCase):
@@ -526,11 +328,15 @@ class SchemaTest(unittest.TestCase):
             self.assertTrue(info[key]["advanced"], key)
         with self.assertRaisesRegex(ValueError, "unknown server key pieceSeconds"):
             tuning.parse({"pieceSeconds": 12}, "server", "server")  # not the user's to set
-        self.assertEqual(tuning.parse_options({"pieceSeconds": 12}), {"piece_seconds": 12.0})  # an experiment's
+        self.assertEqual(tuning.parse({"pieceSeconds": 12}), {"piece_seconds": 12.0})  # an experiment's
 
-    def test_every_catalog_entry_gives_the_models_constants(self):
-        for name, entry in catalog.entries().items():
-            self.assertIsNotNone(s.model_defaults({"catalog": name}).get("max_tokens_per_piece"), name)
+    def test_the_models_folder_in_force_is_the_registrys(self):
+        st = s.recording_settings(s.resolve({}))
+        folder = {e["key"]: e for e in s.schema(st)}["modelsFolder"]
+        self.assertEqual((folder["default"], "value" in folder), (constants.MODELS_FOLDER, False))
+        folder = {e["key"]: e for e in s.schema(st, models_folder="/elsewhere")}["modelsFolder"]
+        self.assertEqual(folder["value"], "/elsewhere")
+        self.assertFalse(hasattr(st, "models_folder"))  # one copy of it: the registry's
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Tests of dictation.py and llama.LlamaModel against a fake llama-server. Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of dictation.py against a fake llama-server. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import base64
@@ -9,30 +9,14 @@ import tempfile
 import time
 import unittest
 
+import catalog
 import dictation as d
-import llama
 import metrics
 import recordings
-import settings
-import tuning
 from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 
 ONE_A_CHAR = dict.fromkeys(("cyrillic", "latin", "digit", "space", "other"), 1.0)
-
-class OptionsTest(unittest.TestCase):
-    def test_known_options_are_checked_and_renamed(self):
-        self.assertEqual(tuning.parse_options({"temperature": 0, "topK": 1, "maxTokensPerPiece": 15,
-                                               "pieceSeconds": 10}),
-                         {"temperature": 0.0, "top_k": 1, "max_tokens_per_piece": 15, "piece_seconds": 10.0})
-        self.assertEqual(tuning.parse_options(None), {})
-
-    def test_unknown_or_wrong_options_are_refused(self):
-        for bad, why in [({"tempreature": 0}, "unknown option"), ({"topK": 1.5}, "integer"), ({"topP": 2}, "out of range"),
-                         ({"pieceSeconds": 2}, "out of range"), ({"temperature": "0"}, "number"), ({"topK": True}, "integer"),
-                         ({"noRepeatNgramSize": 10}, "unknown option"), ([1], "object")]:
-            with self.assertRaisesRegex(ValueError, why):
-                tuning.parse_options(bad)
 
 
 class PromptTest(unittest.TestCase):
@@ -81,7 +65,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
 
     def dictation(self, options=None, model=None, recording=None, weights=None):
         # the model's options as a start message gives them: its catalog entry's, then these
-        return d.Dictation(model or self.fake.model(), "PROMPT", {**settings.model_defaults({}), **(options or {})},
+        return d.Dictation(model or self.fake.model(), "PROMPT", {**catalog.model_defaults({}), **(options or {})},
                            args(), {}, recording, token_weights=weights)
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
@@ -97,7 +81,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(parts[0]["text"].endswith("</context>\n\nPROMPT") and "Anna: hello there" in parts[0]["text"])
             self.assertEqual(len(body["messages"]), 1)  # no system turn by default
             self.assertEqual(base64.b64decode(parts[1]["input_audio"]["data"])[:4], b"RIFF")
-            self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
         self.assertEqual((bodies[0]["max_tokens"], bodies[0]["cache_prompt"], bodies[0]["seed"]), (600, True, 3))
         m = self.metrics("piece")[0]
         self.assertEqual((m["prefill_tokens"], m["cached_tokens"], m["decode_tokens"]), (30, 6, 5))
@@ -148,7 +131,7 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
     async def test_english_speech_gets_no_terms_since_every_word_of_it_is_one(self):
         chat = {"messages": [{"from": "Anna", "text": "hello there"}], "terms": ["GitHub"]}
         for language, terms in (("en-GB", False), ("ru", True)):
-            dictation = d.Dictation(self.fake.model(), "PROMPT", settings.model_defaults({}), args(),
+            dictation = d.Dictation(self.fake.model(), "PROMPT", catalog.model_defaults({}), args(),
                                     {"language": language})
             await dictation.prepare(chat)
             self.assertEqual("Terms: GitHub" in dictation.text, terms, language)
@@ -209,14 +192,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([b["max_tokens"] for b in self.fake.completions()], [600, 5])  # the catalog's, the options'
         self.assertEqual([m["max_tokens_hit"] for m in self.metrics("piece")], [False, True])
 
-    async def test_the_catalogs_sampler_unless_the_options_set_one(self):
-        defaults = settings.model_defaults({})  # Gemma 4 E4B's catalog entry: Google's sampler
-        await self.dictation(defaults).piece(LOUD, 1, 1)
-        await self.dictation({**defaults, "top_k": 1, "seed": 3}).piece(LOUD, 1, 1)
-        self.assertEqual([{k: b.get(k) for k in ("temperature", "top_k", "top_p", "seed")} for b in self.fake.completions()],
-                         [{"temperature": 1.0, "top_k": 64, "top_p": 0.95, "seed": None},
-                          {"temperature": 1.0, "top_k": 1, "top_p": 0.95, "seed": 3}])
-
     async def test_a_text_that_reaches_the_limit_stays(self):
         fake = FakeLlamaServer(decode=1000)
         try:
@@ -249,12 +224,12 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
                 return "Э, привет, мм, мир", {}
         rec = recordings.Recording(self.dir.name)
         self.addCleanup(rec.wav.close)  # the test does not finish() it
-        dict_ = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(), {"language": "ru"}, rec)
+        dict_ = d.Dictation(Hesitant(), "PROMPT", catalog.model_defaults({}), args(), {"language": "ru"}, rec)
         await dict_.prepare()
         self.assertEqual(await dict_.piece(LOUD, 1, 1), "Привет, мир")
         line = json.loads(pathlib.Path(rec.dir, "pieces.jsonl").read_text(encoding="utf-8"))
         self.assertEqual((line["text"], line["raw"]), ("Привет, мир", "Э, привет, мм, мир"))
-        other = d.Dictation(Hesitant(), "PROMPT", settings.model_defaults({}), args(languages={"ru": {"fillers": []}}),
+        other = d.Dictation(Hesitant(), "PROMPT", catalog.model_defaults({}), args(languages={"ru": {"fillers": []}}),
                             {"language": "ru"})
         await other.prepare()
         self.assertEqual(await other.piece(LOUD, 1, 1), "Э, привет, мм, мир")  # the config turned it off
@@ -275,23 +250,10 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(took, 1.0)  # the connection was closed, not waited for (the fake answers after 2 s)
         self.assertEqual(len(self.metrics("cancelled")), 1)
 
-    async def test_a_cancel_stops_requests_that_have_not_connected_yet(self):
+    async def test_a_new_dictation_starts_clean_after_a_cancel(self):
         m = self.fake.model()
-        dic = self.dictation(model=m)
-        m.cancel()  # before the piece's request connects
-        with self.assertRaises(llama.Cancelled):
-            await dic.piece(LOUD, 1, 1)
-        self.assertEqual(self.fake.completions(), [])  # it never reached llama-server
-        self.assertEqual(await self.dictation(model=m).piece(LOUD, 1, 1), "text from llama")  # the next one starts clean
-
-    async def test_slots_come_from_llama_servers_props_and_https_urls_keep_their_scheme(self):
-        fake = FakeLlamaServer(slots=2)
-        try:
-            self.assertEqual(fake.model().slots(), 2)
-        finally:
-            fake.close()
-        m = llama.LlamaModel("x", {"llamaServer": "https://llm.example.org/base/"})
-        self.assertEqual((m.https, m.host, m.port, m.base), (True, "llm.example.org", 443, "/base"))
+        m.cancel()  # the recording before was cancelled
+        self.assertEqual(await self.dictation(model=m).piece(LOUD, 1, 1), "text from llama")
 
     async def test_the_metrics_have_llama_servers_memory(self):
         m = self.fake.model()

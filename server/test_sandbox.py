@@ -8,8 +8,8 @@ import re
 import socket
 import unittest
 
-import metrics
 import constants as places
+import llama_process
 import settings
 
 
@@ -33,10 +33,18 @@ class SandboxTest(unittest.TestCase):
                 s.connect((places.HOST, port))
 
     def test_no_llama_server_starts_or_is_stopped(self):
-        import llama
-        self.assertIs(llama.spawn, sandbox._spawn)
-        self.assertIsInstance(llama.spawn(["llama-server"]), sandbox.FakeProcess)
-        self.assertIsNone(llama.end_stale(places.WORKING_LLAMA_PORT))
+        self.assertIs(llama_process.spawn, sandbox._spawn)
+        self.assertIsInstance(llama_process.spawn(["llama-server"]), sandbox.FakeProcess)
+        self.assertIsNone(llama_process.end_stale(places.WORKING_LLAMA_PORT))
+
+    def test_no_module_imports_a_replaced_function_by_its_name(self):
+        # The sandbox and fakes.py replace llama_process's functions by attribute: a caller that imported one by its
+        # name (from llama_process import spawn) would keep the real one and start a llama-server in a test
+        here = os.path.dirname(os.path.abspath(__file__))
+        for f in sorted(glob.glob(os.path.join(here, "*.py")) + glob.glob(os.path.join(here, "adapters", "**", "*.py"),
+                                                                           recursive=True)):
+            source = pathlib.Path(f).read_text(encoding="utf-8")
+            self.assertNotRegex(source, r"(?m)^\s*from llama_process import", f)
 
 
 if __name__ == "__main__":

@@ -7,16 +7,20 @@ import threading
 import time
 
 import audio
-import llama
+import llama_client
+import llama_process
+import model_registry
 import recordings
 import protocol
 import settings
 import vad
 from audio import RATE
 
-# No test waits for a real llama-server, starts one or asks macOS about the microphone.
-real_wait_healthy = llama.wait_healthy  # for the test of the wait itself
-llama.wait_healthy = lambda url, seconds=0, stop=None: True
+# No test waits for a real llama-server, starts one or asks macOS about the microphone. The registry calls
+# llama_process's functions through the module, so these replacements reach it (test_sandbox.py checks that no other
+# module holds them under a name of its own).
+real_wait_healthy = llama_process.wait_healthy  # for the test of the wait itself
+llama_process.wait_healthy = lambda url, seconds=0, stop=None: True
 recordings.input_info = lambda: None
 
 
@@ -58,7 +62,7 @@ def seconds(pcm):
     return audio.seconds(pcm)
 
 
-class StubModel(llama.Model):
+class StubModel(llama_client.Model):
     """A model without llama-server: a token per word; each piece's text is "<name> piece N". It notes every call.
     `delays`: seconds each piece takes, by piece number (in its request's thread); `slots_n`: its slots."""
 
@@ -82,9 +86,6 @@ class StubModel(llama.Model):
     def tokenize(self, text):
         return list(range(len(text.split())))
 
-    def detokenize(self, ids):
-        return " ".join("w" for _ in ids)
-
     def warm(self, text, options, slot=None):
         with self.lock:
             self.warmed.append(slot)
@@ -96,7 +97,7 @@ class StubModel(llama.Model):
             n = len(self.calls)
             self.order.append(("start", n, slot))
         if self.stop.wait(self.delays.get(n, 0)):
-            raise llama.Cancelled("cancelled")
+            raise llama_client.Cancelled("cancelled")
         with self.lock:
             self.order.append(("end", n))
         return f"{self.name} piece {n}", {}
@@ -109,11 +110,11 @@ class HangingStub(StubModel):
         with self.lock:
             self.calls.append(round(seconds(pcm), 1))
         self.stop.wait(3600)
-        raise llama.Cancelled("cancelled")
+        raise llama_client.Cancelled("cancelled")
 
 
-def stub_models(entries=ENTRIES, make=None):
-    return llama.Models(entries, make=make or StubModel, manage=False)
+def stub_models(entries=ENTRIES, make=None, **over):
+    return model_registry.Models(entries, make=make or StubModel, manage=False, **over)
 
 
 class FakeLlama:
@@ -122,8 +123,10 @@ class FakeLlama:
     The processes: `procs`."""
 
     def __enter__(self):
-        self.calls, self.procs, self.saved = [], [], (llama.command, llama.spawn, llama.end)
-        llama.command = lambda entry, folder: ["llama-server", entry["llamaServer"], str(entry.get("variant", ""))]
+        self.calls, self.procs = [], []
+        self.saved = llama_process.command, llama_process.spawn, llama_process.end
+        llama_process.command = lambda entry, folder: ["llama-server", entry["llamaServer"],
+                                                       str(entry.get("variant", ""))]
 
         def spawn(argv):
             self.calls.append(("start", argv[1]))
@@ -133,15 +136,15 @@ class FakeLlama:
         def end(proc):
             self.calls.append(("stop", proc.argv[1]))
             proc.terminate()
-        llama.spawn, llama.end = spawn, end
+        llama_process.spawn, llama_process.end = spawn, end
         return self
 
     def __exit__(self, *exc):
-        llama.command, llama.spawn, llama.end = self.saved
+        llama_process.command, llama_process.spawn, llama_process.end = self.saved
 
 
 class FakeLlamaServer:
-    """llama-server's /health, /tokenize, /detokenize and /v1/chat/completions, in a thread; a token per word.
+    """llama-server's /health, /props, /tokenize and /v1/chat/completions, in a thread; a token per word.
     A completion decodes `decode` tokens and takes `delay` seconds; /props says `slots` slots."""
 
     def __init__(self, decode=5, delay=0.0, slots=1):
@@ -165,8 +168,6 @@ class FakeLlamaServer:
                 seen.append((self.path, body))
                 if self.path == "/tokenize":
                     out = {"tokens": list(range(len(body["content"].split())))}
-                elif self.path == "/detokenize":
-                    out = {"content": " ".join("w" for _ in body["tokens"])}
                 else:
                     time.sleep(delay)
                     finished.append(time.monotonic())
@@ -184,7 +185,7 @@ class FakeLlamaServer:
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def model(self):
-        return llama.LlamaModel("e4b", {"llamaServer": self.url})
+        return llama_client.LlamaModel("e4b", {"llamaServer": self.url})
 
     def completions(self):
         return [body for path, body in self.seen if path == "/v1/chat/completions"]

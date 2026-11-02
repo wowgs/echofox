@@ -141,11 +141,6 @@ def parse(raw, owner=None, what="options", constants_too=False):
     return out
 
 
-def parse_options(raw):
-    """A client's options (an experiment), checked."""
-    return parse(raw)
-
-
 def adapter_options(entry):
     """An adapter's entry in the config → its context knobs, checked ("enabled" aside)."""
     return parse({k: v for k, v in (entry or {}).items() if k != "enabled"}, "adapter", "adapter")
