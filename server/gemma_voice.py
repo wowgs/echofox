@@ -17,11 +17,11 @@ from websockets.asyncio.server import serve
 import constants
 import protocol
 import settings
-import llama
 import vad
-from llama import Models
+from model_registry import Models
 
 log = logging.getLogger("gemma_voice")
+APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the app that starts the server (macos ServerProcess), for the log
 
 
 async def main():
@@ -29,8 +29,8 @@ async def main():
                                 epilog="The settings are in the config file only. The server watches the file.")
     p.add_argument("--config", default=None, help=f"the config file (default {settings.config_file()})")
     p.add_argument("--ignore-selection", action="store_true",
-                   help="do not follow the model chosen in the menus, and never start or stop a llama-server "
-                        "(for a test server)")
+                   help="do not follow the model chosen in the menus, and never start or stop a llama-server: wait "
+                        "at the start until the default model's llama-server answers (for a test server)")
     p.add_argument("--parent", action="store_true",
                    help="the app that started this server holds its standard input: when it closes (the app quit or "
                         "ended), the server ends, and its llama-server with it")
@@ -40,14 +40,14 @@ async def main():
     settings.migrate(path)
     current = settings.resolve(settings.file_settings(path) or {})
     st = settings.apply(current)
-    models = Models(current["models"], manage=not cli.ignore_selection,
-                    models_folder=constants.path(current["modelsFolder"]))
+    models = Models(current["models"], manage=not cli.ignore_selection, models_folder=current["modelsFolder"],
+                    chosen=current["model"])
     await asyncio.to_thread(vad.shared)  # the speech detector loads now, not in the event loop at the first recording
     if cli.ignore_selection:
-        await models.get(next(iter(current["models"])))  # the default model answers before the first recording
+        await models.get(models.name_for(None))  # the default model answers before the first recording
     log.info("settings: %s", json.dumps(current, ensure_ascii=False))
-    if os.environ.get(llama.APP_VERSION):
-        log.info("the bundled app's version: %s", os.environ[llama.APP_VERSION])
+    if os.environ.get(APP_VERSION):
+        log.info("the bundled app's version: %s", os.environ[APP_VERSION])
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -62,9 +62,9 @@ async def main():
             log.info("the app is gone: the server ends")
             stop.done() or stop.set_result(None)
         loop.add_reader(fd, parent_closed)
-    watcher = settings.ConfigWatcher(path, models, st, current, stop, follow=not cli.ignore_selection)
+    watcher = settings.ConfigWatcher(path, models, st, current, stop)
     watching = asyncio.create_task(watcher.run())
-    idle = asyncio.create_task(models.unload_when_idle(lambda: st.model_idle_seconds)) if models.manage else None
+    keeping = asyncio.create_task(models.run(lambda: st.model_idle_seconds))
     async with serve(lambda ws: protocol.handle(ws, models, st), current["host"], current["port"],
                      max_size=None) as server:
         log.info("listening on ws://%s:%d, models: %s (default %s), config %s", current["host"], current["port"],
@@ -79,8 +79,7 @@ async def main():
             log.warning("recordings still running after %d s: the server ends anyway", constants.STOP_WAIT_S)
         log.info("the server ends")
     watching.cancel()
-    if idle:
-        idle.cancel()
+    keeping.cancel()
     await asyncio.to_thread(models.close)
 
 

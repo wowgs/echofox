@@ -3,7 +3,8 @@ test can touch the working setup:
 - HOME and the paths the server reads from the environment ($ECHOFOX_CONFIG, $ECHOFOX_ADAPTERS) point into a new
   temporary folder: the config, the recordings, the metrics, the user's adapters and every file an adapter reads under
   HOME there are empty and the tests' own;
-- llama.spawn and llama.end_stale are fakes, so no test starts a llama-server or stops one that runs;
+- llama_process.spawn and llama_process.end_stale are fakes, so no test starts a llama-server or stops one that
+  runs (their callers reach them through the module: test_sandbox.py checks that);
 - connections to the ports of the working and the test servers (constants.py) are refused, so a test never reaches a
   real dictation server or llama-server."""
 import os
@@ -34,7 +35,7 @@ def _guarded_connect(self, address):
 
 socket.socket.connect = _guarded_connect
 
-import llama  # noqa: E402  (after the sandbox's paths: llama reads them when it loads)
+import llama_process  # noqa: E402  (after the sandbox's paths, as every module of the server)
 
 
 class FakeProcess:
@@ -65,5 +66,5 @@ def _spawn(argv):
     return SPAWNED[-1]
 
 
-llama.spawn = _spawn
-llama.end_stale = lambda port: None
+llama_process.spawn = _spawn
+llama_process.end_stale = lambda port: None

@@ -33,11 +33,17 @@ defaults (docs/design.md, "Settings"):
                      card; generation_config.json of google/gemma-4-E4B-it); maxTokensPerPiece, which every entry
                      must give: in 798 pieces with speech (2026-10-22 to 2026-10-27), Gemma 4 E4B wrote at most 10.4
                      tokens per second of speech, and 600 is twice that for the longest piece (maxAudioSeconds, 30 s)
-  llamaServer.args   the arguments of its llama-server, after its files and address (llama.agent); --offline and
-                     --no-webui: llama-server never goes to the network and serves no web page
+  llamaServer.args   the arguments of its llama-server, after its files and address (llama_process.command);
+                     --offline and --no-webui: llama-server never goes to the network and serves no web page
+  llamaServer.request  the fields that every request to its llama-server carries (llama_client.LlamaModel): Gemma
+                     4's chat template in llama.cpp lets the model think first (reasoning_content), which spent a
+                     piece's whole token limit on "Here's a thinking process…" and left no text; enable_thinking false
+                     stops it
 """
 import json
 import os
+
+import tuning
 
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
 DEFAULT = "gemma-4-e4b"  # a registry entry from before the catalog (config version 3) was this model
@@ -58,6 +64,11 @@ def entries():
 def of(model_entry):
     """The catalog entry of a registry entry ({} if the catalog has none of that name)."""
     return entries().get((model_entry or {}).get("catalog") or DEFAULT, {})
+
+
+def model_defaults(model_entry):
+    """The defaults of the model's knobs and its constants: its catalog entry's options, by name."""
+    return tuning.parse(of(model_entry).get("options"), "model", "catalog options", constants_too=True)
 
 
 def token_weights(model_entry):

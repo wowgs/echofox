@@ -114,15 +114,13 @@ def start(catalog_id, variant, models_folder):
     return job
 
 
-def remove(catalog_id, variant, models_folder, in_force=None):
+def remove(catalog_id, variant, models_folder):
     """Deletes the files of a variant that no other downloaded variant of the entry uses; the bytes freed. Refuses
-    the variant `in_force` (the menu's model's) and one that downloads."""
+    a variant that downloads. A llama-server that runs on the files ends first (model_registry.Models.release)."""
     entry = {"catalog": catalog_id, "variant": variant}
     vid, spec = catalog.variant(entry)
     if spec is None:
         raise ValueError(f"the catalog has no variant {variant!r} of {catalog_id!r}")
-    if vid == in_force:
-        raise ValueError(f"{vid} is the variant in force of the menu's model")
     with _lock:
         if (catalog_id, vid) in _jobs:
             raise ValueError(f"{vid} is downloading")

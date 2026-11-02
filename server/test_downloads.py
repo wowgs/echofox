@@ -1,4 +1,5 @@
-"""Tests of downloads.py and of the download and remove messages: a local HTTP server stands for Hugging Face. Run:
+"""Tests of downloads.py and variants.py: the downloads, the download and remove messages, and the variants of a
+model for the info; a local HTTP server stands for Hugging Face. Run:
 server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import hashlib
@@ -14,12 +15,11 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 
 import catalog
-import constants
 import downloads
-import llama
 import protocol
 import variants
 from fakes import FakeLlama, StubModel, args, stub_models
+from model_registry import Models
 
 MODEL, MMPROJ = os.urandom(300_000), os.urandom(100_000)
 
@@ -116,8 +116,6 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
     def test_remove_keeps_the_files_another_downloaded_variant_uses(self):
         self.run_job("a")
         self.run_job("b")
-        with self.assertRaisesRegex(ValueError, "in force"):
-            downloads.remove("tiny", "a", self.folder, in_force="a")
         self.assertEqual(downloads.remove("tiny", "a", self.folder), len(MODEL))  # mm.gguf stays for b
         self.assertTrue(os.path.exists(self.path("mm.gguf")) and os.path.exists(self.path("big.gguf")))
         self.assertFalse(os.path.exists(self.path("m.gguf")))
@@ -125,21 +123,51 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_variant_in_use_is_removed_after_its_model_leaves_memory(self):
         self.run_job("a")
         url = "http://127.0.0.1:1"
-        models = llama.Models({"m": {"catalog": "tiny", "variant": "a", "llamaServer": url}},
-                              make=StubModel, models_folder=self.folder)
-        models.selected = "m"
+        models = Models({"m": {"catalog": "tiny", "variant": "a", "llamaServer": url}},
+                        make=StubModel, models_folder=self.folder, chosen="m")
         sent = []
         async def send(**m): sent.append(m)
         with FakeLlama() as llamas:
             await models.get("m")
-            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args(models_folder=self.folder))
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args())
         self.assertEqual(sent[0]["type"], "removed")
         self.assertEqual((llamas.calls, models.active), ([("start", url), ("stop", url)], None))
         self.assertFalse(os.path.exists(self.path("m.gguf")))
 
+    async def test_the_variant_of_a_model_a_client_asked_for_leaves_memory_too_and_another_stays(self):
+        # The model in memory is not always the menu's: a client may ask for another; its files go only after it ends
+        self.run_job("a")
+        self.run_job("b")
+        m, n = "http://127.0.0.1:1", "http://127.0.0.1:2"
+        models = Models({"m": {"catalog": "tiny", "variant": "a", "llamaServer": m},
+                         "n": {"catalog": "tiny", "variant": "b", "llamaServer": n}},
+                        make=StubModel, models_folder=self.folder, chosen="m")
+        sent = []
+        async def send(**msg): sent.append(msg)
+        with FakeLlama() as llamas:
+            await models.get("n")
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args())
+            self.assertEqual(llamas.calls, [("start", n)])  # a's files are not n's: n stays
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "b"}, models, args())
+            self.assertEqual((llamas.calls[-1], models.active), (("stop", n), None))
+        self.assertEqual([x["type"] for x in sent], ["removed", "removed"])
+        self.assertFalse(os.path.exists(self.path("big.gguf")))
+
+    def test_the_info_says_which_variants_are_downloaded(self):
+        self.run_job("a")
+        os.remove(self.path("m.gguf"))  # b's model alone is missing, the shared mmproj is there: a is not whole
+        self.run_job("b")
+        v = variants.variants({"catalog": "tiny", "variant": "b"}, self.folder)
+        self.assertEqual(v["variant"], "b")
+        self.assertEqual([x.get("default") for x in v["variants"]], [True, None, None])
+        self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
+                         [("a", False, len(MODEL) + len(MMPROJ)), ("b", True, len(MODEL) + len(MMPROJ)),
+                          ("bad", False, len(MODEL) + len(MMPROJ))])
+
     async def test_the_download_message_sends_progress_then_downloaded(self):
-        a = args(models_folder=self.folder)
-        async with serve(lambda ws: protocol.handle(ws, stub_models(), a), "127.0.0.1", 0) as server:
+        a = args()
+        async with serve(lambda ws: protocol.handle(ws, stub_models(models_folder=self.folder), a), "127.0.0.1",
+                         0) as server:
             async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                 await ws.send(json.dumps({"type": "download", "catalog": "tiny", "variant": "a"}))
                 got = [json.loads(m) async for m in ws]

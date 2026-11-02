@@ -39,7 +39,7 @@ A custom model prompt replaces only the template. Language notes are still appen
 
 ## Models and memory
 
-The model registry is stored in the config file. The server starts the llama-server of the selected model when its `llamaServer` is on this Mac (`127.0.0.1` or `localhost`); a model on another computer is only asked. Only the selected model runs, and a llama-server that ended is started again at the next recording. After `server.modelIdleSeconds` without a recording (600 s by default; 0 keeps the model in memory), the server ends the llama-server, and the model stays the selected one. A recording that finds it gone starts it first: the audio keeps coming and is cut into pieces, the context is read, and once the model answers the server sends the text before the audio and then the pieces. The log says how long the model took to load. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
+The model registry is stored in the config file. The server starts the llama-server of the selected model when its `llamaServer` is on this Mac (`127.0.0.1` or `localhost`); a model on another computer is only asked. Only the selected model runs, and a llama-server that ended is started again at the next recording. A recording that asks for another model of the registry runs on it, and the server starts the selected model again within 2 seconds after that recording. If the selected model cannot start, for example because its files are missing, the server logs the reason once. It tries again every 2 seconds, so the model starts once its files are there. After `server.modelIdleSeconds` without a recording (600 s by default; 0 keeps the model in memory), the server ends the llama-server, and the model stays the selected one. A recording that finds it gone starts it first: the audio keeps coming and is cut into pieces, the context is read, and once the model answers the server sends the text before the audio and then the pieces. The log says how long the model took to load. A change of the variant or the models folder restarts `llama-server` after the current recording. The catalog, the variants and the downloads are described [below](#the-catalog-and-the-downloads).
 
 Gemma runs at `http://127.0.0.1:8092` with:
 
@@ -54,14 +54,14 @@ Recognition makes only local connections; see [privacy](../design.md#privacy). E
 
 ### The catalog and the downloads
 
-`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. A catalog entry names its source, and a variant can name its own (`catalog.source`). The default variant, Q4_0, is Google's quantization-aware trained file from `google/gemma-4-E4B-it-qat-q4_0-gguf`. Q8_0 comes from the entry's source, `ggml-org/gemma-4-E4B-it-GGUF`. Both repositories are on Hugging Face and need no account. The files of a variant go to a folder named after its source repository, for example `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-qat-q4_0-gguf/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments of llama-server; a change of the active variant applies after the current recording.
+`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. A catalog entry names its source, and a variant can name its own (`catalog.source`). The default variant, Q4_0, is Google's quantization-aware trained file from `google/gemma-4-E4B-it-qat-q4_0-gguf`. Q8_0 comes from the entry's source, `ggml-org/gemma-4-E4B-it-GGUF`. Both repositories are on Hugging Face and need no account. The files of a variant go to a folder named after its source repository, for example `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-qat-q4_0-gguf/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments of llama-server; a change of the active variant applies after the current recording. A catalog entry also gives the fields that every request to its llama-server carries: Gemma's turns off the model's thinking (`enable_thinking: false`), which otherwise spent a piece's whole token limit before any text.
 
 The server, not the app's window, runs a download:
 
 - it goes on when the window closes, and every connected client sees its progress;
 - it resumes a part with an HTTP Range request;
 - it checks the size and the SHA-256 before it renames the part;
-- a removal keeps the files that another downloaded variant uses. A removal of the active variant waits for the running recording, then takes the model out of memory.
+- a removal keeps the files that another downloaded variant uses. A removal of the variant that the running llama-server uses waits for the running recording, then takes the model out of memory.
 
 A download uses one connection per file: more connections were not faster on the measured link. The windows show the speed over the last 5 seconds and the time left (`TransferRate`), from the progress that the server sends every 0.5 seconds. The messages are in the [protocol](6-protocol.md#download-a-model). At the first start, the app recommends the catalog's default variant if its memory is at most half of the Mac's memory, else the biggest variant that fits in half, else the smallest.
 
@@ -72,15 +72,19 @@ A download uses one connection per file: more connections were not faster on the
 | `gemma_voice.py` | Starts the server. |
 | `protocol.py` | One connection of a client: reads its first message and hands it on. |
 | `info.py` | The server's info: the models, languages, adapters and settings. |
-| `variants.py` | The download and the removal of a model's variant. |
+| `variants.py` | The download and removal messages of a model's variant, and the list of a model's variants for the info. |
+| `downloads.py` | The downloads of a variant's files and their removal. |
 | `session.py` | One recording: the start message, the audio, the pieces, the context and the stop. |
 | `audio.py` | The loudness of each 30 ms frame, the cuts, WAV files. |
 | `vad.py` | Silero VAD on the audio as it arrives. |
 | `dictation.py` | The prompt, the context and one request for each piece. |
-| `llama.py` | The models in `llama-server` and its process. |
+| `budget.py` | The estimate of a text's tokens from its characters, and the budgets of the context. |
+| `model_registry.py` | The registry of models: the selected model, which model is in memory, the idle unload, one recording at a time. |
+| `llama_process.py` | The process of `llama-server`: its command, its start and end, the wait until it answers, its memory. |
+| `llama_client.py` | The HTTP client of `llama-server`: tokens, the warm-up of a slot, one piece's text, the timings. |
 | `tuning.py` | The table of the settings and constants of a recording. |
-| `settings.py` | The config file: reading, checking, updates from older versions. |
-| `catalog.json`, `catalog.py` | The model catalog. |
+| `settings.py` | The config file: reading, checking, updates from older versions, and the watcher that applies its changes. |
+| `catalog.json`, `catalog.py` | The model catalog, and a model's defaults. |
 | `languages.json`, `languages.py`, `fillers.py` | The languages: names, notes, hesitation sounds. |
 | `adapters/` | The core of the adapters that give [the chat context](3-context.md), and the built-in adapters in `adapters/builtin/`. |
 | `recordings.py` | [The recordings](5-recordings.md). |

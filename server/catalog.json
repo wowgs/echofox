@@ -95,7 +95,12 @@
         "0",
         "--offline",
         "--no-webui"
-      ]
+      ],
+      "request": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
     }
   }
 }
