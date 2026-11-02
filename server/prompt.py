@@ -57,22 +57,6 @@ def held(found, options, server, language, weights):
     return {"terms": terms, "messages": kept, "documents": docs}
 
 
-def said_before(texts, tokens, weights):
-    """The end of what the pieces before this one gave: whole words from the end until about `tokens` (budget.take:
-    the word that reaches it whole); "" without them."""
-    words = " ".join(t for t in texts if t).split()
-    kept, _ = budget.take(list(reversed(words)), tokens, lambda w: budget.count(w + " ", weights))
-    return " ".join(reversed(kept))
-
-
-def with_said(block, text_prompt, said):
-    """The text of a piece's request: the context block (or None), what the speaker said just before the piece, then
-    the prompt, so that the last thing the model reads before the audio is the transcription's instructions. The block
-    is the part that a slot holds from the warm-up; the prompt after the tail is read again for each piece."""
-    parts = ([block] if block else []) + ([f"<previous_speech>{said}</previous_speech>"] if said else [])
-    return "\n\n".join(parts + [text_prompt])
-
-
 def line(message):
     """A message as the context block writes it."""
     return f"{message['from']}: {message['text']}"

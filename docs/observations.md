@@ -32,6 +32,8 @@ The development Mac: Apple M5 with a 10-core GPU, 24 GB of memory, macOS 27.0.1.
 | 2026-10-18–19: generation took 78% of the wait after the stop for one-piece recordings; median 21 tokens/s. | Speed-ups are judged by latency and quality on our set. |
 | Generation sometimes does not stop in time. | The server limits the answer's length and drops an answer that reaches it. |
 | 2026-10-19–21: transliteration fell from 2.1% to 0% on a bench of 120 pieces; 95% of pieces had punctuation. | Behavior checks, not a quality measurement on a fixed reference. |
+| 2026-10-14: with the whole recording as one conversation, in which the model saw its answers to the earlier pieces as its own turns, a piece often began by repeating the earlier piece's text. | Each piece is a request of its own. |
+| 2026-11-02: each piece took the end of the earlier pieces' text, about 100 tokens, at temperature 1.0. Of 5 recordings with such a piece, in 2 the second piece repeated the first one whole: once with the tail as a sentence after the prompt (193407-f87c32), once as a `<previous_speech>` block between the context and the prompt (200014-85ab71). In a third, the second piece came without punctuation and capital letters (193834-85edb8). | A piece gets no text of the pieces before it. |
 
 ## Target apps and Accessibility
 

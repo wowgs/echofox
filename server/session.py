@@ -269,21 +269,14 @@ class Session:
                 slots = await asyncio.to_thread(dictation.slots) if dictation else 1
                 if dictation and resolve.value("warm_text", self.start.options, self.args):
                     warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
-                # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots. With
-                # previousTextTokens, a piece waits for the one before it and takes the end of their text along.
-                said_tokens = resolve.value("previous_text_tokens", self.start.options, self.args)
-                spoken = []  # the pieces' texts so far, in their order, when they go one after the other
+                # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots.
                 piece = 0
                 while (item := await self.pending.get()) is not None:
                     piece += 1
                     if dictation:
                         pcm, speech = item
-                        slot = (piece - 1) % slots if slots > 1 else None
-                        if said_tokens:
-                            tasks.append(asyncio.ensure_future(self.piece_after(
-                                tasks[-1] if tasks else None, dictation, spoken, said_tokens, pcm, piece, speech, slot)))
-                        else:
-                            tasks.append(asyncio.ensure_future(dictation.piece(pcm, piece, speech, slot=slot)))
+                        tasks.append(asyncio.ensure_future(
+                            dictation.piece(pcm, piece, speech, slot=(piece - 1) % slots if slots > 1 else None)))
                 for task in tasks:  # in the order of the pieces
                     try:
                         text = await task
@@ -301,18 +294,6 @@ class Session:
                 for t in tasks + others:
                     with contextlib.suppress(BaseException):
                         await t
-
-    @staticmethod
-    async def piece_after(before, dictation, spoken, said_tokens, pcm, piece, speech, slot):
-        """A piece once the piece `before` it has its text: the end of the texts so far goes with it, and its own text
-        joins them. A piece before it that failed gives no text and stops nothing."""
-        if before is not None:
-            with contextlib.suppress(Exception):
-                await before
-        text = await dictation.piece(pcm, piece, speech, slot=slot,
-                                     said=prompt.said_before(spoken, said_tokens, dictation.weights))
-        spoken.append(text)
-        return text
 
     # The whole recording
 

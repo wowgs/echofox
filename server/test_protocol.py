@@ -103,23 +103,11 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
         self.args.piece_seconds = 5  # 12 s: two pieces; the second slot is warmed once 5 s are heard
         self.args.cut_while_speaking = False  # both pieces are cut at the stop
-        self.args.previous_text_tokens = 0  # a piece does not wait for the text of the one before it
         stub, got = await self.run_stream(START, (LOUD + QUIET) * 6, model=TwoSlots)
         self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["slot 0", "slot 1"])  # the pieces' order
         self.assertEqual(stub.warmed, [0, 1])
         self.assertEqual(sorted(stub.order[:2]), [("start", 0), ("start", 1)])  # both at once, one per slot
         self.assertEqual(stub.order[2:], [("end", 1), ("end", 0)])
-
-    async def test_a_piece_takes_the_end_of_the_text_before_it_after_the_text_that_the_slot_holds(self):
-        self.args.piece_seconds, self.args.cut_while_speaking = 5, False  # 12 s: two pieces, cut at the stop
-        self.args.previous_text_tokens = 2  # with a token a character of the default weights: the last word whole
-        stub, got = await self.run_stream(START, (LOUD + QUIET) * 6)
-        first, second = [c[1] for c in stub.calls]
-        self.assertNotIn("<previous_speech>", first)
-        # The tail before the prompt (no context here), so that the instructions are the last before the audio; the
-        # stub's text of piece 1 is "gemma-e4b piece 1"
-        self.assertEqual(second, "<previous_speech>1</previous_speech>\n\n" + first)
-        self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["gemma-e4b piece 1", "gemma-e4b piece 2"])
 
     async def test_pieces_are_cut_while_the_speaker_talks_and_the_rest_at_the_stop(self):
         self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
