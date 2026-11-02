@@ -10,17 +10,25 @@ markdown-it-py parses the text (CommonMark with GitHub's tables, strikethrough a
 link or a mark is the parser's answer, escapes included. Code blocks and HTML go (code is not speech). Inline code
 keeps its text when it is a term: an identifier, a file, a flag, a short command (the terms the speaker says). It goes
 when it is code: a URL, more than CODE_WORDS words, any of CODE_CHARS (JSON, calls, assignments, shell pipes), or
-no letter or digit at all (`**`). Links keep their text, bare URLs (with their scheme) and e-mail addresses go, images keep their alt text. A table's header
+no letter or digit at all (`**`). A link of any scheme keeps its text, and only its text, with one exception: a link to a
+file (a file: URL or a path without a scheme) also gives the file's name, when its text does not name it. The name is
+the last part of the path, without the query, the fragment (#L12) and a line suffix (:12), and with %-escapes decoded:
+it is the text when the link has none, else it follows the text in brackets. Bare URLs (with their scheme) and e-mail
+addresses go, images keep their alt text. A table's header
 row goes; each other row becomes "first cell: the other cells." Each sentence made from a heading, list item or table
 row starts with a capital letter, as prose does, unless its first word is written with a small one on purpose
 (iPhone, macOS, a.py, snake_case).
 """
 import re
+import urllib.parse
 
 from markdown_it import MarkdownIt
 
 MD = MarkdownIt("gfm-like")
 MD.linkify.set({"fuzzy_link": False})  # a link needs its scheme: a.py, github.com are words a speaker says
+MD.validateLink = lambda url: True  # markdown-it refuses file:, javascript: and data: links; only their text is kept
+SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+LINE = re.compile(r"(?::\d+){1,2}$")  # a.py:12, a.py:12:5
 CODE_CHARS = set("{}[]();=<>\"'|\\$`")
 CODE_WORDS = 3
 BARE_LINKS = {"linkify", "autolink"}  # the markup of a link the text did not name
@@ -36,6 +44,16 @@ def code_text(content):
     return t
 
 
+def file_name(href):
+    """The name of the file a link points to, or "" if it is not a file link (another scheme, an anchor only)."""
+    if href.lower().startswith("file:"):
+        href = href[5:]
+    elif SCHEME.match(href):
+        return ""
+    path = urllib.parse.unquote(re.split(r"[?#]", href, maxsplit=1)[0]).rstrip("/")
+    return LINE.sub("", path.rsplit("/", 1)[-1])
+
+
 def tidy(s):
     """The prose around what went: no brackets left empty, no space before a stop."""
     s = re.sub(r"\(\s*(?:[,;]\s*)*\)", "", s)
@@ -48,12 +66,17 @@ def tidy(s):
 
 def text_of(inline):
     """The words of an inline token."""
-    out, in_bare_link = [], False
+    out, in_bare_link, link = [], False, None  # link: the file name of the open link and where its text starts
     for c in inline.children or []:
         if c.type == "link_open":
             in_bare_link = c.markup in BARE_LINKS
+            link = None if in_bare_link else (file_name(str(c.attrs.get("href") or "")), len(out))
         elif c.type == "link_close":
-            in_bare_link = False
+            if link and link[0]:
+                text = "".join(out[link[1]:]).strip()
+                if link[0].lower() not in text.lower():
+                    out.append(f" ({link[0]})" if text else link[0])
+            in_bare_link, link = False, None
         elif in_bare_link:
             continue
         elif c.type == "text":

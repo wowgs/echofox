@@ -109,7 +109,7 @@ Put adapters in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOF
 
 The loader checks the manifest, interface version, and adapter class. It does not isolate the code: adapters run with your user permissions, so only install code you trust.
 
-`adapters/markdown.py` converts Markdown to plain text. It removes code blocks, HTML, and bare links, but keeps inline terms such as identifiers, filenames, flags, and short commands.
+`adapters/markdown.py` converts Markdown to plain text. It removes code blocks, HTML, and bare links, but keeps inline terms such as identifiers, filenames, flags, and short commands. A link of any scheme keeps only its text. A link to a file (a `file:` URL or a path without a scheme) also gives the name of the file when its text does not name it: the name takes the place of an empty text, or follows the text in brackets. The name is the last part of the path, with `%`-escapes decoded and without the query, the fragment (`#L12`) and a line suffix (`:12`). For example, `[план](file:///Users/a/My%20Plan.md#L3)` becomes "план (My Plan.md)".
 
 ## Inspect the selected conversation
 

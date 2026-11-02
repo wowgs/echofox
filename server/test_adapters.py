@@ -166,6 +166,20 @@ class CleanTest(Fixture):
               "| Звук \\| громкость | вверх\\|вниз |\n\n\\*Звёздочка\\* и X\\_C.")
         self.assertEqual(adapters.markdown.plain(md), "Media.\nЗвук | громкость: вверх|вниз.\n*Звёздочка* и X_C.")
 
+    def test_links_of_any_scheme_keep_their_text_and_file_links_name_their_file(self):
+        plain = adapters.markdown.plain
+        self.assertEqual(plain("[Сайт](https://a.b/c?d=1), [почта](mailto:a@b.c), [код](javascript:x()), [верх](#top)."),
+                         "Сайт, почта, код, верх.")
+        # The file's name: without the query, the fragment and the line, %-escapes decoded; in brackets after a text
+        # that does not name it, in place of no text
+        self.assertEqual(plain("Смотри [план](file:///Users/a/My%20Plan.md#L3-L9), [](server/x.py:12:5), "
+                               "[конфиг](~/.echofox/config.json?raw=1) и [папку](docs/)."),
+                         "Смотри план (My Plan.md), x.py, конфиг (config.json) и папку (docs).")
+        self.assertEqual(plain("Правка в [`settings.py`](server/settings.py#L40) и [docs/a.md:5](docs/a.md#L5)."),
+                         "Правка в settings.py и docs/a.md:5.")
+        # Bare URLs go, as before; a file: URL too
+        self.assertEqual(plain("Ссылка <https://q.r>, https://s.t и <file:///tmp/a.txt>."), "Ссылка, и.")
+
     def test_a_word_with_a_small_letter_on_purpose_stays_small(self):
         md = "- iPhone можно подключить\n- macOS: тесты\n- a.py изменён\n- обычный пункт"
         self.assertEqual(adapters.markdown.plain(md), "iPhone можно подключить.\nmacOS: тесты.\na.py изменён.\nОбычный пункт.")
