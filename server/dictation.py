@@ -51,10 +51,11 @@ def context_options(adapter, server):
     return (getattr(server, "adapter_options", None) or {}).get(adapter) or {}
 
 
-def context_header(about):
+def context_header(about, documents=False):
     """What the model reads before the context: where the speaker writes, as the adapter says it."""
-    return (f"The speaker is writing into {about or 'a conversation'}. Between <context> and </context> are its terms "
-            "and latest messages, oldest first: they show names and words the speaker may use. They are not the "
+    return (f"The speaker is writing into {about or 'a conversation'}. Between <context> and </context> are its terms"
+            + (", the files open beside it" if documents else "")
+            + " and latest messages, oldest first: they show names and words the speaker may use. They are not the "
             "speech: do not transcribe or repeat them.")
 
 
@@ -92,9 +93,25 @@ class Dictation:
         return tuning.resolve(self.options, adapters.registry.context_defaults(name), context_options(name, self.server),
                               client=self.client)
 
+    def _documents(self, documents, budget):
+        """The documents as they fit `budget` tokens, in their order, each from its start: those that fit whole, then
+        the start of the next one, if at least NEWEST_TAIL_MIN_TOKENS of it fit."""
+        kept = []
+        for d in documents:
+            block = f"File {d['name']}:\n{d['text']}"
+            if len(self.m.tokenize("\n\n".join(kept + [block]))) <= budget:
+                kept.append(block)
+                continue
+            left = budget - (len(self.m.tokenize("\n\n".join(kept) + "\n\n")) if kept else 0)
+            if left > NEWEST_TAIL_MIN_TOKENS:
+                kept.append(self.m.detokenize(self.m.tokenize(block)[:left - 2]) + "…")
+            break
+        return kept
+
     def _build(self, context):
-        """The text before the audio: the context within the token budget, then the prompt. The context's settings are
-        its adapter's (adapter_options)."""
+        """The text before the audio: the context within the token budgets, then the prompt. The context's settings
+        are its adapter's (adapter_options). The documents have a budget of their own and are read from their start;
+        the messages fill the chat budget from the newest."""
         if not context:
             return
         options = self.adapter_options(context.get("adapter"))
@@ -115,15 +132,21 @@ class Dictation:
         if not kept and lines and left > NEWEST_TAIL_MIN_TOKENS:  # the newest message alone is too long: its end
             ids = self.m.tokenize(lines[0])
             kept = ["…" + self.m.detokenize(ids[-(left - 2):])]
-        if not kept and not terms:
+        documents = [d for d in context.get("documents") or [] if isinstance(d, dict)]
+        if tuning.value("prose_only", options, self.server):
+            documents = [{**d, "text": t} for d in documents if (t := adapters.prose(str(d.get("text", ""))))]
+        docs_budget = tuning.value("chat_documents_token_budget", options, self.server)
+        docs = self._documents(documents, docs_budget) if docs_budget else []
+        if not kept and not terms and not docs:
             return
-        parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + list(reversed(kept))
+        parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + docs + list(reversed(kept))
                  + ["</context>"])
-        block = context_header(context.get("about")) + "\n\n" + "\n\n".join(parts)
+        block = context_header(context.get("about"), bool(docs)) + "\n\n" + "\n\n".join(parts)
         self.text = block + "\n\n" + self.prompt
         self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
-                     "chat_terms": len(terms), "chat_budget": budget}
+                     "chat_documents": len(docs), "chat_terms": len(terms), "chat_budget": budget,
+                     "chat_documents_budget": docs_budget}
 
     async def prepare(self, context=None):
         """Builds the text before the audio."""

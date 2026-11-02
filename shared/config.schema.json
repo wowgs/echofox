@@ -46,6 +46,7 @@
           "enabled": {"type": "boolean"},
           "chatHistoryTokenBudget": {"type": "integer"},
           "chatTermsTokenBudget": {"type": "integer"},
+          "chatDocumentsTokenBudget": {"type": "integer"},
           "proseOnly": {"type": "boolean"}
         }
       }

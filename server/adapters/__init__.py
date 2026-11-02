@@ -81,13 +81,15 @@ class Adapter(abc.ABC):
         """What the speaker writes into, or None:
         {"about": what it is, told to the model ("a chat with Anna in a messenger"),
          "messages": [{"from": who wrote it, told to the model, "text": …}], newest first,
+         "documents": [{"name": the file's name, told to the model, "text": …}], the files open beside the
+                      conversation, the most relevant first, optional,
          "terms": names and words of this place (contacts, project names), optional,
          "source": where it was read, for the record, optional,
          "details": the adapter's own fields, for the record, optional}"""
 
     @abc.abstractmethod
     def clean(self, text):
-        """A message's text as plain prose for the model: no markup of the app; "" drops the message."""
+        """A message's or a document's text as plain prose for the model: no markup of the app; "" drops it."""
 
 
 def names(text):
@@ -186,9 +188,10 @@ def claims(focus, hints=None, enabled=None, errors=None):
 
 def context(focus, hints=None, enabled=None):
     """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
-    newest first and cleaned, "terms": the adapter's own terms, then the frequent ones of the cleaned messages,
-    "errors": what failed in the adapters}; without "messages" if the surest adapter found nothing or failed; None if no
-    enabled adapter claims the focus (with none enabled: the base mode, no context)."""
+    newest first and cleaned, "documents": [{"name", "text"}] cleaned, "terms": the adapter's own terms, then the
+    frequent ones of the cleaned messages, "errors": what failed in the adapters}; without "messages", "documents" or
+    "terms" if the surest adapter gave none or failed; None if no enabled adapter claims the focus (with none enabled:
+    the base mode, no context). A document without a name, or empty once cleaned, is left out."""
     errors = []
     ranked = claims(focus, hints, enabled, errors)
     if not ranked:
@@ -200,8 +203,8 @@ def context(focus, hints=None, enabled=None):
         return {**out, "errors": errors + [found]}
     found = dict(found or {})
     out.update({k: found[k] for k in ("about", "source", "details") if found.get(k)})
+    messages = []
     if isinstance(found.get("messages"), list):
-        messages = []
         for m in found["messages"]:
             if not isinstance(m, dict):
                 continue
@@ -211,9 +214,25 @@ def context(focus, hints=None, enabled=None):
                 break  # a clean that fails once fails for all; the context goes without the rest
             if t:
                 messages.append({"from": str(m.get("from") or ""), "text": t})
-        own = [t for t in found.get("terms") or [] if isinstance(t, str)]
-        out["terms"] = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
         out["messages"] = messages  # whole: the lines that are not prose go later, if the adapter keeps only prose
+    if isinstance(found.get("documents"), list):
+        documents = []
+        for d in found["documents"]:
+            name = d.get("name") if isinstance(d, dict) else None
+            if not isinstance(name, str) or not name.strip():
+                continue
+            status, t = _guarded(a, "clean", a.clean, str(d.get("text") or ""))
+            if status == "error":
+                errors.append(t)
+                break  # as for the messages: the context goes without the rest of the documents
+            if t:
+                documents.append({"name": name.strip(), "text": t})
+        if documents:
+            out["documents"] = documents
+    own = [t for t in found.get("terms") or [] if isinstance(t, str)]
+    found_terms = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
+    if found_terms:
+        out["terms"] = found_terms  # also without messages: the names of a place help on their own
     if errors:
         out["errors"] = errors
     return out

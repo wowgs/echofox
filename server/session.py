@@ -178,12 +178,14 @@ class Session:
             log.error("recording %s: no context: %s", self.id, "; ".join(found["errors"]))
         self.chat.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source", "details",
                                                 "errors") if found.get(k)})
-        chat = found if found.get("messages") else None
+        chat = found if found.get("messages") or found.get("documents") or found.get("terms") else None
         if chat:
-            self.chat.update(messages=len(chat["messages"]), terms=len(chat["terms"]))
+            self.chat.update(messages=len(chat.get("messages") or []), documents=len(chat.get("documents") or []),
+                             terms=len(chat.get("terms") or []))
         log.info("recording %s: adapter %s (%s), context %s", self.id, found.get("adapter", "none"),
                  found.get("reason", "no adapter claims it"),
-                 f"{found.get('source') or found.get('about')}, {len(chat['messages'])} messages" if chat else "none")
+                 f"{found.get('source') or found.get('about')}, {self.chat['messages']} messages, "
+                 f"{self.chat['documents']} files, {self.chat['terms']} terms" if chat else "none")
         return chat
 
     async def warm_slots(self, dictation, slots):
@@ -297,6 +299,7 @@ class Session:
                            language=self.start.language, prompt=self.meta["prompt"], options=self.start.options,
                            audio_seconds=round(self.heard_seconds, 2), stop_reason=self.stop_reason,
                            adapter=self.chat.get("adapter"), context_messages=self.chat.get("messages"),
+                           context_documents=self.chat.get("documents"),
                            pieces_while_speaking=self.live_pieces,
                            seconds_left_at_stop=round(seconds(len(self.audio) - self.cut_frame * FRAME_BYTES), 2),
                            done_after_stop_seconds=round(time.monotonic() - self.stopped_at, 3))

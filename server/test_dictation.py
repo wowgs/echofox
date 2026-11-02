@@ -125,6 +125,27 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
         self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
 
+    async def test_documents_have_their_own_budget_and_are_read_from_their_start(self):
+        d = self.dictation({"chat_history_token_budget": 12, "chat_terms_token_budget": 3,
+                            "chat_documents_token_budget": 40})
+        long = " ".join(["word"] * 100)
+        chat = {"messages": [{"from": "Assistant", "text": "new reply here"}],
+                "documents": [{"name": "a.md", "text": "first file text"},  # 5 tokens with its header
+                              {"name": "b.md", "text": long}, {"name": "c.md", "text": "never reached"}]}
+        await d.prepare(chat)
+        self.assertIn("File a.md:\nfirst file text\n\n", d.text)
+        start = d.text.index("first file text") + len("first file text\n\n")
+        cut = d.text[start:d.text.index("\n\nAssistant: new reply here")]
+        self.assertTrue(cut.endswith("…") and len(cut.split()) == 40 - 5 - 2, cut)  # b.md's start, what fits
+        self.assertNotIn("never reached", d.text)
+        self.assertIn("the files open beside it", d.text)
+        self.assertEqual(self.metrics("prepare")[0]["chat_documents"], 2)
+        # Only terms: the context still goes
+        d = self.dictation({"chat_history_token_budget": 12, "chat_terms_token_budget": 3})
+        await d.prepare({"terms": ["GitHub"]})
+        self.assertIn("Terms: GitHub", d.text)
+        self.assertNotIn("files open", d.text)
+
     async def test_english_speech_gets_no_terms_since_every_word_of_it_is_one(self):
         chat = {"messages": [{"from": "Anna", "text": "hello there"}], "terms": ["GitHub"]}
         for language, terms in (("en-GB", False), ("ru", True)):

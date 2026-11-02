@@ -21,6 +21,7 @@ Context is placed before the recognition prompt, between `<context>` and `</cont
 
 - A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
 - Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency. English speech gets no terms: every English word would be one.
+- The files open beside the conversation, if the adapter gives them. They have a budget of their own. Each file is read from its start, in the adapter's order, until the budget ends; the last file can be cut.
 - The newest messages that fit the adapter's budget, arranged from oldest to newest.
 
 Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.
@@ -33,7 +34,8 @@ Each adapter supplies defaults in its manifest. Override them in its config entr
 |---|---|---|---|
 | `chatHistoryTokenBudget` | Total context budget in tokens; at least 1 | 1000 | 2000 |
 | `chatTermsTokenBudget` | The largest part of the total budget that terms may use; the rest goes to messages | 200 | 200 |
-| `proseOnly` | Exclude lines made mostly of digits and symbols | on | on |
+| `chatDocumentsTokenBudget` | The budget of the open files, apart from the total budget | 1000 | 1000 |
+| `proseOnly` | Exclude lines made mostly of digits and symbols, from the messages and the files | on | on |
 
 Use `enabled` to turn an adapter on or off; both built-in adapters are off in a new config. Budgets use the selected model’s tokenizer.
 
@@ -102,11 +104,12 @@ For these apps of an enabled adapter (the info's `electronApps`), and for no oth
 
 ```
 claim(focus, hints)   -> Claim(adapter, confidence 0..1, reason) | None
-context(focus, hints) -> {about, messages: [{from, text}] newest first, terms?, source?, details?} | None
-clean(text)           -> str   ("" drops the message)
+context(focus, hints) -> {about, messages: [{from, text}] newest first, documents?: [{name, text}],
+                          terms?, source?, details?} | None
+clean(text)           -> str   ("" drops the message or the document)
 ```
 
-`focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `terms` are the names and words of the conversation. `source` and `details` are saved as recording metadata, not sent to the model.
+`focus` contains the snapshot; `hints` contains client-supplied information. `about` tells the model where you write. `from` is who wrote each message. `documents` are the files open beside the conversation, the most relevant first, and `name` is the file's name, told to the model. `clean` cleans each message and each document. The server leaves out a document that is not an object, has no name, or is empty after `clean`. If `clean` fails, the error goes to the recording's errors, and the documents after it are left out; the messages are handled the same way. `terms` are the names and words of the conversation; they reach the model even when there are no messages. `source` and `details` are saved as recording metadata, not sent to the model.
 
 Put adapters in `~/Library/Application Support/EchoFox/adapters/`, or set `ECHOFOX_ADAPTERS` to use another folder. An adapter with the same name as a built-in one replaces it. Enable it in the config; the server reloads changed adapter files automatically.
 

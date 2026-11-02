@@ -96,6 +96,8 @@ KNOBS = [
          low=1, unit="tokens"),
     Knob("chatTermsTokenBudget", "chat_terms_token_budget", int, 100, "adapter", "context", "advanced",
          "Names and terms", "The part of the chat context for them.", low=0, unit="tokens"),
+    Knob("chatDocumentsTokenBudget", "chat_documents_token_budget", int, 1000, "adapter", "context", "advanced",
+         "Open files", "Files open beside the chat, read from their start.", low=0, unit="tokens"),
     Knob("proseOnly", "prose_only", bool, True, "adapter", "context", "advanced", "Only sentences",
          "Skips tables, paths and other lines of symbols."),
 ]

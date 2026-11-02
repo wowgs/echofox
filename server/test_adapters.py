@@ -7,6 +7,7 @@ import tempfile
 import time
 import sys
 import unittest
+from unittest import mock
 
 import adapters
 from adapters import markdown, registry  # noqa: F401
@@ -192,6 +193,30 @@ class CleanTest(Fixture):
         self.assertEqual(c["terms"], ["FocusSnapshot"])
         for p in registry.packages().values():
             self.assertIsInstance(p.adapter, adapters.Adapter)
+
+    def test_documents_are_cleaned_and_terms_stay_without_messages(self):
+        class Docs(adapters.Adapter):
+            name = "docs"
+            def claim(self, f, h): return adapters.Claim("docs", 1.0, "test")
+            def context(self, f, h): return self.found
+            def clean(self, t):
+                if t == "boom":
+                    raise RuntimeError("boom")
+                return t.strip()
+        a = Docs()
+        a.found = {"terms": ["Anna"], "documents": [
+            {"name": " a.md ", "text": " One. "}, {"text": "no name"}, {"name": "", "text": "empty name"}, "a string",
+            {"name": "empty.md", "text": "   "}, {"name": "b.md", "text": "Two."}]}
+        with mock.patch.object(registry, "enabled", lambda names: [a]):
+            c = adapters.context({}, {}, ["docs"])
+            self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}, {"name": "b.md", "text": "Two."}])
+            self.assertEqual(c["terms"], ["Anna"])  # no messages: the adapter's terms stay
+            self.assertNotIn("messages", c)
+            a.found = {"documents": [{"name": "a.md", "text": "One."}, {"name": "x", "text": "boom"},
+                                     {"name": "c.md", "text": "Three."}]}
+            c = adapters.context({}, {}, ["docs"])
+            self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}])  # none after the failed clean
+            self.assertIn("docs.clean: RuntimeError: boom", c["errors"])
 
     def test_an_adapter_without_clean_cannot_be_made(self):
         class NoClean(adapters.Adapter):
