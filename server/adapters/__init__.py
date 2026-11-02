@@ -1,49 +1,52 @@
-"""Adapters: one per target app (the app with the input box). They give the model the context of the conversation
-the dictation goes into. Each adapter is a package of its own (adapters/registry.py), and works only when the config enables it;
-with none enabled, dictation runs in the base mode, without context. Adapters import this module for Adapter, Claim,
-bundle and terms, and adapters.markdown for chat apps that write Markdown. The core knows no vendor: everything about
-one platform's apps lives in that platform's adapter.
+"""Adapters: one per product the speaker writes into (Claude Code, Claude chats, Telegram). They give the model the
+context of the conversation the dictation goes into. Each adapter is a package of its own (adapters/registry.py), and
+works only when the config enables it; with none enabled, dictation runs in the base mode, without context. Adapters
+import this module for Adapter, SPEAKER, place, terms and prose, adapters.screen for what they read of the snapshot,
+and adapters.markdown for apps that write Markdown. The core knows no vendor: everything about one platform's apps
+lives in that platform's adapter.
 
-The core (session.py) never looks at the screen. The client takes one focus snapshot when the dictation starts
-(see SNAPSHOT below) and sends it in the start message. The core asks every adapter whether the snapshot is its own,
-and how sure it is (claim), and gives the recording to the surest one; if none claims it, the dictation runs without
-context. Only that adapter finds the session and builds its context. Every adapter has clean(text): the core passes
-each message of the context through it before the message goes to the model, and takes the terms from the cleaned
-messages; the lines that are not prose (prose()) go afterwards when the adapter's setting proseOnly says so. clean makes the app's text plain prose (adapters/markdown.py has why).
+A product has surfaces: the places where it is on the screen (the Code tab of Claude Desktop, a terminal's tab), in
+the adapter's manifest (docs/adapter-surfaces.md). The core (session.py) never looks at the screen. The client sends
+the identity of the focused app, window and page in the start message (IDENTITY below). The core matches it with the
+surfaces of the enabled adapters (adapters/surfaces.py) and answers at once with a read request: for each matched
+surface, what the client reads there and up to which budget. The client reads only that and sends it in a content
+message (CONTENT below). Then each matched surface's adapter gets its snapshot, the identity and the content of that
+surface, and gives the context of the conversation there, or None when it is not sure. With no context, or with more
+than one, the dictation runs without context. Every adapter has clean(text): the core passes each message and document
+of the context through it before it goes to the model, and takes the terms from the cleaned messages; the lines that
+are not prose (prose()) go afterwards when the adapter's setting proseOnly says so. clean makes the app's text plain
+prose (adapters/markdown.py has why).
 
-FOCUS, the snapshot the client sends (service fields, never the text of input fields; screen content only for the
-apps of an enabled adapter whose manifest asks for it in "screen"):
+IDENTITY, the same fields for every app of an enabled adapter's surfaces, and nothing for other apps:
   {"app": {"bundleId", "pid", "name"},
-   "window": {"title", "document"},
-   "focused": {"role", "subrole", "title", "description", "identifier", "domClasses": [...]},
-   "ancestors": [{"role", "subrole", "title", "description", "identifier", "domClasses", "url"}, ...]  (up the tree),
-   "webArea": {"url", "title"}  (the nearest web area above the focused element, if any),
-   "processes": [{"pid", "name", "cwd"}, ...]  (the app's child processes),
-   "focusedFrame": {"x", "y", "width", "height"}  (the focused element on the screen, with "lists"),
-   "lists": [{"frame": {"x", "y", "width", "height"}, "rowCount": rows in the list,
-              "rows": [{"text": the row's accessible text, "columns": [the titles of its cells]}, ...]}, ...]
-            (screen "lists": the lists in the focused window, in the tree's order; the last rows of each, oldest
-             first, up to the screen's token budget),
-   "outline": {"root": "webArea" or "window", "complete": whether it has the whole tree under the root,
-               "nodes": [{"depth": under the root (the root is 0), "role", "subrole", "title", "description",
-                          "domClasses", "text": the shown text of a static text or a list marker,
-                          "skipped": true for an element of the manifest's outlineSkip, whose children are left out},
-                         ...]}
-            (screen "outline": the tree under the web area of the focused element, or under the focused window
-             without one, in the tree's order, flat with depths; read from its end up to the screen's token budget: a
-             chat's newest messages are there. Never the text of input fields.)}
+   "window": {"title"}  (the focused window),
+   "webArea": {"url", "title"}  (the nearest web area above the focused element, if any)}
+CONTENT, for each surface, only what its manifest's "screen" declares (never the text of input fields):
+  "outline": {"root": "webArea" or "window", "complete": whether it has the whole tree under the root,
+              "nodes": [{"depth": under the root (the root is 0), "role", "subrole", "title", "description",
+                         "domClasses", "text": the shown text of a static text or a list marker,
+                         "skipped": true for an element of the surface's skip list, sent without its children}, ...]}
+             (the tree under the web area of the focused element, or under the focused window without one, in the
+              tree's order, flat with depths; read from its end up to the surface's budget: a chat's newest messages
+              are there)
+  "lists": [{"frame": {"x", "y", "width", "height"}, "rowCount": rows in the list,
+             "rows": [{"text": the row's accessible text, "columns": [the titles of its cells]}, ...]}, ...]
+           (the lists in the focused window, in the tree's order; the last rows of each, oldest first, up to the
+            surface's budget), with "focusedFrame": {"x", "y", "width", "height"}, the focused element on the screen
+  "processes": [{"pid", "name"}, ...]  (the app's child processes)
 Any part may be missing.
 """
 import abc
 import asyncio
 import concurrent.futures
 import logging
+import os
 import re
 import time
-from dataclasses import dataclass
 
 log = logging.getLogger("gemma_voice")
 
+SPEAKER = "the speaker"  # who wrote the speaker's own messages, told to the model
 SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+")
 LETTERS = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")  # a word of letters in any script, with its hyphens
 PROSE_LETTERS = 0.6  # a line is prose when this share of its characters are letters; not tuned
@@ -54,31 +57,17 @@ STOP = set(("a an and are as at be but by can do for from has have he i if in is
             "you your ok okay yes just like also all any one two how why get got go see let use").split())
 
 
-@dataclass
-class Claim:
-    """An adapter's answer to "is this snapshot yours": 0 < confidence <= 1, and why."""
-    adapter: str
-    confidence: float
-    reason: str
-
-
 class Adapter(abc.ABC):
-    """An adapter: claim, context, clean, for any app whose content tells what the speaker is writing about: a chat
-    with an assistant, a messenger, mail, a document, a terminal. An adapter without one of the three cannot be made.
-    The registry sets `name` and `manifest` from the adapter's adapter.json.
-
-    focus: the snapshot (FOCUS above). hints: what the client knows and sends in the start message, as it is; the core
-    does not read it (an old client's "sessions" arrive as hints["sessions"])."""
+    """An adapter: context and clean, for a product whose content tells what the speaker is writing about: a chat
+    with an assistant, a messenger, mail, a document, a terminal. An adapter without one of the two cannot be made.
+    The registry sets `name` and `manifest` from the adapter's adapter.json."""
     name = ""
     manifest = {}
 
     @abc.abstractmethod
-    def claim(self, focus, hints):
-        """Claim(adapter, confidence 0..1, reason), or None if the focus is not this adapter's."""
-
-    @abc.abstractmethod
-    def context(self, focus, hints):
-        """What the speaker writes into, or None:
+    def context(self, surface, snapshot):
+        """The conversation on the surface `surface` (its id in the manifest) that the snapshot shows, or None when
+        it is not found for sure. snapshot: the identity and that surface's content (IDENTITY, CONTENT above).
         {"about": what it is, told to the model ("a chat with Anna in a messenger"),
          "messages": [{"from": who wrote it, told to the model, "text": …}], newest first,
          "documents": [{"name": the file's name, told to the model, "text": …}], the files open beside the
@@ -89,7 +78,14 @@ class Adapter(abc.ABC):
 
     @abc.abstractmethod
     def clean(self, text):
-        """A message's or a document's text as plain prose for the model: no markup of the app; "" drops it."""
+        """A message's or a document's text as plain prose for the model: no markup of the app; "" drops it. The one
+        place where an adapter changes a text."""
+
+
+def place(default, env):
+    """A fixed place on the disk that an adapter reads: $<env> if it is set (the tests set it), else `default` with
+    ~ expanded. Read at each call."""
+    return os.environ.get(env) or os.path.expanduser(default)
 
 
 def names(text):
@@ -130,11 +126,8 @@ def prose(text):
     return "\n".join(keep)
 
 
-def bundle(snapshot):
-    return ((snapshot or {}).get("app") or {}).get("bundleId")
-
-
-from . import registry  # noqa: E402
+from . import registry, screen, surfaces  # noqa: E402,F401  (they import Adapter from here)
+from .surfaces import match, needs_content, read  # noqa: E402,F401
 
 
 # The adapters run on a thread of their own, not in the event loop's default pool, which the model's requests use:
@@ -144,7 +137,7 @@ _worker = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefi
 _running = None  # the call that runs now, a concurrent.futures.Future
 
 
-async def context_until(focus, hints=None, enabled=None, stop=None):
+async def context_until(identity, matched, content=None, stop=None):
     """context(), on the adapters' thread, until it ends or `stop` (an asyncio.Event: the end of the recording) is set,
     whichever is first. No context by the stop gives {"errors": […]}; so does a call while an earlier one still runs.
     The adapters' time is logged when they end, also after the stop."""
@@ -152,7 +145,7 @@ async def context_until(focus, hints=None, enabled=None, stop=None):
     if _running is not None and not _running.done():
         return {"errors": ["the adapters still run for an earlier dictation"]}
     started = time.monotonic()
-    _running = _worker.submit(context, focus, hints, enabled)
+    _running = _worker.submit(context, identity, matched, content)
     _running.add_done_callback(lambda f: log.info("adapters: %.3f s", time.monotonic() - started))
     found = asyncio.ensure_future(asyncio.shield(asyncio.wrap_future(_running)))
     stopped = asyncio.ensure_future(stop.wait()) if stop is not None else None
@@ -177,63 +170,52 @@ def _guarded(adapter, what, fn, *args):
         return "error", f"{adapter.name}.{what}: {type(e).__name__}: {e}"
 
 
-def claims(focus, hints=None, enabled=None, errors=None):
-    """The claims of the enabled adapters (`enabled`: names; None: every working adapter), the surest first. An adapter
-    whose claim fails is left out; its error goes to `errors`."""
-    names = enabled if enabled is not None else list(registry.packages())
+def _cleaned(a, items, errors, keep):
+    """The items' texts through the adapter's clean, as keep(item, text) makes them; an item that cleans to "" goes.
+    A clean that fails once fails for all: its error goes to `errors`, and the items after it go."""
     out = []
-    for a in registry.enabled(names):
-        status, c = _guarded(a, "claim", a.claim, focus or {}, hints or {})
+    for item in items:
+        status, t = _guarded(a, "clean", a.clean, str(item.get("text") or ""))
         if status == "error":
-            if errors is not None:
-                errors.append(c)
-            continue
-        if isinstance(c, Claim):
-            out.append((a, Claim(a.name, min(1.0, max(0.0, float(c.confidence))), str(c.reason))))
-    return sorted(out, key=lambda ac: -ac[1].confidence)
+            errors.append(t)
+            break
+        if t:
+            out.append(keep(item, t))
+    return out
 
 
-def context(focus, hints=None, enabled=None):
-    """What the dictation goes into: {"adapter", "confidence", "reason", "about", "source", "details", "messages":
-    newest first and cleaned, "documents": [{"name", "text"}] cleaned, "terms": the adapter's own terms, then the
-    frequent ones of the cleaned messages, "errors": what failed in the adapters}; without "messages", "documents" or
-    "terms" if the surest adapter gave none or failed; None if no enabled adapter claims the focus (with none enabled:
-    the base mode, no context). A document without a name, or empty once cleaned, is left out."""
-    errors = []
-    ranked = claims(focus, hints, enabled, errors)
-    if not ranked:
+def context(identity, matched, content=None):
+    """What the dictation goes into, from the matched surfaces (adapters.match) and the content the client sent for
+    them, by surface name: {"adapter", "surface": <adapter>/<id>, "about", "source", "details", "messages": newest
+    first and cleaned, "documents": [{"name", "text"}] cleaned, "terms": the adapter's own terms, then the frequent
+    ones of the cleaned messages, "errors": what failed in the adapters}; without "messages", "documents" or "terms"
+    if the adapter gave none. None if no surface gives a context (with none matched: the base mode, no context). More
+    than one context: none of them, and the errors name the surfaces, since the conversation is not certain. A
+    document without a name, or empty once cleaned, is left out."""
+    errors, found = [], []
+    for s in matched:
+        status, got = _guarded(s.impl, "context", s.impl.context, s.id, s.snapshot(identity, (content or {}).get(s.name)))
+        if status == "error":
+            errors.append(got)
+        elif got:
+            found.append((s, dict(got)))
+    if len(found) > 1:
+        return {"errors": errors + [f"more than one surface gave a context: {', '.join(s.name for s, _ in found)}; "
+                                    "the dictation goes without context"]}
+    if not found:
         return {"errors": errors} if errors else None
-    a, c = ranked[0]
-    out = {"adapter": c.adapter, "confidence": c.confidence, "reason": c.reason}
-    status, found = _guarded(a, "context", a.context, focus or {}, hints or {})
-    if status == "error":
-        return {**out, "errors": errors + [found]}
-    found = dict(found or {})
-    out.update({k: found[k] for k in ("about", "source", "details") if found.get(k)})
+    s, found = found[0]
+    a = s.impl
+    out = {"adapter": s.adapter, "surface": s.name, **{k: found[k] for k in ("about", "source", "details") if found.get(k)}}
     messages = []
     if isinstance(found.get("messages"), list):
-        for m in found["messages"]:
-            if not isinstance(m, dict):
-                continue
-            status, t = _guarded(a, "clean", a.clean, str(m.get("text") or ""))
-            if status == "error":
-                errors.append(t)
-                break  # a clean that fails once fails for all; the context goes without the rest
-            if t:
-                messages.append({"from": str(m.get("from") or ""), "text": t})
+        messages = _cleaned(a, [m for m in found["messages"] if isinstance(m, dict)], errors,
+                            lambda m, t: {"from": str(m.get("from") or ""), "text": t})
         out["messages"] = messages  # whole: the lines that are not prose go later, if the adapter keeps only prose
     if isinstance(found.get("documents"), list):
-        documents = []
-        for d in found["documents"]:
-            name = d.get("name") if isinstance(d, dict) else None
-            if not isinstance(name, str) or not name.strip():
-                continue
-            status, t = _guarded(a, "clean", a.clean, str(d.get("text") or ""))
-            if status == "error":
-                errors.append(t)
-                break  # as for the messages: the context goes without the rest of the documents
-            if t:
-                documents.append({"name": name.strip(), "text": t})
+        named = [d for d in found["documents"]
+                 if isinstance(d, dict) and isinstance(d.get("name"), str) and d["name"].strip()]
+        documents = _cleaned(a, named, errors, lambda d, t: {"name": d["name"].strip(), "text": t})
         if documents:
             out["documents"] = documents
     own = [t for t in found.get("terms") or [] if isinstance(t, str)]

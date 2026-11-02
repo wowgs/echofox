@@ -4,14 +4,16 @@ VS Code extension, the CLI) write each session to ~/.claude/projects/<project>/<
 Kept from a transcript: only Claude's final replies, the text of each turn's last answer (stop_reason "end_turn").
 Dropped: the user's own messages (the model copied the user's previous dictation into the next transcription instead
 of transcribing it, 2026-10-14), Claude's texts between tool calls (stop_reason "tool_use"), tool calls and their
-results, thinking, attachments, meta messages (isMeta), subagents (isSidechain), and tags that Claude Code adds
-(<system-reminder>, <ide_…>, <command-…>, <task-notification>).
+results, thinking, attachments, meta messages (isMeta) and subagents (isSidechain). The replies are read as they are
+written; the adapter's clean takes out the tags that Claude Code adds (strip_tags: <system-reminder>, <ide_…>,
+<command-…>, <task-notification>).
 """
 import glob
 import json
 import os
 import re
 
+from adapters import place
 
 _TAG_NAMES = r"system-reminder|ide_[\w-]+|command-[\w-]+|local-command-[\w-]+|task-notification"
 TAGS = re.compile(rf"<({_TAG_NAMES}|user-prompt-submit-hook)\b[^>]*>[\s\S]*?</\1>")
@@ -19,24 +21,22 @@ LONE_TAG = re.compile(rf"</?({_TAG_NAMES})\b[^>]*>")
 
 
 def projects():
-    """~/.claude/projects, or $ECHOFOX_PROJECTS (read at each call, so that tests can set it)."""
-    return os.environ.get("ECHOFOX_PROJECTS") or os.path.expanduser("~/.claude/projects")
+    return place("~/.claude/projects", "ECHOFOX_PROJECTS")
 
 
-def session_file(session_ids, root=None):
-    """The transcript of the newest of these sessions: {"file", "session"}, or None."""
+def session_file(session_id, root=None):
+    """The transcript of this session: {"file", "session"}, the newest file if it is in several projects, or None."""
+    if not isinstance(session_id, str) or not re.fullmatch(r"[\w-]+", session_id):
+        return None
     best = None
-    for sid in set(session_ids or []):
-        if not isinstance(sid, str) or not re.fullmatch(r"[\w-]+", sid):
+    for f in glob.glob(os.path.join(glob.escape(root or projects()), "*", f"{session_id}.jsonl")):
+        try:
+            mtime = os.stat(f).st_mtime
+        except OSError:
             continue
-        for f in glob.glob(os.path.join(glob.escape(root or projects()), "*", f"{sid}.jsonl")):
-            try:
-                mtime = os.stat(f).st_mtime
-            except OSError:
-                continue
-            if best is None or mtime > best[0]:
-                best = (mtime, f, sid)
-    return {"file": best[1], "session": best[2]} if best else None
+        if best is None or mtime > best[0]:
+            best = (mtime, f)
+    return found(best[1]) if best else None
 
 
 def found(f):
@@ -75,6 +75,7 @@ def titled_session(title, root=None):
 
 
 def strip_tags(text):
+    """The text without the tags that Claude Code adds, and without what is inside a pair of them."""
     return LONE_TAG.sub("", TAGS.sub("", text)).strip()
 
 
@@ -90,9 +91,9 @@ def message(line):
     if e.get("type") != "assistant" or e.get("isMeta") or e.get("isSidechain") or not isinstance(m, dict) \
             or m.get("stop_reason") != "end_turn" or not isinstance(m.get("content"), list):
         return None
-    text = strip_tags("\n\n".join(b["text"] for b in m["content"]
-                             if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)))
-    return {"role": "assistant", "text": text, "id": m.get("id")} if text else None
+    text = "\n\n".join(b["text"] for b in m["content"]
+                       if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str))
+    return {"role": "assistant", "text": text, "id": m.get("id")} if text.strip() else None
 
 
 def read(f):

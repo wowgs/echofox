@@ -1,23 +1,60 @@
-"""Tests of the adapters (adapters/): Claude Code transcripts, Claude Desktop, and the choice of an adapter.
-Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of the adapters (adapters/): the surfaces and their matching, the snapshot's helpers, Claude Code transcripts,
+Claude Desktop, Claude chats, Telegram, and the check tool. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
+import importlib.util
 import json
 import os
+import pathlib
 import tempfile
+import threading
 import time
 import sys
 import unittest
-from unittest import mock
 
 import adapters
-from adapters import markdown, registry  # noqa: F401
+from adapters import markdown, registry, screen, surfaces  # noqa: F401
 
 DESKTOP = "com.anthropic.claudefordesktop"
+TELEGRAM = "com.tdesktop.Telegram"
 
 
 def reply(mid, text, stop="end_turn", **extra):
     return {"type": "assistant", **extra, "message": {"id": mid, "stop_reason": stop, "content": [{"type": "text", "text": text}]}}
+
+
+def as_file(snapshot):
+    """A test's snapshot ({"identity", "content": the parts read}) as macos echofox-snapshot prints it when its flags
+    say what to read: the parts under the surface "snapshot"."""
+    return {"identity": snapshot.get("identity") or {}, "content": {"surfaces": {"snapshot": snapshot.get("content") or {}}}}
+
+
+def found(snapshot, enabled=None):
+    """What the server finds for a test's snapshot ({"identity", "content": the parts read}): the identity matched with
+    the surfaces of the enabled adapters (None: every working one), each given the parts, as the app sends them for
+    each surface."""
+    identity, content = snapshot.get("identity") or {}, snapshot.get("content") or {}
+    matched = adapters.match(identity, enabled if enabled is not None else list(registry.packages()))
+    return adapters.context(identity, matched, {s.name: content for s in matched})
+
+
+def merged(snapshot):
+    """The snapshot an adapter gets: the identity and the content."""
+    return {**snapshot.get("content", {}), **snapshot["identity"]}
+
+
+def as_sent(nodes, skip):
+    """The outline's nodes as the app sends them for a surface with this skip list: an element whose role or one of
+    whose DOM classes is in it goes in marked "skipped", without its children."""
+    out, under = [], None
+    for n in nodes:
+        if under is not None and n["depth"] > under:
+            continue
+        under = None
+        if n.get("role") in skip or set(n.get("domClasses") or []) & set(skip):
+            n, under = {**n, "skipped": True}, n["depth"]
+        out.append(n)
+    return out
 
 
 class Fixture(unittest.TestCase):
@@ -56,32 +93,55 @@ class Fixture(unittest.TestCase):
         with open(os.path.join(self.store, "org", "account", f"{desktop_id}.json"), "w") as fh:
             json.dump({"sessionId": desktop_id, "cliSessionId": cli, "cwd": cwd, "title": title}, fh)
 
-
     def claude_running(self, pid, session, name, entrypoint="cli"):
         """A running claude's file in ~/.claude/sessions, as Claude Code 2.1.300 writes it (the fields used)."""
         with open(os.path.join(self.running, f"{pid}.json"), "w", encoding="utf-8") as fh:
             json.dump({"pid": pid, "sessionId": session, "cwd": "/x", "kind": "interactive", "entrypoint": entrypoint,
                        "name": name, "status": "idle"}, fh, ensure_ascii=False)
 
+    def install(self, name, manifest=None, code=None):
+        """A user's adapter in the adapters' folder; by default one surface in com.example.app."""
+        d = os.path.join(os.environ["ECHOFOX_ADAPTERS"], name)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "adapter.json"), "w") as f:
+            json.dump(manifest if manifest is not None else user_manifest(name), f)
+        with open(os.path.join(d, "adapter.py"), "w") as f:
+            f.write(code if code is not None else (
+                "from adapters import Adapter\n"
+                "class Mine(Adapter):\n"
+                "    def context(self, surface, snapshot):\n"
+                "        return {'about': 'a chat with Anna', 'terms': ['Anna'], 'messages': [{'from': 'Anna', 'text': '**Hello** Kubernetes'}]}\n"
+                "    def clean(self, text):\n"
+                "        return text.replace('**', '')\n"))
+
+
+def user_manifest(name, **surface):
+    return {"name": name, "version": "1.0", "interface": 3,
+            "surfaces": [{"id": "main", "title": "Main", "apps": ["com.example.app"], **surface}]}
+
+
+EXAMPLE = {"identity": {"app": {"bundleId": "com.example.app"}}}
+
 
 def terminal(title, pids, bundle="com.mitchellh.ghostty"):
-    """A full snapshot of a terminal: the focused window's title and the app's processes."""
-    return {"app": {"bundleId": bundle, "pid": 100}, "window": {"title": title},
-            "processes": [{"pid": 101, "name": "zsh"}] + [{"pid": p, "name": "claude"} for p in pids]}
+    """A recorded snapshot of a terminal: the focused window's title and the app's processes."""
+    return {"identity": {"app": {"bundleId": bundle, "pid": 100}, "window": {"title": title}},
+            "content": {"processes": [{"pid": 101, "name": "zsh"}] + [{"pid": p, "name": "claude"} for p in pids]}}
 
 
 def code_tab(desktop_id, title="Local Speech", panel=None):
-    tab = {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/epitaxy/{desktop_id}",
-                                                    "title": f"{title} - Claude Code"}}
+    tab = {"identity": {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/epitaxy/{desktop_id}",
+                                                                  "title": f"{title} - Claude Code"}},
+           "content": {}}
     if panel is not None:
-        tab["outline"] = {"root": "webArea", "complete": True, "nodes": panel}
+        tab["content"]["outline"] = {"root": "webArea", "complete": True, "nodes": panel}
     return tab
 
 
 def files_panel(*path):
     """The end of the Code tab's outline with the Files panel showing the file at `path` under the session's folder, as
-    in a snapshot of Claude Desktop (2026-11-02), with the claude-code manifest's outlineSkip: the file tree and the
-    page go in without their children."""
+    in a snapshot of Claude Desktop (2026-11-02), with the claude-code surface's skip list: the file tree and the page
+    go in without their children."""
     return [{"depth": 15, "role": "AXGroup", "subrole": "AXLandmarkRegion", "description": "Files"},
             {"depth": 16, "role": "AXGroup"},
             {"depth": 17, "role": "AXOutline", "description": "Project files", "domClasses": ["group/file-tree"], "skipped": True},
@@ -93,9 +153,97 @@ def files_panel(*path):
            {"depth": 2, "role": "AXGroup", "subrole": "AXEmptyGroup"}]
 
 
+class SurfacesTest(Fixture):
+    def test_a_pattern_matches_the_whole_value_and_only_star_is_special(self):
+        m = surfaces.matches
+        self.assertTrue(m("https://claude.ai/chat/*", "https://claude.ai/chat/0f8e"))
+        self.assertTrue(m("https://claude.ai/chat/*", "https://claude.ai/chat/"))       # * may be empty
+        self.assertFalse(m("https://claude.ai/chat/*", "https://claude.ai/chats/1"))
+        self.assertFalse(m("https://claude.ai/chat/*", "x https://claude.ai/chat/1"))   # the whole value
+        self.assertFalse(m("claude.ai", "claudeXai"))                                    # . is a dot
+        self.assertTrue(m("✳ *(1)?", "✳ Radio\nline(1)?"))                               # ( ) ? are themselves
+        self.assertTrue(m("*", ""))
+        self.assertFalse(m("*", None))
+
+    def test_the_identity_matches_the_surfaces_of_the_enabled_adapters_by_app_address_and_title(self):
+        self.install("titled", user_manifest("titled", match={"title": "✳ *"}))
+        on = list(registry.packages())
+        names = lambda identity, enabled=on: [s.name for s in adapters.match(identity, enabled)]  # noqa: E731
+        code = {"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/epitaxy/local_1"}}
+        self.assertEqual(names(code), ["claude-code/desktop"])                   # not claude-chat's, another address
+        self.assertEqual(names({**code, "webArea": {"url": "https://claude.ai/chat/1"}}), ["claude-chat/desktop"])
+        self.assertEqual(names({"app": {"bundleId": DESKTOP}}), [])                # a rule without its value fails
+        self.assertEqual(names({"app": {"bundleId": "com.apple.Terminal"}}), ["claude-code/terminal"])
+        self.assertEqual(names(code, ["claude-chat", "telegram"]), [])             # claude-code is not enabled
+        self.assertEqual(names({}), [])
+        self.assertEqual(names({"app": {"bundleId": "com.example.app"}, "window": {"title": "✳ Radio"}}),
+                         ["titled/main"])
+        self.assertEqual(names({"app": {"bundleId": "com.example.app"}, "window": {"title": "Radio"}}), [])
+
+    def test_the_read_request_resolves_each_budget_and_names_what_is_read(self):
+        identity = lambda bundle, url=None: {"app": {"bundleId": bundle}, **({"webArea": {"url": url}} if url else {})}  # noqa: E731
+        on = ["claude-code", "claude-chat", "telegram"]
+        budget = lambda adapter, key: f"{adapter}.{key}"  # noqa: E731
+        self.assertEqual(adapters.read(adapters.match(identity(DESKTOP, "https://claude.ai/epitaxy/local_1"), on), budget),
+                         [{"surface": "claude-code/desktop", "outline": {
+                             "skip": ["epitaxy-document-page", "group/file-tree", "epitaxy-chat-panel-body"],
+                             "budget": None}}])  # no budget key: only the structural limits
+        self.assertEqual(adapters.read(adapters.match(identity(DESKTOP, "https://claude.ai/chat/1"), on), budget),
+                         [{"surface": "claude-chat/desktop", "outline": {
+                             "skip": ["AXButton", "sr-only", "group/morph", "group/tag"],
+                             "budget": "claude-chat.chatHistoryTokenBudget"}}])
+        self.assertEqual(adapters.read(adapters.match(identity(TELEGRAM), on), budget),
+                         [{"surface": "telegram/desktop", "lists": {"budget": "telegram.chatHistoryTokenBudget"}}])
+        self.assertEqual(adapters.read(adapters.match(identity("com.mitchellh.ghostty"), on), budget),
+                         [{"surface": "claude-code/terminal", "processes": {}}])
+
+    def test_a_surface_gets_only_the_parts_it_declares_and_the_identity_wins(self):
+        tg = adapters.match({"app": {"bundleId": TELEGRAM}}, ["telegram"])[0]
+        sent = {"lists": [], "focusedFrame": {"x": 1}, "outline": {"nodes": []}, "processes": [], "app": {"bundleId": "x"}}
+        self.assertEqual(tg.snapshot({"app": {"bundleId": TELEGRAM}}, sent),
+                         {"app": {"bundleId": TELEGRAM}, "lists": [], "focusedFrame": {"x": 1}})
+        asked = [{"surface": "a/b", "lists": {"budget": 5}}, {"surface": "c/d", "processes": {}}]
+        self.assertEqual(surfaces.answer(asked, {"surfaces": {"snapshot": sent}}),  # read by echofox-snapshot's flags
+                         {"a/b": {"lists": [], "focusedFrame": {"x": 1}}, "c/d": {"processes": []}})
+        self.assertEqual(surfaces.answer(asked, {"surfaces": {"c/d": sent}}),  # read by surface (--read)
+                         {"a/b": {}, "c/d": {"processes": []}})
+
+    def test_more_than_one_context_is_no_context_and_the_errors_name_the_surfaces(self):
+        self.install("one")
+        self.install("two")
+        c = found(EXAMPLE, ["one", "two"])
+        self.assertNotIn("messages", c)
+        self.assertIn("one/main, two/main", c["errors"][0])
+        self.assertEqual(found(EXAMPLE, ["one"])["surface"], "one/main")
+
+
+class ScreenTest(unittest.TestCase):
+    NODES = [{"depth": 0, "role": "AXWebArea"}, {"depth": 1, "role": "AXGroup"}, {"depth": 2, "text": "a"},
+             {"depth": 1, "role": "AXButton", "skipped": True}, {"depth": 1, "role": "AXGroup"},
+             {"depth": 2, "text": "b"}, {"depth": 3, "text": "c"}, {"depth": 2, "skipped": True}, {"depth": 3, "text": "x"}]
+
+    def test_the_outlines_walk_by_depth(self):
+        n = self.NODES
+        self.assertEqual((screen.end(n, 1), screen.end(n, 4), screen.end(n, 0)), (3, 9, 9))
+        self.assertEqual(screen.children(n, 0), [1, 3, 4])
+        self.assertEqual(screen.children(n, 4), [5, 7])
+        self.assertEqual(screen.siblings_before(n, 4), [3, 1])
+        self.assertEqual(screen.siblings_before(n, 7), [5])
+        self.assertEqual([x.get("text") for x in screen.shown(n, 4) if x.get("text")], ["b", "c"])  # not under a skipped one
+
+    def test_the_identitys_fields_and_a_broken_part_reads_as_empty(self):
+        s = {"app": {"bundleId": "b"}, "window": {"title": "T"}, "webArea": {"url": "u", "title": "w"},
+             "processes": [{"pid": 3}, "x", {"pid": "4"}], "lists": [{"rows": []}, {"rows": [1]}]}
+        self.assertEqual((screen.bundle(s), screen.window_title(s), screen.web_url(s), screen.web_title(s)),
+                         ("b", "T", "u", "w"))
+        self.assertEqual((screen.pids(s), screen.lists(s)), ({3}, [{"rows": [1]}]))
+        broken = {"app": "x", "window": None, "webArea": 1, "outline": [], "processes": "p"}
+        self.assertEqual((screen.bundle(broken), screen.window_title(broken), screen.web_area(broken),
+                          screen.nodes(broken), screen.processes(broken)), (None, "", {}, [], []))
+
+
 class ClaudeCodeTest(Fixture):
-    def test_only_claudes_final_replies_newest_first_from_the_newest_of_the_sessions(self):
-        self.put("a", "old", [reply("m0", "старая сессия")], age=60)
+    def test_only_claudes_final_replies_newest_first(self):
         self.put("b", "new", [
             {"type": "custom-title", "customTitle": "Тесты"},
             {"type": "user", "message": {"content": "Запусти тесты в CI"}},                       # the user: never
@@ -105,23 +253,31 @@ class ClaudeCodeTest(Fixture):
             reply("m2", "Тесты прошли: npm test, 38 из 38."),                                     # a final reply
             reply("m2", "<system-reminder>noise</system-reminder>Коммит в master готов."),         # same reply, next line
             reply("m3", "subagent", isSidechain=True),
+            reply("m5", "<task-notification>done</task-notification>"),                          # only a tag: cleaned away
             {"type": "user", "message": {"content": [{"type": "text", "text": "Закоммить в master"}]}},
             reply("m4", "Запушил в master."),
         ], tail="not json\n")
-        c = adapters.context({}, {"sessions": ["old", "new", "../x"]})
+        self.claude_running(201, "new", "Тесты")
+        c = found(terminal("✳ Тесты", [201]))
         d = c["details"]
-        self.assertEqual((c["adapter"], d["session"], d["how"], d["title"]), ("claude-code", "new", "named sessions", "Тесты"))
-        self.assertTrue(c["about"] and c["source"].startswith("named sessions: "))
+        self.assertEqual((c["adapter"], c["surface"], d["session"], d["how"], d["title"]),
+                         ("claude-code", "claude-code/terminal", "new", "terminal title", "Тесты"))
+        self.assertTrue(c["about"] and c["source"].startswith("terminal title: "))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Запушил в master."},
                                          {"from": "Claude", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
         self.assertEqual(c["terms"], ["master", "test", "npm"])
-        self.assertNotIn("messages", adapters.context({}, {"sessions": ["none"]}))  # claimed, but no such transcript
+
+    def test_clean_takes_out_claude_codes_tags(self):
+        clean = registry.packages()["claude-code"].adapter.clean
+        self.assertEqual(clean("<system-reminder>x</system-reminder>**Готово**<ide_opened_file>a</ide_opened_file>"),
+                         "Готово")
+        self.assertEqual(clean("<command-name>/x</command-name>"), "")
 
     def test_no_session_is_guessed_from_the_app_alone(self):
         self.put("b", "code", [reply("m2", "из VS Code", entrypoint="claude-vscode")])
-        for app in ("com.microsoft.VSCode", "com.mitchellh.ghostty", "com.tdesktop.Telegram"):
-            self.assertIsNone(adapters.context({"app": {"bundleId": app}}), app)
-        self.assertIsNone(adapters.context({}))
+        for app in ("com.microsoft.VSCode", "com.mitchellh.ghostty", TELEGRAM, DESKTOP):
+            self.assertIsNone(found({"identity": {"app": {"bundleId": app}}}), app)
+        self.assertIsNone(found({}))
 
     def test_terms_are_latin_script_words_the_most_frequent_first_without_common_english_words(self):
         self.assertEqual(adapters.terms(["the GitHub Actions and GitHub", "use node.js, CI/CD and /Users/x/y/z.js"]),
@@ -216,7 +372,8 @@ class CleanTest(Fixture):
     def test_every_adapter_cleans_and_the_terms_come_from_clean_text(self):
         self.put("a", "s", [reply("m1", "Смотри `FocusSnapshot`:\n```\nlet secretVar = take()\n```"),
                             reply("m2", "```\nonlyCode()\n```")])
-        c = adapters.context({}, {"sessions": ["s"]})
+        self.claude_running(201, "s", "Код")
+        c = found(terminal("✳ Код", [201]))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Смотри FocusSnapshot:"}])  # code only: dropped
         self.assertEqual(c["terms"], ["FocusSnapshot"])
         for p in registry.packages().values():
@@ -225,31 +382,30 @@ class CleanTest(Fixture):
     def test_documents_are_cleaned_and_terms_stay_without_messages(self):
         class Docs(adapters.Adapter):
             name = "docs"
-            def claim(self, f, h): return adapters.Claim("docs", 1.0, "test")
-            def context(self, f, h): return self.found
+            def context(self, surface, snapshot): return self.found
             def clean(self, t):
                 if t == "boom":
                     raise RuntimeError("boom")
                 return t.strip()
         a = Docs()
+        on = [surfaces.Surface("docs", "main", {"id": "main", "title": "Main", "apps": ["x"]}, a)]
         a.found = {"terms": ["Anna"], "documents": [
             {"name": " a.md ", "text": " One. "}, {"text": "no name"}, {"name": "", "text": "empty name"}, "a string",
             {"name": "empty.md", "text": "   "}, {"name": "b.md", "text": "Two."}]}
-        with mock.patch.object(registry, "enabled", lambda names: [a]):
-            c = adapters.context({}, {}, ["docs"])
-            self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}, {"name": "b.md", "text": "Two."}])
-            self.assertEqual(c["terms"], ["Anna"])  # no messages: the adapter's terms stay
-            self.assertNotIn("messages", c)
-            a.found = {"documents": [{"name": "a.md", "text": "One."}, {"name": "x", "text": "boom"},
-                                     {"name": "c.md", "text": "Three."}]}
-            c = adapters.context({}, {}, ["docs"])
-            self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}])  # none after the failed clean
-            self.assertIn("docs.clean: RuntimeError: boom", c["errors"])
+        c = adapters.context({}, on)
+        self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}, {"name": "b.md", "text": "Two."}])
+        self.assertEqual(c["terms"], ["Anna"])  # no messages: the adapter's terms stay
+        self.assertNotIn("messages", c)
+        a.found = {"documents": [{"name": "a.md", "text": "One."}, {"name": "x", "text": "boom"},
+                                 {"name": "c.md", "text": "Three."}]}
+        with self.assertLogs("gemma_voice", "ERROR"):
+            c = adapters.context({}, on)
+        self.assertEqual(c["documents"], [{"name": "a.md", "text": "One."}])  # none after the failed clean
+        self.assertIn("docs.clean: RuntimeError: boom", c["errors"])
 
     def test_an_adapter_without_clean_cannot_be_made(self):
         class NoClean(adapters.Adapter):
-            def claim(self, snapshot, sessions): return None
-            def context(self, snapshot, sessions): return None
+            def context(self, surface, snapshot): return None
         with self.assertRaises(TypeError):
             NoClean()
 
@@ -263,100 +419,106 @@ class ClaudeTerminalTest(Fixture):
         self.put("a", "s-map", [reply("m2", "Карта собрана.")])
         self.claude_running(201, "s-radio", "Radio Physics")
         self.claude_running(202, "s-map", "Карта эфира")
-        c = adapters.context(terminal("✳ Карта эфира", [201, 202]))
+        c = found(terminal("✳ Карта эфира", [201, 202]))
         self.assertEqual((c["adapter"], c["details"]["session"], c["details"]["how"], c["messages"][0]["text"]),
                          ("claude-code", "s-map", "terminal title", "Карта собрана."))
         # Terminal adds the folder, the command and the size around the title
-        c = adapters.context(terminal("alex — ✳ Radio Physics — claude --resume s-radio — 120×30", [201, 202],
-                                      "com.apple.Terminal"))
+        c = found(terminal("alex — ✳ Radio Physics — claude --resume s-radio — 120×30", [201, 202], "com.apple.Terminal"))
         self.assertEqual(c["details"]["session"], "s-radio")
 
-    def test_no_sure_session_is_no_claim(self):
+    def test_no_sure_session_is_no_context(self):
         self.put("a", "s1", [reply("m1", "x")])
         self.claude_running(201, "s1", "Radio")
         self.claude_running(202, "s2", "Radio Physics")
         self.claude_running(203, "s3", "Desk", entrypoint="claude-desktop")
-        self.assertIsNone(adapters.context(terminal("✳ Radio Physics", [201, 202])))  # both names are in the title
-        self.assertIsNone(adapters.context(terminal("~", [201])))                     # a shell tab
-        self.assertIsNone(adapters.context(terminal("✳ Radio", [])))                  # in tmux: not the app's process
-        self.assertIsNone(adapters.context(terminal("✳ Desk", [203])))                # Desktop's, not a terminal's
-        self.assertIsNone(adapters.context(terminal("✳ Radio", [201], "com.example.editor")))  # not a terminal
+        self.assertIsNone(found(terminal("✳ Radio Physics", [201, 202])))  # both names are in the title
+        self.assertIsNone(found(terminal("~", [201])))                     # a shell tab
+        self.assertIsNone(found(terminal("✳ Radio", [])))                  # in tmux: not the app's process
+        self.assertIsNone(found(terminal("✳ Desk", [203])))                # Desktop's, not a terminal's
+        self.assertIsNone(found(terminal("✳ Radio", [201], "com.example.editor")))  # not a terminal
 
-    def test_a_new_session_without_a_transcript_is_claimed_with_no_messages(self):
+    def test_a_new_session_without_a_transcript_is_found_with_no_messages(self):
         self.claude_running(201, "fresh", "echofox-cc")
-        c = adapters.context(terminal("✳ echofox-cc", [201]))
+        c = found(terminal("✳ echofox-cc", [201]))
         self.assertEqual((c["adapter"], c["details"]["session"]), ("claude-code", "fresh"))
         self.assertNotIn("messages", c)
 
 
 class UserAdapterTest(Fixture):
-    def install(self, name, manifest=None, code=None):
-        d = os.path.join(os.environ["ECHOFOX_ADAPTERS"], name)
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "adapter.json"), "w") as f:
-            json.dump(manifest if manifest is not None else {"name": name, "interface": 2, "apps": ["com.example.app"]}, f)
-        with open(os.path.join(d, "adapter.py"), "w") as f:
-            f.write(code if code is not None else (
-                "from adapters import Adapter, Claim\n"
-                "class Mine(Adapter):\n"
-                "    def claim(self, focus, hints):\n"
-                "        return Claim(self.name, 0.95, 'mine') if (focus.get('app') or {}).get('bundleId') == 'com.example.app' else None\n"
-                "    def context(self, focus, hints):\n"
-                "        return {'about': 'a chat with Anna', 'terms': ['Anna'], 'messages': [{'from': 'Anna', 'text': '**Hello** Kubernetes'}]}\n"
-                "    def clean(self, text):\n"
-                "        return text.replace('**', '')\n"))
-
     def test_a_users_adapter_in_the_folder_works_once_enabled(self):
         self.install("mine")
-        snap = {"app": {"bundleId": "com.example.app"}}
-        self.assertIsNone(adapters.context(snap, enabled=[]))  # the base mode: no adapter enabled
-        self.assertIsNone(adapters.context(snap, enabled=["claude-code"]))
-        c = adapters.context(snap, enabled=["mine"])
-        self.assertEqual((c["adapter"], c["about"], c["messages"][0], c["terms"]),
-                         ("mine", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"}, ["Anna", "Kubernetes", "Hello"]))
-        self.assertEqual(registry.packages()["mine"].info({"mine"})["apps"], ["com.example.app"])
+        self.assertIsNone(found(EXAMPLE, enabled=[]))  # the base mode: no adapter enabled
+        self.assertIsNone(found(EXAMPLE, enabled=["claude-code"]))
+        c = found(EXAMPLE, enabled=["mine"])
+        self.assertEqual((c["adapter"], c["surface"], c["about"], c["messages"][0], c["terms"]),
+                         ("mine", "mine/main", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"},
+                          ["Anna", "Kubernetes", "Hello"]))
+        self.assertEqual(registry.packages()["mine"].info({"mine"})["surfaces"], user_manifest("mine")["surfaces"])
 
     def test_a_broken_adapter_stops_only_itself_and_says_why(self):
-        self.install("old", {"name": "old", "interface": 0})
+        self.install("old", {"name": "old", "version": "1.0", "interface": 2, "apps": ["com.example.app"]})
         self.install("twice", code="from adapters import Adapter\n")
         self.install("crash", code="raise RuntimeError('boom')\n")
-        found = registry.packages()
-        self.assertIn("interface 0", found["old"].error)
-        self.assertIn("0 subclasses", found["twice"].error)
-        self.assertIn("boom", found["crash"].error)
-        self.assertIsNotNone(found["claude-code"].adapter)
-        self.assertFalse(found["crash"].info({"crash"})["enabled"])
+        found_ = registry.packages()
+        self.assertIn("interface 2", found_["old"].error)
+        self.assertEqual(found_["old"].info({"old"})["surfaces"], [])
+        self.assertIn("0 subclasses", found_["twice"].error)
+        self.assertIn("boom", found_["crash"].error)
+        self.assertIsNotNone(found_["claude-code"].adapter)
+        self.assertFalse(found_["crash"].info({"crash"})["enabled"])
+        self.assertEqual(found(EXAMPLE, ["crash", "old"]), None)  # a broken adapter's surfaces never match
 
-    def test_a_adapter_that_fails_stops_only_itself_and_the_error_is_kept(self):
-        base = ("from adapters import Adapter, Claim\n"
+    def test_a_manifest_follows_the_schemas_rules(self):
+        base = user_manifest("peek")
+        cases = [({**base, "surfaces": []}, "surfaces"),
+                 ({**base, "version": 1}, "version"),
+                 ({**base, "surfaces": [{"id": "Main", "title": "M", "apps": ["x"]}]}, "id"),
+                 ({**base, "surfaces": [{"id": "m", "apps": ["x"]}]}, "title"),
+                 ({**base, "surfaces": [{"id": "m", "title": "M", "apps": []}]}, "apps"),
+                 ({**base, "surfaces": [{"id": "m", "title": "M", "apps": ["x"], "outlineSkip": []}]}, "outlineSkip"),
+                 ({**base, "surfaces": [{"id": "m", "title": "M", "apps": ["x"]}] * 2}, "repeat"),
+                 (user_manifest("peek", match={"address": "x"}), "address"),
+                 (user_manifest("peek", screen={"everything": {}}), "everything"),
+                 (user_manifest("peek", screen={"outline": {"skip": "AXButton"}}), "skip"),
+                 (user_manifest("peek", screen={"lists": {"budget": "proseOnly"}}), "proseOnly"),  # not a token budget
+                 (user_manifest("peek", screen={"lists": {"budget": "pieceSeconds"}}), "pieceSeconds"),  # not the adapter's
+                 (user_manifest("peek", screen={"processes": {"cwd": True}}), "cwd"),
+                 (user_manifest("peek", reads=["~/x"]), "reads"),
+                 (user_manifest("peek", reads=[{"path": "~/x"}]), "what"),
+                 ({**base, "context": {"pieceSeconds": 5}}, "pieceSeconds")]
+        for manifest, why in cases:
+            self.install("peek", manifest)
+            self.assertIn(why, registry.packages()["peek"].error or "", manifest)
+        self.install("peek", user_manifest("peek", treeOnRequest=True, match={"url": "https://x/*", "title": "*"},
+                                           screen={"outline": {"skip": ["AXButton"], "budget": "chatHistoryTokenBudget"},
+                                                   "lists": {}, "processes": {}},
+                                           reads=[{"what": "a file"}, {"path": "~/x", "what": "x"}]))
+        self.assertIsNone(registry.packages()["peek"].error)
+
+    def test_an_adapter_that_fails_stops_only_itself_and_the_error_is_kept(self):
+        base = ("from adapters import Adapter\n"
                 "class P(Adapter):\n"
-                "    def claim(self, focus, hints):\n        {claim}\n"
-                "    def context(self, focus, hints):\n        {context}\n"
+                "    def context(self, surface, snapshot):\n        {context}\n"
                 "    def clean(self, text):\n        {clean}\n")
-        ok = "return Claim(self.name, 0.5, 'x')"
         msgs = "return {'about': 'a', 'messages': [{'from': 'A', 'text': 'one'}, {'from': 'A', 'text': 'two'}]}"
-        self.install("badclaim", code=base.format(claim="raise RuntimeError('claim')", context=msgs, clean="return text"))
-        self.install("good", code=base.format(claim="return Claim(self.name, 2.0, 'sure')", context=msgs, clean="return text"))
+        self.install("badcontext", code=base.format(context="raise KeyError('k')", clean="return text"))
+        self.install("good", code=base.format(context=msgs, clean="return text"))
         with self.assertLogs("gemma_voice", "ERROR") as logs:
-            c = adapters.context({}, enabled=["badclaim", "good"])
-        self.assertIn("adapter badclaim: claim failed", logs.output[0])
-        self.assertEqual((c["adapter"], c["confidence"], len(c["messages"])), ("good", 1.0, 2))  # clamped to 1
-        self.assertIn("badclaim.claim: RuntimeError: claim", c["errors"])
-        self.install("badcontext", code=base.format(claim=ok, context="raise KeyError('k')", clean="return text"))
-        with self.assertLogs("gemma_voice", "ERROR") as logs:
-            c = adapters.context({}, enabled=["badcontext"])
+            c = found(EXAMPLE, ["badcontext", "good"])
         self.assertIn("adapter badcontext: context failed", logs.output[0])
-        self.assertNotIn("messages", c)
+        self.assertEqual((c["adapter"], len(c["messages"])), ("good", 2))
         self.assertIn("badcontext.context: KeyError", c["errors"][0])
-        self.install("badclean", code=base.format(claim=ok, context=msgs, clean="raise ValueError('v')"))
+        with self.assertLogs("gemma_voice", "ERROR"):
+            self.assertEqual(found(EXAMPLE, ["badcontext"]), {"errors": ["badcontext.context: KeyError: 'k'"]})
+        self.install("badclean", code=base.format(context=msgs, clean="raise ValueError('v')"))
         with self.assertLogs("gemma_voice", "ERROR") as logs:
-            c = adapters.context({}, enabled=["badclean"])
+            c = found(EXAMPLE, ["badclean"])
         self.assertIn("adapter badclean: clean failed", logs.output[0])
         self.assertEqual(c["messages"], [])
         self.assertIn("badclean.clean: ValueError: v", c["errors"])
 
     def test_a_users_adapter_replaces_a_built_in_one_of_the_same_name(self):
-        self.install("claude-code", {"name": "claude-code", "interface": 2})
+        self.install("claude-code", user_manifest("claude-code"))
         self.assertFalse(registry.packages()["claude-code"].builtin)
 
 
@@ -365,34 +527,32 @@ class ClaudeDesktopTest(Fixture):
         self.put("a", "cli-1", [{"type": "custom-title", "customTitle": "Local Speech"}, reply("m1", "Готово.")], age=60)
         self.put("b", "other", [reply("m2", "другая сессия", entrypoint="claude-desktop")])  # newer, but not on screen
         self.desktop_record("local_abc", "cli-1", "Local Speech")
-        c = adapters.context(code_tab("local_abc"))
+        c = found(code_tab("local_abc"))
         d = c["details"]
-        self.assertEqual((c["adapter"], c["confidence"], d["how"], d["session"], d["desktopSession"]),
-                         ("claude-code", 1.0, "desktop store", "cli-1", "local_abc"))
+        self.assertEqual((c["adapter"], c["surface"], d["how"], d["session"], d["desktopSession"]),
+                         ("claude-code", "claude-code/desktop", "desktop store", "cli-1", "local_abc"))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Готово."}])
 
     def test_without_a_record_the_title_finds_the_transcript(self):
         self.put("a", "cli-2", [{"type": "custom-title", "customTitle": "Local Speech"}, reply("m1", "По названию.")], age=60)
         self.put("b", "other", [reply("m2", "другая", entrypoint="claude-desktop")])
-        c = adapters.context(code_tab("local_missing"))
+        c = found(code_tab("local_missing"))
         self.assertEqual((c["details"]["how"], c["details"]["session"]), ("title", "cli-2"))
 
-    def test_desktop_without_the_code_tab_in_focus_is_not_claimed(self):
+    def test_desktop_without_the_code_tab_in_focus_gives_no_context(self):
         self.put("b", "newest", [reply("m2", "свежая", entrypoint="claude-desktop")])
-        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}}))  # no Accessibility, another window, …
-        self.assertIsNone(adapters.context({"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}},
-                                           enabled=["claude-code"]))  # a chat is claude-chat's
+        self.assertIsNone(found({"identity": {"app": {"bundleId": DESKTOP}}}))  # no Accessibility, another window, …
+        self.assertIsNone(found({"identity": {"app": {"bundleId": DESKTOP}, "webArea": {"url": "https://claude.ai/chat/1"}}},
+                                enabled=["claude-code"]))  # a chat is claude-chat's
+        self.assertIsNone(found({"identity": {"app": {"bundleId": DESKTOP},
+                                              "webArea": {"url": "https://claude.ai/epitaxy/new"}}}))  # no session id
 
-    def test_a_title_that_several_transcripts_share_gives_no_context(self):
+    def test_a_title_that_several_transcripts_share_gives_no_messages(self):
         for n in ("t1", "t2"):
             self.put("a", n, [{"type": "custom-title", "customTitle": "Same"}, reply("m", "x")])
-        c = adapters.context(code_tab("local_missing", title="Same"))
+        c = found(code_tab("local_missing", title="Same"))
         self.assertEqual(c["adapter"], "claude-code")
         self.assertNotIn("messages", c)
-
-    def test_the_surest_adapter_wins(self):
-        ranked = adapters.claims(code_tab("local_abc"), {"sessions": ["s1"]})
-        self.assertEqual([(c.adapter, c.confidence) for _, c in ranked], [("claude-code", 1.0)])  # one adapter: the Code tab wins over named sessions
 
     def test_the_markdown_file_that_the_files_panel_shows_goes_in_whole_from_the_session_folder(self):
         folder = os.path.join(self.dir.name, "repo")
@@ -403,7 +563,7 @@ class ClaudeDesktopTest(Fixture):
             fh.write("let x = 1\n")
         self.put("a", "cli-1", [reply("m1", "Готово.")])
         self.desktop_record("local_abc", "cli-1", "Local Speech", cwd=folder)
-        c = adapters.context(code_tab("local_abc", panel=files_panel("docs", "reference", "4-app.md")))
+        c = found(code_tab("local_abc", panel=files_panel("docs", "reference", "4-app.md")))
         self.assertEqual(c["documents"], [{"name": "docs/reference/4-app.md",
                                            "text": "Use the Mac app.\nTap right Option to start."}])
         self.assertEqual((c["details"]["openFile"], c["messages"][0]["text"]), ("docs/reference/4-app.md", "Готово."))
@@ -412,7 +572,7 @@ class ClaudeDesktopTest(Fixture):
                       files_panel("..", "repo", "x.md"),      # not under the folder
                       files_panel(),                          # no path before the page
                       files_panel("docs", "reference", "4-app.md")[:-3]):  # no page: the panel shows no file
-            self.assertNotIn("documents", adapters.context(code_tab("local_abc", panel=panel)), panel[-3:])
+            self.assertNotIn("documents", found(code_tab("local_abc", panel=panel)), panel[-3:])
 
     def test_a_link_out_of_the_session_folder_is_not_followed(self):
         folder, outside = os.path.join(self.dir.name, "repo"), os.path.join(self.dir.name, "secret.md")
@@ -421,13 +581,15 @@ class ClaudeDesktopTest(Fixture):
             fh.write("secret\n")
         os.symlink(outside, os.path.join(folder, "notes.md"))
         self.desktop_record("local_abc", "cli-1", "Local Speech", cwd=folder)
-        self.assertNotIn("documents", adapters.context(code_tab("local_abc", panel=files_panel("notes.md"))))
+        self.assertNotIn("documents", found(code_tab("local_abc", panel=files_panel("notes.md"))))
 
     def test_a_bad_desktop_id_reads_no_file(self):
+        registry.packages()  # loads the adapter's package
         self.assertIsNone(sys.modules["echofox_adapter_claude_code.desktop"].record("local_../../etc"))
 
 
 CHAT = "0f8e2a6c-1b3d-4e5f-8a7b-9c0d1e2f3a4b"
+CHAT_SKIP = ["AXButton", "sr-only", "group/morph", "group/tag"]  # the claude-chat surface's skip list
 
 
 def node(depth, role, classes=(), label=None, text=None):
@@ -442,7 +604,7 @@ def node(depth, role, classes=(), label=None, text=None):
 
 
 def chat_message(depth, n, total, own, lines):
-    """A message of a Claude Desktop chat as its outline shows it (measured 2026-10-25, Claude Desktop 3.6556.2)."""
+    """A message of a Claude Desktop chat as its outline has it (measured 2026-10-25, Claude Desktop 3.6556.2)."""
     out = [node(depth, "AXGroup", ["rounded-lg"], f"Message {n} of {total}")]
     heading = ("You said: " if own else "Claude responded: ") + lines[0][:20]
     if own:
@@ -473,67 +635,72 @@ def chat_message(depth, n, total, own, lines):
     return out
 
 
-def chat_focus(messages, complete=True, title="Выгрузка данных"):
+def chat_snapshot(messages, complete=True, title="Выгрузка данных"):
+    """A recorded snapshot of a Claude Desktop chat, its outline as the app sends it for the claude-chat surface."""
     nodes = [node(0, "AXWebArea"), node(1, "AXGroup", label="Sidebar"), node(2, "AXStaticText", text="Recents"),
              node(1, "AXGroup", label="Chat messages")]
     for i, (own, lines) in enumerate(messages, 1):
         nodes += chat_message(2, i, len(messages), own, lines)
     nodes += [node(1, "AXTextArea", ["ProseMirror"], "Write your prompt to Claude")]
-    return {"app": {"bundleId": DESKTOP}, "webArea": {"url": f"https://claude.ai/chat/{CHAT}", "title": f"{title} - Claude"},
-            "outline": {"root": "webArea", "complete": complete, "nodes": nodes}}
+    return {"identity": {"app": {"bundleId": DESKTOP},
+                         "webArea": {"url": f"https://claude.ai/chat/{CHAT}", "title": f"{title} - Claude"}},
+            "content": {"outline": {"root": "webArea", "complete": complete, "nodes": as_sent(nodes, CHAT_SKIP)}}}
 
 
 class ClaudeChatTest(Fixture):
+    def chat(self):
+        registry.packages()  # loads the adapter's package
+        return sys.modules["echofox_adapter_claude_chat.chat"]
+
     def test_a_chat_gives_claudes_replies_newest_first_without_hidden_parts_buttons_and_chips(self):
-        c = adapters.context(chat_focus([(True, ["Как выгрузить данные?"]),
-                                         (False, ["Напишите в поддержку.", "Пишите Data Protection Officer"]),
-                                         (True, ["А кто уже пробовал?"]),
-                                         (False, ["Отчётов нет."])]))
-        self.assertEqual((c["adapter"], c["confidence"], c["details"]["replies"]), ("claude-chat", 1.0, 2))
+        c = found(chat_snapshot([(True, ["Как выгрузить данные?"]),
+                              (False, ["Напишите в поддержку.", "Пишите Data Protection Officer"]),
+                              (True, ["А кто уже пробовал?"]),
+                              (False, ["Отчётов нет."])]))
+        self.assertEqual((c["adapter"], c["surface"], c["details"]["replies"]), ("claude-chat", "claude-chat/desktop", 2))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Отчётов нет."},
                                          {"from": "Claude", "text": "Напишите в поддержку. • Пишите Data Protection Officer"}])  # clean joins the lines
         self.assertEqual(c["about"], "a chat with Claude, an AI assistant, titled “Выгрузка данных”")
 
     def test_the_speakers_messages_are_read_but_left_out_of_the_context(self):
-        chat = sys.modules["echofox_adapter_claude_chat.chat"]
-        found = chat.messages(chat_focus([(True, ["Первая строка", "вторая"]), (False, ["Ответ."])])["outline"])
-        self.assertEqual(found, [{"from": "the speaker", "text": "Первая строка\nвторая"}, {"from": "Claude", "text": "Ответ."}])
+        snapshot = merged(chat_snapshot([(True, ["Первая строка", "вторая"]), (False, ["Ответ."])]))
+        self.assertEqual(self.chat().messages(screen.nodes(snapshot)),
+                         [{"from": "the speaker", "text": "Первая строка\nвторая"}, {"from": "Claude", "text": "Ответ."}])
+
+    def test_the_parser_leaves_out_what_the_app_marked_skipped(self):
+        nodes = merged(chat_snapshot([(False, ["Ответ."])]))["outline"]["nodes"]
+        at = next(i for i, n in enumerate(nodes) if n.get("text") == "Ответ.")
+        nodes[at - 1]["skipped"] = True  # the paragraph's group, as if the skip list named it; its text stays here
+        self.assertEqual(self.chat().messages(nodes), [])
 
     def test_a_cut_outline_skips_the_message_it_starts_in(self):
-        focus = chat_focus([(False, ["Старый ответ."]), (False, ["Новый ответ."])], complete=False)
-        nodes = focus["outline"]["nodes"]
+        focus = chat_snapshot([(False, ["Старый ответ."]), (False, ["Новый ответ."])], complete=False)
+        nodes = focus["content"]["outline"]["nodes"]
         start = next(i for i, n in enumerate(nodes) if n.get("description") == "Message 1 of 2")
-        focus["outline"]["nodes"] = nodes[start + 3:]  # the walk stopped inside message 1
-        c = adapters.context(focus)
+        focus["content"]["outline"]["nodes"] = nodes[start + 3:]  # the walk stopped inside message 1
+        c = found(focus)
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Новый ответ."}])
         self.assertFalse(c["details"]["outlineComplete"])
 
-    def test_a_chat_without_an_outline_is_claimed_with_no_messages(self):
-        focus = chat_focus([])
-        del focus["outline"]
-        c = adapters.context(focus)
+    def test_a_chat_without_an_outline_is_found_with_no_messages(self):
+        focus = chat_snapshot([])
+        del focus["content"]["outline"]
+        c = found(focus)
         self.assertEqual((c["adapter"], c["details"]["replies"]), ("claude-chat", 0))
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-TELEGRAM = "com.tdesktop.Telegram"
 
 
 def tg_row(lines, columns):
     return {"text": "\n".join(lines), "columns": columns}
 
 
-def tg_focus(rows, title="Anna – (3)", others=True):
-    """A Telegram Desktop snapshot as the client sends it: the chat list on the left, the messages above the box."""
+def tg_snapshot(rows, title="Anna – (3)", others=True):
+    """A recorded snapshot of Telegram Desktop: the chat list on the left, the messages above the box."""
     lists = [{"frame": {"x": 540, "y": -847, "width": 972, "height": 1684}, "rowCount": len(rows) + 20, "rows": rows}]
     if others:
         lists.append({"frame": {"x": 0, "y": 124, "width": 540, "height": 26744}, "rowCount": 393,
                       "rows": [tg_row(["Bob", "see you", "Received at 9:00"], ["Sender", "Message", "Time"])] * 5})
-    return {"app": {"bundleId": TELEGRAM}, "window": {"title": title},
-            "focusedFrame": {"x": 590, "y": 847, "width": 826, "height": 31}, "lists": lists}
+    return {"identity": {"app": {"bundleId": TELEGRAM}, "window": {"title": title}},
+            "content": {"focusedFrame": {"x": 590, "y": 847, "width": 826, "height": 31}, "lists": lists}}
 
 
 # Rows as Telegram Desktop's MessageAccessibilityName writes them (see adapters/builtin/telegram/desktop.py).
@@ -550,13 +717,12 @@ TG_ROWS = [
 
 
 class TelegramTest(Fixture):
-    def adapter(self):
-        return registry.packages()["telegram"].adapter
+    def desktop(self):
+        registry.packages()  # loads the adapter's package
+        return sys.modules["echofox_adapter_telegram.desktop"]
 
     def test_the_rows_become_messages_with_the_speakers_own_and_without_the_status(self):
-        self.adapter()  # loads the adapter's package
-        from echofox_adapter_telegram import desktop
-        self.assertEqual(desktop.messages(TG_ROWS), [
+        self.assertEqual(self.desktop().messages(TG_ROWS), [
             {"from": "Anna", "text": "Привет! Как дела с Kubernetes?"},
             {"from": "the speaker", "text": "Всё ок, деплою"},
             {"from": "Anna", "text": "Photo\nСмотри, что вышло в 10:30"},
@@ -565,61 +731,71 @@ class TelegramTest(Fixture):
         ])
 
     def test_the_chat_name_comes_from_the_window_title(self):
-        self.adapter()  # loads the adapter's package
-        from echofox_adapter_telegram import desktop
+        desktop = self.desktop()
         for title, name in [("Anna – (3)", "Anna"), ("(2) Anna", "Anna"), ("Anna @ Work (3)", "Anna"),
                             ("Telegram (5)", None), ("Telegram", None), ("", None), ("Dev team", "Dev team"),
-                            ("\u2068Anna\u2069 \u2013 (3)", "Anna"), ("(2) \u2068Dev team\u2069", "Dev team")]:
+                            ("⁨Anna⁩ – (3)", "Anna"), ("(2) ⁨Dev team⁩", "Dev team")]:
             self.assertEqual(desktop.chat_name(title), name, title)
 
     def test_the_message_list_is_the_one_above_the_input_box(self):
-        self.adapter()  # loads the adapter's package
-        from echofox_adapter_telegram import desktop
-        self.assertIs(desktop.message_list(tg_focus(TG_ROWS))["rows"], TG_ROWS)
-        no_box = tg_focus(TG_ROWS)
-        no_box.pop("focusedFrame")
-        self.assertIs(desktop.message_list(no_box)["rows"], TG_ROWS)  # the widest list
+        desktop = self.desktop()
+        self.assertIs(desktop.message_list(merged(tg_snapshot(TG_ROWS)))["rows"], TG_ROWS)
+        no_box = tg_snapshot(TG_ROWS)
+        no_box["content"].pop("focusedFrame")
+        self.assertIs(desktop.message_list(merged(no_box))["rows"], TG_ROWS)  # the widest list
 
-    def test_telegram_claims_its_window_and_gives_the_open_chat_newest_first(self):
-        found = adapters.context(tg_focus(TG_ROWS), {}, ["telegram", "claude-code", "claude-chat"])
-        self.assertEqual((found["adapter"], found["about"]), ("telegram", "a Telegram chat with Anna"))
-        self.assertEqual([m["text"] for m in found["messages"]][:2], ["Ещё не прочитано", "Первая строка вторая строка"])
-        self.assertEqual(found["terms"][:1], ["Anna"])
-        self.assertEqual(found["details"]["messages"], 5)
-        self.assertIsNone(adapters.context(tg_focus(TG_ROWS), {}, ["claude-code", "claude-chat"]))  # not enabled: the base mode
-        self.assertIsNone(adapters.context({"app": {"bundleId": TELEGRAM}}, {}, ["telegram"]))  # no lists sent
-        self.assertIsNone(adapters.context({**tg_focus(TG_ROWS), "app": {"bundleId": "com.other"}}, {}, ["telegram"]))
+    def test_telegram_gives_the_open_chat_newest_first(self):
+        c = found(tg_snapshot(TG_ROWS), ["telegram", "claude-code", "claude-chat"])
+        self.assertEqual((c["adapter"], c["about"]), ("telegram", "a Telegram chat with Anna"))
+        self.assertEqual([m["text"] for m in c["messages"]][:2], ["Ещё не прочитано", "Первая строка вторая строка"])
+        self.assertEqual(c["terms"][:1], ["Anna"])
+        self.assertEqual(c["details"]["messages"], 5)
+        self.assertIsNone(found(tg_snapshot(TG_ROWS), ["claude-code", "claude-chat"]))  # not enabled: the base mode
+        self.assertIsNone(found({"identity": {"app": {"bundleId": TELEGRAM}}}, ["telegram"]))  # no lists sent
+        self.assertIsNone(found({**tg_snapshot(TG_ROWS), "identity": {"app": {"bundleId": "com.other"}}}, ["telegram"]))
+        self.assertIsNone(found(tg_snapshot([TG_ROWS[0]], others=False), ["telegram"]))  # no message in the window
 
-    def test_a_manifest_may_ask_only_for_screen_parts_the_client_sends(self):
+    def test_the_info_gives_each_adapter_by_its_surfaces(self):
         info = registry.packages()["telegram"].info({"telegram"})
-        self.assertEqual((info["screen"], info["enabled"]), (["lists"], True))
-        d = os.path.join(os.environ["ECHOFOX_ADAPTERS"], "peek")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "adapter.json"), "w") as f:
-            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["everything"]}, f)
-        with open(os.path.join(d, "adapter.py"), "w") as f:
-            f.write("from adapters import Adapter\nclass P(Adapter):\n    def claim(self, f, h): pass\n"
-                    "    def context(self, f, h): pass\n    def clean(self, t): return t\n")
-        self.assertIn("screen", registry.packages()["peek"].error)
-        with open(os.path.join(d, "adapter.json"), "w") as f:
-            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["outline"], "outlineSkip": "AXButton"}, f)
-        self.assertIn("outlineSkip", registry.packages()["peek"].error)
-        with open(os.path.join(d, "adapter.json"), "w") as f:
-            json.dump({"name": "peek", "interface": 2, "apps": ["x"], "screen": ["outline"], "screenApps": ["y"]}, f)
-        self.assertIn("screenApps", registry.packages()["peek"].error)  # not one of its apps
-        chat = registry.packages()["claude-chat"].info({"claude-chat"})
-        self.assertEqual((chat["outlineSkip"], chat["screenApps"]),
-                         (["AXButton", "sr-only", "group/morph", "group/tag"], [DESKTOP]))  # all its apps, without screenApps
-        code = registry.packages()["claude-code"].info({"claude-code"})
-        self.assertEqual((code["screen"], code["screenApps"]), (["outline"], [DESKTOP]))  # not its terminals
+        self.assertEqual((info["surfaces"][0]["screen"], info["enabled"]), ({"lists": {"budget": "chatHistoryTokenBudget"}}, True))
+        code = registry.packages()["claude-code"].info(set())
+        self.assertEqual(([s["id"] for s in code["surfaces"]], code["enabled"]), (["desktop", "terminal"], False))
+
+
+class WhichSessionTest(Fixture):
+    def tool(self):
+        spec = importlib.util.spec_from_file_location(
+            "which_session", pathlib.Path(__file__).parent / "tools" / "which_session.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_it_prints_errors_files_and_no_terms_without_failing(self):
+        report = self.tool().report
+        self.install("broken", code="from adapters import Adapter\nclass B(Adapter):\n"
+                                    "    def context(self, s, n): raise KeyError('x')\n    def clean(self, t): return t\n")
+        with self.assertLogs("gemma_voice", "ERROR"):
+            lines = report(EXAMPLE)
+        self.assertIn("error: broken.context: KeyError: 'x'", lines)  # errors only: no context to print
+        folder = os.path.join(self.dir.name, "repo")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "a.md"), "w") as fh:
+            fh.write("Только текст.\n")
+        self.desktop_record("local_abc", "none", "X", cwd=folder)
+        lines = report(as_file(code_tab("local_abc", panel=files_panel("a.md"))))  # no messages and no terms
+        self.assertIn("content: snapshot (outline)", lines)
+        self.assertIn("surfaces: claude-code/desktop (reads outline)", lines)
+        self.assertIn("  0 messages, terms: ", lines)
+        self.assertIn("  open file: a.md, 13 characters", lines)
+        self.assertEqual(report({})[-1], "surfaces: none: the dictation runs without context")
 
 
 class HungAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_hung_adapter_keeps_only_its_own_thread_and_the_next_dictations_skip_it(self):
-        release, threads = __import__("threading").Event(), []
+        release, threads = threading.Event(), []
 
-        def hung(focus, hints=None, enabled=None):
-            threads.append(__import__("threading").current_thread().name)
+        def hung(identity, matched, content=None):
+            threads.append(threading.current_thread().name)
             release.wait(5)
             return {"adapter": "slow"}
 
@@ -628,17 +804,21 @@ class HungAdapterTest(unittest.IsolatedAsyncioTestCase):
         try:
             stop = asyncio.Event()
             asyncio.get_running_loop().call_later(0.05, stop.set)
-            got = await adapters.context_until({}, stop=stop)
+            got = await adapters.context_until({}, [], stop=stop)
             self.assertTrue(got["errors"][0].startswith("no context by the stop"), got)
-            self.assertEqual(await adapters.context_until({}, stop=stop),
+            self.assertEqual(await adapters.context_until({}, [], stop=stop),
                              {"errors": ["the adapters still run for an earlier dictation"]})  # no second thread
             release.set()
             adapters._running.result(5)
             with self.assertLogs("gemma_voice", "INFO") as logs:
-                self.assertEqual(await adapters.context_until({}, stop=asyncio.Event()), {"adapter": "slow"})
+                self.assertEqual(await adapters.context_until({}, [], stop=asyncio.Event()), {"adapter": "slow"})
                 await asyncio.sleep(0.01)
             self.assertTrue(any("adapters:" in line for line in logs.output), logs.output)
             self.assertTrue(all(t.startswith("adapters") for t in threads), threads)  # not the loop's default pool
         finally:
             release.set()
             adapters.context = saved
+
+
+if __name__ == "__main__":
+    unittest.main()

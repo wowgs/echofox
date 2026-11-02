@@ -9,8 +9,8 @@ from variants import variants
 
 def info(args, models=None):
     """What a client needs to know of this server: the protocol, the audio, the waits, the languages the menu's model
-    names (with their notes and hesitation sounds) and the notes of every language, the adapters (with their context
-    defaults), the menu's model (its catalog entry, prompt template and variants), and the settings it may show and
+    names (with their notes and hesitation sounds) and the notes of every language, the adapters (with their surfaces
+    and context defaults), the menu's model (its catalog entry, prompt template and variants), and the settings it may show and
     change (settings.schema). The menu's model is the registry's (Models.selected); when the menu names no model of
     this server, the default (Models.name_for), so that the settings window shows a model's settings. No `models`
     (the tests): no model."""
@@ -22,7 +22,7 @@ def info(args, models=None):
     model = catalog.of(entry)
     codes = model.get("languages") or languages.codes()
     table = languages.table()
-    return {"type": "info", "interface": constants.PROTOCOL_INTERFACE, "adapterInterface": adapters.registry.INTERFACE,
+    return {"type": "info", "interface": constants.PROTOCOL_INTERFACE, "adapterInterface": constants.ADAPTER_INTERFACE,
             "sampleRate": constants.RATE, "encoding": constants.ENCODING,
             "textWaitSeconds": constants.TEXT_WAIT_S, "maxRecordingSeconds": args.max_recording_seconds,
             "languages": sorted(({"code": c, "name": table[c]["name"], "notes": table[c].get("notes", []),

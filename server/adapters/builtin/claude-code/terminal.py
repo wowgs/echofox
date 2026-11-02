@@ -1,10 +1,10 @@
-"""Claude Code in a terminal's tab, for the claude-code adapter (docs/reference/3-context.md, "Claude Code in a
-terminal"). Each running claude writes ~/.claude/sessions/<pid>.json with its "sessionId", "name" (the session's
-title) and "entrypoint" ("cli" in a terminal); the files are Claude Code's own and not documented (Claude Code 2.1.300,
-2026-10-27). Claude Code sets the terminal's title to "✳ <name>", and the terminals show it in the window's title
-(Terminal adds the folder, the command and the size; iTerm2 drops the "✳").
+"""Claude Code in a terminal's tab, for the claude-code adapter's surface "terminal" (docs/reference/3-context.md,
+"Claude Code in a terminal"). Each running claude writes ~/.claude/sessions/<pid>.json with its "sessionId", "name"
+(the session's title) and "entrypoint" ("cli" in a terminal); the files are Claude Code's own and not documented
+(Claude Code 2.1.300, 2026-10-27). Claude Code sets the terminal's title to "✳ <name>", and the terminals show it in the
+window's title (Terminal adds the folder, the command and the size; iTerm2 drops the "✳").
 
-The session in focus is the one claude among the terminal app's processes (the snapshot's "processes") whose name the
+The session in focus is the one claude among the terminal app's processes (the surface's "processes") whose name the
 focused window's title contains; none, or more than one: no session. A claude in tmux or screen is a process of the
 multiplexer's server, not of the terminal app, so it is never found: for now such a tab gets no context (measured:
 the visible text chose the wrong pane in tmux, docs/observations.md).
@@ -13,12 +13,11 @@ import glob
 import json
 import os
 
-TERMINALS = {"com.mitchellh.ghostty", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable"}
+from adapters import place, screen
 
 
 def store():
-    """~/.claude/sessions, or $ECHOFOX_CLAUDE_SESSIONS (read at each call, so that tests can set it)."""
-    return os.environ.get("ECHOFOX_CLAUDE_SESSIONS") or os.path.expanduser("~/.claude/sessions")
+    return place("~/.claude/sessions", "ECHOFOX_CLAUDE_SESSIONS")
 
 
 def running(pids):
@@ -39,11 +38,7 @@ def running(pids):
 def session(snapshot):
     """The Claude Code session in the focused tab of a terminal in this snapshot: {"session", "name", "pid"}, or
     None."""
-    snapshot = snapshot or {}
-    if (snapshot.get("app") or {}).get("bundleId") not in TERMINALS:
-        return None
-    title = str((snapshot.get("window") or {}).get("title") or "")
-    pids = {p.get("pid") for p in snapshot.get("processes") or [] if isinstance(p, dict)}
+    title, pids = screen.window_title(snapshot), screen.pids(snapshot)
     if not title or not pids:
         return None
     matches = [s for s in running(pids) if s["name"] in title]
