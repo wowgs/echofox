@@ -3,7 +3,7 @@
                                                   before any cutting
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the model, the language, the client, the stop reason, the errors,
                                                   each piece's text and the whole text, the identity of the
-                                                  focused app, the matched surfaces and their content, the
+                                                  focused app, the matched surfaces (not what the app read for them), the
                                                   context (adapter, what it read, its details), and the Mac's
                                                   input volume and input device at the start
 The recording also gets each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the

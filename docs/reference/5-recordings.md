@@ -16,7 +16,7 @@ Each saved recording has a folder at `~/speech/recordings/<YYYY-MM-DD>/<HHMMSS>-
 | `piece-N.wav` | The audio of each piece, also of a piece that was not sent to the model because it had too little speech (`"skipped": "no speech"` in `pieces.jsonl`). |
 | `pieces.jsonl` | The text of each piece, token counts, detected speech duration, and the raw text before hesitation removal (`raw`). |
 | `text-before-audio.txt` | The conversation context and recognition prompt. |
-| `adapter.json` | Model, client, stop reason, errors, transcripts, context source, and microphone settings. Also the identity of the focused app (`identity`), the surfaces it matched (`surfaces`) and what the app read for them (`content`), which can hold the window's text. |
+| `adapter.json` | Model, client, stop reason, errors, transcripts, context source, and microphone settings. Also the identity of the focused app (`identity`) and the surfaces it matched (`surfaces`). What the app read on the screen is not saved; only the context the adapter made of it (`chat`). |
 | `audio.json` | Audio levels: speech and noise loudness, peak level, clipping, and digital silence. |
 
 The recordings take about 231 MB for each hour of speech (365 recordings, 2026-10-22 to 2026-10-25). The audio is there twice: once in `mic.wav` and once in the pieces.

@@ -203,7 +203,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((a["model"], a["client"], a["language"], a["stopReason"], a["text"], a["audioSeconds"]),
                          ("gemma-12b", "menubar", "ru", "silence", "gemma-12b piece 1", 2.0))
         self.assertEqual(a["input"], {"inputVolume": 50, "device": None})
-        self.assertEqual((a["chat"], a["identity"], a["surfaces"], a["content"]), (None, None, [], None))  # no app
+        self.assertEqual((a["chat"], a["identity"], a["surfaces"]), (None, None, []))  # no app
         self.assertEqual([r["surfaces"] for r in self.reads], [[]])  # a read request without surfaces
         self.args.save_recordings = False
         n = len(glob.glob(os.path.join(self.args.recordings, "*", "*")))
@@ -262,10 +262,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((a["chat"]["adapter"], a["chat"]["surface"], a["chat"]["details"]["how"],
                           a["chat"]["details"]["desktopSession"], a["chat"]["details"]["session"]),
                          ("claude-code", "claude-code/desktop", "desktop store", "local_abc", "s1"))
-        # The record keeps the identity, the matched surfaces and their content (not another surface's)
-        self.assertEqual((a["identity"], a["surfaces"], a["content"]),
-                         (CODE_TAB, ["claude-code/desktop"], {"claude-code/desktop": {"outline": CODE_OUTLINE}}))
-        self.assertEqual((late["chat"], late["content"]), ({"errors": ["no content by the stop"]}, None))
+        # The record keeps the identity and the matched surfaces, never what the app read on the screen
+        self.assertEqual((a["identity"], a["surfaces"], "content" in a), (CODE_TAB, ["claude-code/desktop"], False))
+        self.assertEqual(late["chat"], {"errors": ["no content by the stop"]})
 
     async def test_the_read_request_comes_at_once_while_another_recording_holds_the_model(self):
         models = stub_models(ENTRIES, make=lambda name, entry: HangingStub(name))

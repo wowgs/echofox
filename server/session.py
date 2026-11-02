@@ -377,7 +377,7 @@ class Session:
         self.rec.finish({"model": self.start.model, "language": self.start.language, "client": self.start.client,
                          "stopReason": self.stop_reason or "connection closed", "error": "; ".join(self.errors) or None,
                          "identity": self.start.identity or None, "surfaces": [s.name for s in self.surfaces],
-                         "content": self.content, "chat": self.chat or None, "pieces": self.texts,
+                         "chat": self.chat or None, "pieces": self.texts,
                          "text": " ".join(self.texts),
                          "input": mic_info})
 
