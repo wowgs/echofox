@@ -201,6 +201,6 @@ The tool takes the snapshot with the app's own code, in its two phases, and prin
 
 Snapshots with an outline or lists contain window text. Treat them as conversation data.
 
-`server/tools/fixtures.py` reads the windows of the adapters' apps with `--list` and `--window`, and keeps the snapshots of test conversations as fixtures ([fixtures from live windows](8-fixtures.md)).
+`server/tools/fixtures.py` reads the windows of the adapters' apps with `--list` and `--window`, and keeps the snapshots of your real conversations as fixtures ([fixtures from live windows](8-fixtures.md)).
 
 `which_session.py` reads such a snapshot from a file or from its input. It matches the identity with the surfaces of every working adapter, enabled or not. It gives each surface what the snapshot read for it, or for the surface `snapshot` when the tool read by its flags. Then it prints what was found: the surface, what it is, where it was read, the adapter's details, the number of messages, the open files with their length, the first terms and the errors. It never prints the texts. The test client `try_wav.py --snapshot <file>` sends the same snapshot with a recording ([development](7-development.md#test-recognition-on-a-separate-server)).

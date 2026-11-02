@@ -148,7 +148,7 @@ An adapter's page shows one section per surface: its title, its apps, its `match
 
 - Shared examples in `shared/` for both sides: identities with the surfaces that must match, the read requests, and the token estimate of sample texts with its expected counts.
 - Hand-written snapshots in the adapters' tests, which CI runs.
-- Fixtures from live windows: real snapshots of each surface, of test conversations on this Mac, with the parse that the owner accepted. They stay on this Mac, and a tool checks them again after an app update ([fixtures](reference/8-fixtures.md)).
+- Fixtures from live windows: real snapshots of each surface, of the owner's real conversations on this Mac, with what of the context reaches the model, as the owner accepted it. They stay on this Mac, and a tool checks them again after an app update ([fixtures](reference/8-fixtures.md)).
 
 ## Assumptions and open questions
 
