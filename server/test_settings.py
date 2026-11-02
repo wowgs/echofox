@@ -365,12 +365,13 @@ class ProcessTest(unittest.TestCase):
 
 
 class MigrateTest(unittest.TestCase):
-    def test_version_2_becomes_3_with_the_built_in_adapters_that_read_no_screen_enabled_and_the_order_kept(self):
+    def test_version_2_becomes_3_with_the_adapter_of_its_time_enabled_and_the_order_kept(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "config.json")
             c, _ = s.from_2({"model": "m", "language": "ru", "models": {}, "version": 2}, f)
             self.assertEqual(list(c), ["model", "language", "adapters", "models", "version"])
-            self.assertEqual((c["version"], c["adapters"]), (3, {"claude-code": {"enabled": True}}))  # the others read the screen
+            # Only claude, the one adapter of version 2: a built-in adapter that came later is not turned on
+            self.assertEqual((c["version"], c["adapters"]), (3, {"claude": {"enabled": True}}))
             with open(f, "w", encoding="utf-8") as fh:
                 json.dump({"model": "m", "models": {}, "version": constants.CONFIG_VERSION}, fh, indent=2)
             mtime = os.stat(f).st_mtime_ns
@@ -395,7 +396,7 @@ class MigrateTest(unittest.TestCase):
             self.assertEqual(c["models"]["m"], {"llamaServer": "http://h:1", "prompt": "P",
                                                 "options": {"temperature": 1}, "catalog": "gemma-4-e4b"})
             self.assertEqual(c["adapters"]["claude-code"]["chatHistoryTokenBudget"], 1000)  # its own value stays
-            self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 1000)  # in both of claude's
+            self.assertNotIn("claude-chat", c["adapters"])  # new in version 8, and it reads the screen
             self.assertEqual(c["adapters"]["telegram"]["chatHistoryTokenBudget"], 2000)  # the model's was its value
             self.assertEqual(c["server"], {"port": 8090, "saveRecordings": False, "labeled": "~/l"})  # pieceSeconds: a constant
             self.assertEqual(c["languages"], {"ru": {"fillers": ["э"]}})
@@ -425,7 +426,6 @@ class MigrateTest(unittest.TestCase):
             self.assertNotIn("options", c["models"]["n"])
             # a budget of 0 was the switch; adapterDefaults' proseOnly went to every adapter
             self.assertEqual(c["adapters"], {"claude-code": {"enabled": False, "proseOnly": False},
-                                             "claude-chat": {"enabled": False, "proseOnly": False},
                                              "telegram": {"enabled": True, "proseOnly": False}})
             self.assertIn("thresholdDb=-45", logs.output[0])
             self.assertEqual(s.file_settings(f)["maxRecordingSeconds"], 600.0)
@@ -444,7 +444,6 @@ class MigrateTest(unittest.TestCase):
             self.assertEqual(list(c), ["version", "adapters", "model"])
             self.assertEqual(c["version"], 11)
             self.assertEqual(c["adapters"], {"claude-code": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
-                                             "claude-chat": {"enabled": True, "chatTermsTokenBudget": 50, "proseOnly": False},
                                              "telegram": {"enabled": True, "chatTermsTokenBudget": 150, "proseOnly": False}})
 
     def test_version_10_becomes_11_without_a_models_launchd_agent(self):
@@ -485,16 +484,15 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(c, {"version": 9, "server": {"port": 8090, "maxRecordingSeconds": 150}})
         self.assertEqual(s.from_8({"version": 8}, None)[0], {"version": 9})
 
-    def test_version_7_becomes_8_with_claude_split_into_claude_code_and_claude_chat(self):
+    def test_version_7_becomes_8_with_claude_renamed_claude_code_in_its_place(self):
         c, what = s.from_7({"version": 7, "adapters": {"claude": {"enabled": True, "chatHistoryTokenBudget": 300},
                                                       "telegram": {"enabled": False}}}, None)
         self.assertEqual((c["version"], c["adapters"]),
-                         (8, {"telegram": {"enabled": False},
-                              "claude-code": {"enabled": True, "chatHistoryTokenBudget": 300},
-                              "claude-chat": {"enabled": True, "chatHistoryTokenBudget": 300}}))
-        c["adapters"]["claude-code"]["chatHistoryTokenBudget"] = 1
-        self.assertEqual(c["adapters"]["claude-chat"]["chatHistoryTokenBudget"], 300)  # copies, not one dict
-        self.assertEqual(s.from_7({"version": 7}, None)[0], {"version": 8})  # no adapters: nothing to split
+                         (8, {"claude-code": {"enabled": True, "chatHistoryTokenBudget": 300},
+                              "telegram": {"enabled": False}}))
+        self.assertEqual(list(c["adapters"]), ["claude-code", "telegram"])
+        self.assertEqual(what, "adapters.claude became claude-code")
+        self.assertEqual(s.from_7({"version": 7}, None)[0], {"version": 8})  # no adapters: nothing to rename
 
     def test_version_5_becomes_11_without_the_constants_and_with_seconds(self):
         with tempfile.TemporaryDirectory() as d:

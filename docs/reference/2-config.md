@@ -31,7 +31,7 @@ This example enables the three built-in adapters and overrides several defaults.
 
 | Key | Purpose |
 |---|---|
-| `version` | The config's format, 11. It changes only for a change that an older version would read wrong. The server brings a file of an older format to 11 once at its start and keeps the old file as `config.json.v<N>.bak`; a file of a newer format is read key by key. Format 11 left out a model's `launchd`. Format 10 left out a model's `prompt` and the Russian `notes` that were copies of format 9's defaults. Format 9 has the recording's time limit in seconds (`maxRecordingSeconds`). Format 8 split the adapter `claude` into `claude-code` and `claude-chat`. |
+| `version` | The config's format, 11. It changes only for a change that an older version would read wrong. The server brings a file of an older format to 11 once at its start and keeps the old file as `config.json.v<N>.bak`; a file of a newer format is read key by key. Format 11 left out a model's `launchd`. Format 10 left out a model's `prompt` and the Russian `notes` that were copies of format 9's defaults. Format 9 has the recording's time limit in seconds (`maxRecordingSeconds`). Format 8 renamed the adapter `claude` to `claude-code`; `claude-chat`, new in it, stays off until the user turns it on. |
 | `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |

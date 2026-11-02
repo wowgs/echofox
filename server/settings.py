@@ -342,19 +342,17 @@ def migrate(path):
 
 
 def from_2(c, path):
-    """Version 2 → 3: adapters became optional, and the config enables them. A version-2 file had the built-in adapters
-    working, so the upgrade enables the built-in adapters; a new config has none (the base mode). An adapter that asks
-    for the screen's content (its manifest's "screen") is never enabled for the user: they turn it on themselves."""
-    import adapters  # here, not at the top: only this old step needs the adapters
-    builtin = {n: {"enabled": True} for n, p in adapters.registry.packages().items()
-               if p.builtin and not p.manifest.get("screen")}
+    """Version 2 → 3: adapters became optional, and the config enables them. A version-2 file had the one adapter of
+    that time, "claude", working, so the upgrade enables it; a new config has none (the base mode). The list is fixed:
+    a built-in adapter that came later was never on for the user, and they turn it on themselves."""
+    builtin = {"claude": {"enabled": True}}
     out = {}
     for k, v in c.items():
         out[k] = 3 if k == "version" else v
         if k == "language" or (k == "model" and "language" not in c):
             out["adapters"] = builtin
     out.setdefault("adapters", builtin)
-    return out, f"the built-in adapters are enabled: {', '.join(builtin) or 'none'}"
+    return out, "the adapter claude is enabled"
 
 
 def from_3(c, path):
@@ -489,16 +487,16 @@ def from_6(c, path):
 
 
 def from_7(c, path):
-    """Version 7 → 8: the adapter "claude" is split by where its context comes from: "claude-code" (Claude Code
-    transcripts) and "claude-chat" (Claude Desktop's chats, from the screen). Each gets a copy of the "claude" entry, so
-    what was on stays on, with the same settings."""
+    """Version 7 → 8: the adapter "claude" is "claude-code" now, which reads what "claude" read (Claude Code
+    transcripts). Its entry keeps its place and settings. "claude-chat", new in this version, reads Claude Desktop's
+    chats from the screen, so it stays off until the user turns it on."""
     entries = c.get("adapters")
-    old = entries.pop("claude", None) if isinstance(entries, dict) else None
-    if isinstance(old, dict):
-        for name in ("claude-code", "claude-chat"):
-            entries.setdefault(name, dict(old))
+    if not (isinstance(entries, dict) and isinstance(entries.get("claude"), dict) and "claude-code" not in entries):
+        c["version"] = 8
+        return c, "no adapters.claude to rename"
+    c["adapters"] = {("claude-code" if k == "claude" else k): v for k, v in entries.items()}
     c["version"] = 8
-    return c, ("adapters.claude became claude-code and claude-chat" if isinstance(old, dict) else "no adapters.claude")
+    return c, "adapters.claude became claude-code"
 
 
 def from_8(c, path):

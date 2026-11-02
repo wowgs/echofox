@@ -109,7 +109,7 @@ An adapter adds the context of the app: recent messages, names and terms. Withou
 - **Optional.** No matching adapter, or no exact match with the conversation, means a dictation without context.
 - **One platform, its own adapter.** Paths, transcript formats and screen rules of an app stay in its adapter. The core has no vendor logic.
 - **The conversation comes from the current window.** The newest session is not always the one the person dictates into. When it is not certain, no context is used.
-- **Access is visible.** The manifest lists the apps, the files and the screen data that the adapter needs. The client takes the Electron accessibility tree and the screen content (the rows of lists, or the outline of a page) only for the apps of enabled adapters that ask for them. A config migration never turns on an adapter that reads the screen.
+- **Access is visible.** The manifest lists the apps, the files and the screen data that the adapter needs. The client takes the Electron accessibility tree and the screen content (the rows of lists, or the outline of a page) only for the apps of enabled adapters that ask for them. A config migration never turns on an adapter that the user did not have on: it renames or keeps the adapters of the older file, and a new built-in adapter stays off.
 - **Private dictation skips the adapters.**
 - **Adapters run with the user's rights.** The checks of the manifest and the interface version are not an isolation of the code.
 

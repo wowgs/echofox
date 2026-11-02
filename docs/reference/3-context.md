@@ -76,7 +76,7 @@ In the outline, each message is a group labelled "Message N of M". Claude's repl
 
 The manifest requests `"screen": ["lists"]`. The adapter reads the message list above the input box and takes the chat name from the window title. It can use only messages currently loaded in the window.
 
-Config migrations never enable a screen-reading adapter automatically. Adapters for Codex, ChatGPT, Antigravity, and Gemini remain planned.
+Config migrations never turn on an adapter that the user did not have on: a new built-in adapter stays off. Adapters for Codex, ChatGPT, Antigravity, and Gemini remain planned.
 
 ## Write an adapter
 
