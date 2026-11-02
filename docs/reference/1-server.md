@@ -7,7 +7,7 @@ The dictation server turns microphone audio into text. The Mac app handles recor
   <img alt="Long recordings are processed in pieces while you speak, leaving less work after you stop." src="../../img/dictation-timeline.svg">
 </picture>
 
-The server runs as the app's child process, listening on `ws://127.0.0.1:8090`. It sends audio to its own child process, `llama-server`, which runs Gemma 4 E4B on the Mac's GPU. The app starts the server with `gemma_voice.py --parent`: the server ends when its standard input closes, that is when the app ends, and on SIGTERM, which the app sends at its quit. Before it ends, the server stops its llama-server. Its output goes to `~/Library/Logs/EchoFox/gemma-voice.log`, llama-server's to `llama-server.log` next to it.
+The server runs as the app's child process, listening on `ws://127.0.0.1:8090`. It sends audio to its own child process, `llama-server`, which runs Gemma 4 E4B on the Mac's GPU. The app starts the server with `echofox-server.py --parent`: the server ends when its standard input closes, that is when the app ends, and on SIGTERM, which the app sends at its quit. Before it ends, the server stops its llama-server. Its output goes to `~/Library/Logs/EchoFox/echofox-server.log`, llama-server's to `llama-server.log` next to it.
 
 See also: [configuration](2-config.md), [conversation context](3-context.md), [protocol](6-protocol.md), and [development](7-development.md).
 
@@ -69,30 +69,35 @@ A download uses one connection per file: more connections were not faster on the
 
 | File | Purpose |
 |---|---|
-| `gemma_voice.py` | Starts the server. |
+| `echofox-server.py` | Starts the server. |
 | `protocol.py` | One connection of a client: reads its first message and hands it on. |
 | `info.py` | The server's info: the models, languages, adapters and settings. |
-| `variants.py` | The download and removal messages of a model's variant, and the list of a model's variants for the info. |
-| `downloads.py` | The downloads of a variant's files and their removal. |
+| `variants.py` | The download and removal messages of a model's variant. |
+| `downloads.py` | The downloads of a variant's files, their removal, and the list of a model's variants for the info. |
 | `session.py` | One recording: the start message, the audio, the pieces, the context and the stop. |
+| `resolve.py` | The options of a recording and of an adapter's context, from the owners of each setting. |
 | `audio.py` | The loudness of each 30 ms frame, the cuts, WAV files. |
 | `vad.py` | Silero VAD on the audio as it arrives. |
-| `dictation.py` | The prompt, the context and one request for each piece. |
+| `dictation.py` | One request to the model for each piece, and the hesitation sounds taken out of its text. |
+| `prompt.py` | The text before the audio: the context within its token budgets, then the prompt. |
+| `blocking.py` | A model request in a thread, which a cancelled recording stops. |
 | `budget.py` | The estimate of a text's tokens from its characters, and the budgets of the context. |
-| `model_registry.py` | The registry of models: the selected model, which model is in memory, the idle unload, one recording at a time. |
+| `model_registry.py` | The registry of models: the selected model, which model is in memory, the idle unload, one recording at a time (`Models.in_use`). |
 | `llama_process.py` | The process of `llama-server`: its command, its start and end, the wait until it answers, its memory. |
 | `llama_client.py` | The HTTP client of `llama-server`: tokens, the warm-up of a slot, one piece's text, the timings. |
-| `tuning.py` | The table of the settings and constants of a recording. |
+| `tuning.py` | The table of the settings and constants of a recording, and their checks. |
 | `settings.py` | The config file: reading, checking, updates from older versions, and the watcher that applies its changes. |
-| `catalog.json`, `catalog.py` | The model catalog, and a model's defaults. |
+| `catalog.json`, `catalog.py` | The model catalog: a model's files, defaults and request fields. |
 | `languages.json`, `languages.py`, `fillers.py` | The languages: names, notes, hesitation sounds. |
 | `adapters/` | The core of the adapters that give [the chat context](3-context.md), and the built-in adapters in `adapters/builtin/`. |
-| `recordings.py` | [The recordings](5-recordings.md). |
-| `metrics.py` | The metrics file and its summary. |
+| `recordings.py` | The files of [a recording](5-recordings.md). No other module writes into a recording's folder. |
+| `microphone.py` | The Mac's input volume and input device, for a saved recording's record. |
+| `metrics.py` | The metrics file. |
+| `tools/` | The tools of development: the test server, the test client, the metrics' summary and others. |
 | `constants.py` | Shared constants, paths and names that the server, its scripts and its tests share. The ones the app also needs are in `shared/constants.json`, which the tests of both sides check. |
 
 ## Logs and metrics
 
-- The log of the server is `~/Library/Logs/EchoFox/gemma-voice.log`. The log of `llama-server` is `~/Library/Logs/EchoFox/llama-server.log`.
-- The server writes its metrics to `~/Library/Logs/EchoFox/gemma-voice-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
-- `server/.venv/bin/python server/metrics.py` prints a summary for each model and the last requests.
+- The log of the server is `~/Library/Logs/EchoFox/echofox-server.log`. The log of `llama-server` is `~/Library/Logs/EchoFox/llama-server.log`.
+- The server writes its metrics to `~/Library/Logs/EchoFox/echofox-server-metrics.jsonl`, one JSON object on each line. Each request to the model has its tokens, speeds and times, the length of its audio and its speech, and the memory of `llama-server`. Each recording has its length and the wait after the stop.
+- `server/.venv/bin/python server/tools/metrics_summary.py` prints a summary for each model and the last requests.

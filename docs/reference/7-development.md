@@ -143,7 +143,7 @@ The script swaps the colors from its table and stops on a color that the table d
 Between dictations, run:
 
 ```sh
-pkill -TERM -f "gemma_voice.py --parent"
+pkill -TERM -f "echofox-server.py --parent"
 ```
 
 During shutdown, the server rejects new recordings, allows up to 200 seconds for the current one to finish (`STOP_WAIT_S` in `server/constants.py`), and stops its llama-server. The app starts the server again a second later. Dictation resumes when the model has loaded.

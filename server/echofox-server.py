@@ -20,7 +20,7 @@ import settings
 import vad
 from model_registry import Models
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 APP_VERSION = "ECHOFOX_APP_VERSION"  # set by the app that starts the server (macos ServerProcess), for the log
 
 
@@ -38,7 +38,7 @@ async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     path = cli.config or settings.config_file()
     settings.migrate(path)
-    current = settings.resolve(settings.file_settings(path) or {})
+    current = settings.in_force(settings.file_settings(path) or {})
     st = settings.apply(current)
     models = Models(current["models"], manage=not cli.ignore_selection, models_folder=current["modelsFolder"],
                     chosen=current["model"])

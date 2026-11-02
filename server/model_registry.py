@@ -15,7 +15,7 @@ import constants
 import llama_process
 from llama_client import LlamaModel
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 UNKNOWN = object()  # Models.active before the first activation, and after the registry changed
 RETRY_S = 2  # how often the menu's model is made the one in memory again while it is not: after a client's recording
              # on another model, or while it cannot start (its files are missing, for one)
@@ -46,12 +46,12 @@ class Models:
         self.used = time.monotonic()
         # One recording at a time: its requests share the model's slots, and a cancel stops all requests of the
         # model; loading or switching a model waits for the running recording. A second recording waits.
-        self.recording = asyncio.Lock()
+        self.in_use = asyncio.Lock()
         # Set by configure: the registry's loop acts at once, not at its next look
         self.changed = asyncio.Event()
 
     def configure(self, entries, models_folder, chosen):
-        """The config's model settings, after the running recording (the watcher holds `recording`): the registry's
+        """The config's model settings, after the running recording (the watcher holds `in_use`): the registry's
         entries, the models folder (the config's value) and the menu's choice. New entries or a new models folder:
         each model is made again, and its llama-server starts again if its command changed (another variant or
         folder). The registry's loop then makes the menu's model the one in memory."""
@@ -122,7 +122,7 @@ class Models:
         come), and the reason is logged once for each model and reason."""
         if not self.manage or self.selected == self.active:
             return
-        async with self.recording:
+        async with self.in_use:
             name = self.selected  # the choice may have changed during the recording
             if name == self.active:
                 return
@@ -143,13 +143,13 @@ class Models:
         choice does not load it again; the next recording's get() starts its llama-server first."""
         while True:
             await asyncio.sleep(constants.IDLE_POLL_S)
-            if self.recording.locked() or self.proc is None or self.proc.poll() is not None:
-                self.used = max(self.used, time.monotonic()) if self.recording.locked() else self.used
+            if self.in_use.locked() or self.proc is None or self.proc.poll() is not None:
+                self.used = max(self.used, time.monotonic()) if self.in_use.locked() else self.used
                 continue
             idle = seconds()
             if not idle or time.monotonic() - self.used < idle:
                 continue
-            async with self.recording:
+            async with self.in_use:
                 if self.proc is not None and time.monotonic() - self.used >= idle:
                     await asyncio.to_thread(self._stop)
                     log.info("model %s: left memory after %.0f s without a recording", self.active, idle)
@@ -172,7 +172,7 @@ class Models:
         """Runs `delete` (in a thread) after the running recording, with no llama-server on the files of that variant
         of that catalog entry: the one that runs on them leaves memory first, so the registry's loop tries the menu's
         model again (follow_menu). The result of `delete`."""
-        async with self.recording:
+        async with self.in_use:
             vid = catalog.variant({"catalog": catalog_id, "variant": variant})[0]
             if (self.entry is not None and (self.entry.get("catalog") or catalog.DEFAULT) == catalog_id
                     and catalog.variant(self.entry)[0] == vid):

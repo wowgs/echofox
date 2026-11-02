@@ -1,8 +1,9 @@
 // What "Uninstall EchoFox…" removes (docs/reference/4-app.md, "Uninstall"), besides the models, which the dictation
 // server removes first because it knows their files (a models folder of the user's own may hold other files): the
-// app's folders, caches and logs, and, if asked, the recordings and the labels, which go to the
-// Trash, and only when the folder is EchoFox's own (day folders and nothing else), so that a folder the user chose
-// for other things too is never taken.
+// app's folders, caches and logs, and, if asked, the recordings and the labels, which go to the Trash, and only when
+// the folder is EchoFox's own (day folders and nothing else), so that a folder the user chose for other things too is
+// never taken. The logs' folder goes whole, so the server's logs of the versions before the name echofox-server
+// (gemma-voice.log, gemma-voice-metrics.jsonl) go with it.
 import Foundation
 
 public enum Uninstall {

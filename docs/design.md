@@ -72,7 +72,7 @@ Each setting has an owner: the component that defines what it means and its defa
 | Server | `server/settings.py`, `server/tuning.py` | `server` |
 | App | the Swift code | the top level of the config |
 
-The order: an experiment's start options, then the user's change, then the owner's default. Limits of the model, such as the longest audio, apply in any case. The app sends no experiment options; only the test client does.
+The order: an experiment's start options, then the user's change, then the owner's default. The server applies this order in one place, `server/resolve.py`. Limits of the model, such as the longest audio, apply in any case. The app sends no experiment options; only the test client does.
 
 Common settings are shown at once, and fine tuning is under Advanced. Protective constants are not settings. The prompt template belongs to the model, and the language notes belong to the language, so a new template keeps the notes. An adapter is turned off with `enabled`, not with a budget of 0. The keys are in the [config reference](reference/2-config.md) and in the schema, `shared/config.schema.json`.
 

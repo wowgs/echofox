@@ -22,7 +22,7 @@ async def handle(ws, models, args, make_stream=None):
         await ws.close()
         return
     if isinstance(first, dict) and first.get("type") in ("download", "remove"):
-        await (variants.download if first["type"] == "download" else variants.remove)(ws, send, first, models, args)
+        await (variants.download if first["type"] == "download" else variants.remove)(ws, send, first, models)
         await ws.close()
         return
     try:

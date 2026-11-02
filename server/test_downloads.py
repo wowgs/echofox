@@ -129,7 +129,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         async def send(**m): sent.append(m)
         with FakeLlama() as llamas:
             await models.get("m")
-            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args())
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models)
         self.assertEqual(sent[0]["type"], "removed")
         self.assertEqual((llamas.calls, models.active), ([("start", url), ("stop", url)], None))
         self.assertFalse(os.path.exists(self.path("m.gguf")))
@@ -146,9 +146,9 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         async def send(**msg): sent.append(msg)
         with FakeLlama() as llamas:
             await models.get("n")
-            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models, args())
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "a"}, models)
             self.assertEqual(llamas.calls, [("start", n)])  # a's files are not n's: n stays
-            await variants.remove(None, send, {"catalog": "tiny", "variant": "b"}, models, args())
+            await variants.remove(None, send, {"catalog": "tiny", "variant": "b"}, models)
             self.assertEqual((llamas.calls[-1], models.active), (("stop", n), None))
         self.assertEqual([x["type"] for x in sent], ["removed", "removed"])
         self.assertFalse(os.path.exists(self.path("big.gguf")))
@@ -157,7 +157,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         self.run_job("a")
         os.remove(self.path("m.gguf"))  # b's model alone is missing, the shared mmproj is there: a is not whole
         self.run_job("b")
-        v = variants.variants({"catalog": "tiny", "variant": "b"}, self.folder)
+        v = downloads.variants({"catalog": "tiny", "variant": "b"}, self.folder)
         self.assertEqual(v["variant"], "b")
         self.assertEqual([x.get("default") for x in v["variants"]], [True, None, None])
         self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
@@ -174,7 +174,7 @@ class DownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(got[-1], {"type": "downloaded"})
         self.assertEqual(got[-2], {"type": "progress", "bytes": len(MODEL) + len(MMPROJ),
                                    "total": len(MODEL) + len(MMPROJ)})
-        v = variants.variants({"catalog": "tiny"}, self.folder)["variants"]
+        v = downloads.variants({"catalog": "tiny"}, self.folder)["variants"]
         self.assertEqual([(x["id"], x["downloaded"]) for x in v], [("a", True), ("b", False), ("bad", False)])
 
 

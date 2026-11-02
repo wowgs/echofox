@@ -1,14 +1,19 @@
-"""Every recording is kept, never deleted by echofox:
+"""The files of a recording: Folder writes every file of a recording's folder, and no other module writes there.
+Every recording is kept, never deleted by echofox:
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/mic.wav       the whole recording as the client sent it (16 kHz, 16-bit, mono),
-                                                  before any cutting
-  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the model, the language, the client, the stop reason, the errors,
-                                                  each piece's text and the whole text, the identity of the
-                                                  focused app, the matched surfaces (not what the app read for them), the
-                                                  context (adapter, what it read, its details), and the Mac's
-                                                  input volume and input device at the start
-The recording also gets each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the
-levels (audio.json), all through Recording.save. ~/speech/tools/link_corrections.py reads chat.details (session,
-file) and "text" of adapter.json.
+                                                  before any cutting (Folder.audio)
+  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/audio.json    its levels (Folder.levels, audio.Levels.report)
+  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/text-before-audio.txt  the text the model read before each piece's audio: the
+                                                  context, then the prompt (Folder.text_before_audio)
+  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/piece-N.wav   the audio of piece N (Folder.piece)
+  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/pieces.jsonl  one line for each piece: its audio, speech, text and timings
+  <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the record of the whole recording (Folder.finish): the model, the
+                                                  language, the client, the stop reason, the errors, each piece's
+                                                  text and the whole text, the identity of the focused app, the
+                                                  matched surfaces (not what the app read for them), the context
+                                                  (adapter, what it read, its details), and the Mac's input volume and
+                                                  input device at the start
+~/speech/tools/link_corrections.py reads chat.details (session, file) and "text" of adapter.json.
 16 kHz 16-bit mono is 32 KB per second, about 115 MB per hour of speech.
 """
 import contextlib
@@ -16,19 +21,31 @@ import datetime
 import json
 import logging
 import os
-import subprocess
 
-from audio import seconds, wav_header
+from audio import seconds, wav, wav_header
 from constants import RATE, SAMPLE_BYTES
 
 HEADER_EVERY_BYTES = 5 * RATE * SAMPLE_BYTES  # the WAV header is brought up to date every 5 s of audio
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
-class Recording:
+def start(root, save=True, now=None):
+    """The files of a new recording: a Folder under `root`, or Unsaved when the recording is not saved (`save` off: a
+    private dictation, or the setting saveRecordings) or its folder cannot be made."""
+    now = now or datetime.datetime.now()
+    if save:
+        try:
+            return Folder(root, now)
+        except OSError:
+            log.exception("cannot start the recording folder")
+    return Unsaved(now)
+
+
+class Folder:
     """A new recording folder: `id` ("YYYY-MM-DD/HHMMSS-xxxxxx", relative to the root; the metrics name the
-    recording by it too), `dir`; write(pcm) appends audio, save(name, data) writes any other file of the recording,
-    finish(info) closes it. A file that cannot be written is logged and given up; the dictation goes on."""
+    recording by it too), `dir`. Each file of the recording has its own call; finish(record) closes it. A file that
+    cannot be written is logged and given up; the dictation goes on."""
+    saved = True
 
     def __init__(self, root, now=None):
         now = now or datetime.datetime.now()
@@ -40,7 +57,8 @@ class Recording:
         self.wav.write(wav_header(0))
         self.bytes, self.header_at = 0, 0
 
-    def write(self, pcm):
+    def audio(self, pcm):
+        """Appends the client's audio to mic.wav."""
         if not self.wav:
             return
         try:
@@ -51,6 +69,24 @@ class Recording:
         except (OSError, ValueError):  # a full disk, a file that went away
             log.exception("cannot write the audio of recording %s; it is not saved from here on", self.id)
             self._close_wav()
+
+    def levels(self, report):
+        self._save("audio.json", report)
+
+    def text_before_audio(self, text):
+        self._save("text-before-audio.txt", text.encode("utf-8"))
+
+    def piece(self, pcm, line):
+        """A piece's audio, and its line of pieces.jsonl (`line["piece"]` is its number)."""
+        self._save(f"piece-{line['piece']}.wav", wav(pcm))
+        self._save("pieces.jsonl", (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8"), append=True)
+
+    def finish(self, record):
+        """Closes mic.wav and writes the record of the whole recording."""
+        if self.wav:
+            self._close_wav()
+        self._save("adapter.json", {"id": self.id, "started": self.started.astimezone().isoformat(),
+                                    "audioSeconds": seconds(self.bytes), **record})
 
     def _header(self):
         pos = self.wav.tell()
@@ -66,8 +102,8 @@ class Recording:
             self.wav.close()
         self.wav = None
 
-    def save(self, name, data, append=False):
-        """Writes (or appends to) one more file of the recording: bytes, or an object as JSON."""
+    def _save(self, name, data, append=False):
+        """Writes (or appends to) one file of the recording: bytes, or an object as JSON."""
         if not isinstance(data, (bytes, bytearray)):
             data = (json.dumps(data, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
         try:
@@ -76,40 +112,27 @@ class Recording:
         except OSError:
             log.exception("cannot save %s of recording %s", name, self.id)
 
-    def finish(self, info):
-        if self.wav:
-            self._close_wav()
-        self.save("adapter.json", {"id": self.id, "started": self.started.astimezone().isoformat(),
-                                   "audioSeconds": seconds(self.bytes), **info})
 
+class Unsaved:
+    """A recording that is not saved: Folder's calls, which write nothing. Its `id` names it in the log and the
+    metrics."""
+    saved = False
 
-def _run(cmd, timeout):
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return r.stdout.strip() if r.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError):
-        return None
+    def __init__(self, now=None):
+        now = now or datetime.datetime.now()
+        self.id = f"{now:%Y-%m-%d}/{now:%H%M%S}-unsaved"
 
-
-def input_info():
-    """The Mac's microphone settings now: {"inputVolume": 0..100 or None, "device": {...} or None}. The input volume
-    (System Settings, Sound, Input) moves speech and room noise up or down together."""
-    volume = _run(["osascript", "-e", "input volume of (get volume settings)"], 5)
-    profile = _run(["system_profiler", "SPAudioDataType", "-json"], 10)
-    device = None
-    try:
-        items = json.loads(profile)["SPAudioDataType"][0].get("_items") or []
-        d = next((i for i in items if i.get("coreaudio_default_audio_input_device") == "spaudio_yes"), None)
-        if d:
-            device = {"name": d.get("_name"), "sampleRate": d.get("coreaudio_device_srate"),
-                      "inputChannels": d.get("coreaudio_device_input"),
-                      "transport": str(d.get("coreaudio_device_transport") or "").replace("coreaudio_device_type_", ""),
-                      "manufacturer": d.get("coreaudio_device_manufacturer")}
-    except (TypeError, ValueError, KeyError, IndexError):
+    def audio(self, pcm):
         pass
-    try:
-        volume = float(volume)
-        volume = int(volume) if volume.is_integer() else volume
-    except (TypeError, ValueError):
-        volume = None
-    return {"inputVolume": volume, "device": device}
+
+    def levels(self, report):
+        pass
+
+    def text_before_audio(self, text):
+        pass
+
+    def piece(self, pcm, line):
+        pass
+
+    def finish(self, record):
+        pass

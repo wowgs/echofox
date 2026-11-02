@@ -122,7 +122,7 @@ class MenuTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(setattr, constants, "LLAMA_SERVER", saved)
         entry = {"llamaServer": A, "catalog": "gemma-4-e4b"}
         models = Models({"e4b": entry}, make=StubModel, models_folder=folder, chosen="e4b")
-        with self.assertLogs("gemma_voice", "INFO") as logs:
+        with self.assertLogs("echofox-server", "INFO") as logs:
             for _ in range(3):
                 await models.follow_menu()
         errors = [r.getMessage() for r in logs.records if r.levelno >= logging.ERROR]
@@ -133,7 +133,7 @@ class MenuTest(unittest.IsolatedAsyncioTestCase):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "w").close()
         n = len(sandbox.SPAWNED)
-        with self.assertNoLogs("gemma_voice", "ERROR"):
+        with self.assertNoLogs("echofox-server", "ERROR"):
             await models.follow_menu()
         self.assertEqual((models.active, models.failed, len(sandbox.SPAWNED)), ("e4b", None, n + 1))
 
@@ -155,7 +155,7 @@ class MenuTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_info_names_the_menus_model_else_the_default(self):
         with FakeLlama():
-            st = settings.recording_settings(settings.resolve({}))
+            st = settings.recording_settings(settings.in_force({}))
             models = Models(ENTRIES, make=StubModel, chosen="big")
             self.assertEqual(info.info(st, models)["model"]["name"], "big")
             # A model this server does not have: none in memory, and the settings window shows the default's

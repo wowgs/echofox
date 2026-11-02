@@ -1,4 +1,4 @@
-"""Tests of the client protocol (protocol.py, session.py, variants.py), with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
+"""Tests of the client protocol (protocol.py, session.py, variants.py, recordings.py), with stub models. Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
 import asyncio
 import glob
@@ -16,10 +16,10 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 import adapters
-import dictation
 import metrics
+import microphone
 import constants
-import recordings
+import prompt
 from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, handle, stub_models
 
 START = {"type": "start", "language": "ru"}
@@ -35,12 +35,12 @@ SPEAKS_S = 0.2  # how long a test recording lasts before its stop, for the adapt
 
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.saved = recordings.input_info
-        recordings.input_info = lambda: {"inputVolume": 50, "device": None}  # no osascript or system_profiler in tests
+        self.saved = microphone.state
+        microphone.state = lambda: {"inputVolume": 50, "device": None}  # no osascript or system_profiler in tests
         self.args = args()
 
     def tearDown(self):
-        recordings.input_info = self.saved
+        microphone.state = self.saved
 
     async def run_stream(self, start, audio, entries=ENTRIES, stop=None, model=StubModel, between=None):
         stubs = {}
@@ -146,7 +146,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             env.start()
             before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
             try:
-                with self.assertLogs("gemma_voice", level="INFO") as logs:
+                with self.assertLogs("echofox-server", level="INFO") as logs:
                     stub, got = await self.run_stream({**START, "private": True, "identity": CODE_TAB}, LOUD,
                                                       between=CONTENT)
             finally:
@@ -241,7 +241,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             env = mock.patch.dict(os.environ, {"ECHOFOX_PROJECTS": os.path.join(d, "projects"),
                                                "ECHOFOX_DESKTOP_SESSIONS": os.path.join(d, "store")})
             env.start()
-            self.args.adapter_options = {"claude-chat": {"chat_history_token_budget": 300}}
+            self.args.adapter_config = {"claude-chat": {"chat_history_token_budget": 300}}
             try:
                 stub, got = await self.run_stream({**START, "identity": CODE_TAB}, LOUD, between=CONTENT)
                 read, a = self.reads, self.latest()[1]
@@ -258,7 +258,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(read[0]["tokenWeights"]["cyrillic"] > 0)  # the model's, for the app's estimate
         self.assertEqual(chat_read[0]["surfaces"][0]["outline"]["budget"], 300)  # the config's entry
         self.assertIn("Claude: Готово.", stub.calls[0][1])
-        self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
+        self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + prompt.text("ru")))  # the context, then the prompt
         self.assertEqual((a["chat"]["adapter"], a["chat"]["surface"], a["chat"]["details"]["how"],
                           a["chat"]["details"]["desktopSession"], a["chat"]["details"]["session"]),
                          ("claude-code", "claude-code/desktop", "desktop store", "local_abc", "s1"))
@@ -275,11 +275,11 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                     await first.send(json.dumps(START))
                     await first.send(LOUD)
                     await first.send(json.dumps({"type": "stop"}))
-                    while not models.recording.locked():
+                    while not models.in_use.locked():
                         await asyncio.sleep(0.01)
                     await second.send(json.dumps({**START, "identity": CODE_TAB}))
                     self.assertEqual(json.loads(await second.recv())["surfaces"][0]["surface"], "claude-code/desktop")
-                    self.assertTrue(models.recording.locked())  # the first recording still holds the model
+                    self.assertTrue(models.in_use.locked())  # the first recording still holds the model
 
     async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):
         with tempfile.TemporaryDirectory() as d:
@@ -366,7 +366,7 @@ class ClientGivesUpTest(unittest.IsolatedAsyncioTestCase):
                 async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as ws:
                     await ws.send(json.dumps(START))
                     await ws.send(LOUD)
-                while models.recording.locked():
+                while models.in_use.locked():
                     await asyncio.sleep(0.01)
         d = max(glob.glob(os.path.join(a.recordings, "*", "*")), key=os.path.getmtime)
         rec = json.loads(pathlib.Path(d, "adapter.json").read_text(encoding="utf-8"))

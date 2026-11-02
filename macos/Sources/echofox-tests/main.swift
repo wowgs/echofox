@@ -695,11 +695,17 @@ do {
               "Documents/notes", "Documents/2026-10-27"] {
         try fm.createDirectory(at: home.appendingPathComponent(p), withIntermediateDirectories: true)
     }
+    // The server's logs of the versions before echofox-server, under their old names: in the logs' folder, which goes
+    for old in ["gemma-voice.log", "gemma-voice-metrics.jsonl"] {
+        fm.createFile(atPath: home.appendingPathComponent("\(LogFolder.inHome)/\(old)").path, contents: Data())
+    }
     let rec = home.appendingPathComponent("speech/recordings"), docs = home.appendingPathComponent("Documents")
     let names = { (items: [Uninstall.Item]) in items.map { $0.url.path.replacingOccurrences(of: home.path + "/", with: "") } }
-    check(names(Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: false))
-          == [".echofox", "Library/Logs/EchoFox"],
-          "uninstall: what exists of the folders")
+    let without = Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: false)
+    check(names(without) == [".echofox", "Library/Logs/EchoFox"], "uninstall: what exists of the folders")
+    check(["gemma-voice.log", "gemma-voice-metrics.jsonl", "echofox-server.log"].allSatisfy { name in
+              without.contains { home.appendingPathComponent("\(LogFolder.inHome)/\(name)").path.hasPrefix($0.url.path + "/") }
+          }, "uninstall: the server's logs under their old names and the new one go with the logs' folder")
     let with = Uninstall.items(home: home, recordings: rec, labeled: docs, withRecordings: true)
     check(names(with).suffix(1) == ["speech/recordings"] && with.last?.toTrash == true,
           "uninstall: the recordings to the Trash, not a folder that holds other things: \(names(with))")
@@ -714,7 +720,7 @@ do {
     let l = ServerProcess.launch(python: r.appendingPathComponent("python/bin/python3"),
                                  server: r.appendingPathComponent("server"), version: "0.2 (180)")
     check(l.executable.path == "/Applications/EchoFox.app/Contents/Resources/python/bin/python3"
-          && l.arguments == ["/Applications/EchoFox.app/Contents/Resources/server/gemma_voice.py", "--parent"]
+          && l.arguments == ["/Applications/EchoFox.app/Contents/Resources/server/echofox-server.py", "--parent"]
           && l.directory.path == "/Applications/EchoFox.app/Contents/Resources/server",
           "server: the bundled Python runs the bundled server, which ends with the app (--parent)")
     check(l.environment == ["PYTHONDONTWRITEBYTECODE": "1", "ECHOFOX_APP_VERSION": "0.2 (180)"],

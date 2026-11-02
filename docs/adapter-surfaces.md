@@ -22,7 +22,7 @@ In interface 2 an adapter is both a product for the user and the rules for one a
 - **The identity is fixed by the core** and shown once to the user. Everything else (the outline, lists, processes) is read only when a surface declares it.
 - **The settings window shows each adapter by its surfaces**: one section per surface, with what is read from the screen and from the disk.
 - **`hints` go.** The start message carries no hints, and no adapter reads them. The test client sends a recorded snapshot instead.
-- **The server's entry point and logger lose the name `gemma_voice`** (`echofox-server`) when the server's modules are split ([plan](plan.md#structure)), not before.
+- **The server's entry point, logger and logs are named `echofox-server`.**
 
 ## The flow
 

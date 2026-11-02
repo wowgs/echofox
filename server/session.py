@@ -19,10 +19,13 @@ import catalog
 import constants
 import languages
 import metrics
+import microphone
+import prompt
 import recordings
+import resolve
 import tuning
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
-from dictation import Dictation, adapter_options, prompt
+from dictation import Dictation
 from vad import Stream
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
@@ -30,7 +33,7 @@ WARM_POLL_S = 0.2           # how often the warm-up looks whether the recording 
 MIC_INFO_WAIT_S = 15        # for the input device's description at the end
 CLIENT_NAME_CHARS = 40
 STOP_REASONS = ("user", "silence", "max_duration", "error")
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 
 
 @dataclass
@@ -49,8 +52,8 @@ class Start:
 
 
 def parse_start(m, models, args=None):
-    """A start message → Start; raises ValueError with what the client is told. The options: the model's catalog
-    defaults, then the user's options of the model, then the client's (an experiment)."""
+    """A start message → Start; raises ValueError with what the client is told. The options and the prompt come from
+    their owners (resolve.model, resolve.own_prompt)."""
     if not isinstance(m, dict) or m.get("type") != "start":
         raise ValueError(f"expected a start message, got {str(m)[:200]}")
     if m.get("sampleRate", constants.RATE) != constants.RATE or m.get("encoding", constants.ENCODING) != constants.ENCODING:
@@ -59,12 +62,11 @@ def parse_start(m, models, args=None):
     if name is None:
         raise ValueError(f"no model {m.get('model')}; this server has: {', '.join(models.entries)}")
     entry = models.entries[name]
-    client = tuning.parse(m.get("options"))
-    options = tuning.resolve(catalog.model_defaults(entry), tuning.parse(entry.get("options"), "model"), client=client)
+    client = resolve.client(m.get("options"))
     language = str(m.get("language") or "")
-    own = (m["prompt"] if isinstance(m.get("prompt"), str) else entry.get("prompt") or "").strip()[:constants.MAX_PROMPT]
-    return Start(model=name, entry=entry, options=options, language=language, own_prompt=own,
-                 text_prompt=prompt(language, own, entry, getattr(args, "languages", None)),
+    own = resolve.own_prompt(m.get("prompt"), entry)
+    return Start(model=name, entry=entry, options=resolve.model(entry, client), language=language, own_prompt=own,
+                 text_prompt=prompt.text(language, own, entry, getattr(args, "languages", None)),
                  client=str(m.get("client") or "")[:CLIENT_NAME_CHARS], client_options=client,
                  identity=m["identity"] if isinstance(m.get("identity"), dict) and m.get("private") is not True else {},
                  private=m.get("private") is True)
@@ -76,15 +78,10 @@ class Session:
     def __init__(self, ws, send, models, args, start, make_stream=None):
         """`make_stream`: what makes the speech detector of the recording (vad.Stream; tests give another)."""
         self.ws, self.send, self.models, self.args, self.start = ws, send, models, args, start
-        self.rec = None
-        if args.save_recordings and not start.private:
-            try:
-                self.rec = recordings.Recording(args.recordings)
-            except OSError:
-                log.exception("cannot start the recording folder")
-        self.id = self.rec.id if self.rec else time.strftime("%Y-%m-%d/%H%M%S-") + "unsaved"
+        self.files = recordings.start(args.recordings, args.save_recordings and not start.private)
+        self.id = self.files.id
         opts = start.options
-        self.cut = {n: tuning.value(n, opts, args) for n in ("piece_seconds", "cut_search_seconds", "cut_while_speaking",
+        self.cut = {n: resolve.value(n, opts, args) for n in ("piece_seconds", "cut_search_seconds", "cut_while_speaking",
                                                              "min_last_piece_seconds")}
         self.max_audio = catalog.max_audio_seconds(start.entry)  # what the model takes in one request
         self.cut["piece_seconds"] = min(self.cut["piece_seconds"], self.max_audio)
@@ -99,7 +96,7 @@ class Session:
         self.stopped = asyncio.Event()  # set at the stop: the adapters' context is waited for until then
         self.surfaces, self.content = [], None  # the matched surfaces; what the client read there, by surface name
         self.content_came = asyncio.Event()  # set when the content message came, or when no surface needs one
-        self.mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if self.rec else None
+        self.mic = asyncio.ensure_future(asyncio.to_thread(microphone.state)) if self.files.saved else None
         log.info("recording %s: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s",
                  self.id, start.model, start.client or "unknown", start.language,
                  languages.name(start.language) or "no name", self.meta["prompt"], start.text_prompt[:120],
@@ -129,8 +126,7 @@ class Session:
         async for message in self.ws:
             if isinstance(message, (bytes, bytearray)):
                 self.audio += message
-                if self.rec:
-                    self.rec.write(message)
+                self.files.audio(message)
                 self.levels.feed(message)
                 heard = self.speech.feed(message)
                 self.cut_live()
@@ -185,13 +181,13 @@ class Session:
 
     def read_request(self):
         """The surfaces of the enabled adapters that the start's identity is on, and the read request's surfaces: what
-        the client reads there, with the budgets of the adapter's options (dictation.adapter_options), the same as its
+        the client reads there, with the budgets of the adapter's options (resolve.adapter), the same as its
         context's."""
         surfaces = adapters.match(self.start.identity, self.args.adapters)
 
         def budget(adapter, key):
-            options = adapter_options(adapter, self.start.options, self.args, self.start.client_options)
-            return tuning.value(tuning.BY_KEY[key].name, options, self.args)
+            options = resolve.adapter(adapter, self.start.options, self.args, self.start.client_options)
+            return resolve.value(tuning.BY_KEY[key].name, options, self.args)
         return surfaces, adapters.read(surfaces, budget)
 
     async def ask_to_read(self):
@@ -254,9 +250,9 @@ class Session:
                 log.exception("recording %s: warming slot %d failed", self.id, k)
 
     async def transcribe(self):
-        if self.models.recording.locked():
+        if self.models.in_use.locked():
             log.info("recording %s waits for the recording before it", self.id)
-        async with self.models.recording:  # one recording at a time on the model
+        async with self.models.in_use:  # one recording at a time on the model
             dictation, warming, tasks, context = None, None, [], None
             try:
                 # The context is read now, while the model loads if it left memory (Models.unload_when_idle); the
@@ -266,14 +262,14 @@ class Session:
                     model = await self.models.get(self.start.model)
                     entry = (getattr(self.models, "entries", None) or {}).get(getattr(model, "name", None))
                     dictation = Dictation(model, self.start.text_prompt, self.start.options, self.args, self.meta,
-                                          self.rec, client_options=self.start.client_options,
+                                          self.files, client_options=self.start.client_options,
                                           token_weights=catalog.token_weights(entry))
                     await dictation.prepare(await context)
                 except Exception as e:
                     log.exception("recording %s: preparing failed", self.id)
                     await self.fail(str(e))
                 slots = await asyncio.to_thread(dictation.slots) if dictation else 1
-                if dictation and tuning.value("warm_text", self.start.options, self.args):
+                if dictation and resolve.value("warm_text", self.start.options, self.args):
                     warming = asyncio.ensure_future(self.warm_slots(dictation, slots))
                 # Every piece goes to llama-server as soon as it is cut, piece i to slot (i - 1) % slots.
                 piece = 0
@@ -314,8 +310,7 @@ class Session:
                  self.id, report["seconds"], report["speech_dbfs"], report["noise_dbfs"], report["peak_dbfs"],
                  100 * report["speech_fraction"])
         metrics.metric("audio", recording=self.id, **{k: v for k, v in report.items() if k != "dbfs_per_second"})
-        if self.rec:
-            self.rec.save("audio.json", report)
+        self.files.levels(report)
 
     async def run(self):
         await self.ask_to_read()
@@ -368,13 +363,11 @@ class Session:
             await self.finish()
 
     async def finish(self):
-        if not self.rec:
-            return
         mic_info = None
         if self.mic is not None:
             with contextlib.suppress(Exception):
                 mic_info = await asyncio.wait_for(asyncio.shield(self.mic), MIC_INFO_WAIT_S)
-        self.rec.finish({"model": self.start.model, "language": self.start.language, "client": self.start.client,
+        self.files.finish({"model": self.start.model, "language": self.start.language, "client": self.start.client,
                          "stopReason": self.stop_reason or "connection closed", "error": "; ".join(self.errors) or None,
                          "identity": self.start.identity or None, "surfaces": [s.name for s in self.surfaces],
                          "chat": self.chat or None, "pieces": self.texts,

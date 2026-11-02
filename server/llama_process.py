@@ -18,7 +18,7 @@ import urllib.request
 import catalog
 import constants
 
-log = logging.getLogger("gemma_voice")
+log = logging.getLogger("echofox-server")
 SHORT_TIMEOUT_S = 10  # /health, lsof, ps
 HEALTH_POLL_S = 1
 TERM_WAIT_S = 30      # a llama-server has this long to end after SIGTERM, then it is killed

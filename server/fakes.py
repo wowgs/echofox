@@ -9,19 +9,19 @@ import time
 import audio
 import llama_client
 import llama_process
+import microphone
 import model_registry
-import recordings
 import protocol
 import settings
 import vad
 from audio import RATE
 
 # No test waits for a real llama-server, starts one or asks macOS about the microphone. The registry calls
-# llama_process's functions through the module, so these replacements reach it (test_sandbox.py checks that no other
-# module holds them under a name of its own).
+# llama_process's functions, and the session microphone's, through the module, so these replacements reach them
+# (test_sandbox.py checks that no other module holds them under a name of its own).
 real_wait_healthy = llama_process.wait_healthy  # for the test of the wait itself
 llama_process.wait_healthy = lambda url, seconds=0, stop=None: True
-recordings.input_info = lambda: None
+microphone.state = lambda: None
 
 
 class ToneStream(vad.Stream):
@@ -50,7 +50,7 @@ ENTRIES = {"gemma-e4b": {"llamaServer": "http://127.0.0.1:9"}, "gemma-12b": {"ll
 def args(**over):
     """The recording settings protocol.handle() gets: the defaults, with the recordings in the sandbox and the
     built-in Claude adapters enabled."""
-    st = settings.recording_settings(settings.resolve({}))
+    st = settings.recording_settings(settings.in_force({}))
     st.recordings = tempfile.mkdtemp(prefix="recordings-", dir=sandbox.ROOT)
     st.adapters = ["claude-code", "claude-chat"]
     for k, v in over.items():

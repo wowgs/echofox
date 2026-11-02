@@ -5,6 +5,7 @@ import unittest
 
 import catalog
 import llama_client
+import resolve
 import tuning
 from fakes import LOUD, FakeLlamaServer
 
@@ -19,7 +20,7 @@ class LlamaModelTest(unittest.TestCase):
 
     def test_the_sampler_knobs_go_under_llama_servers_fields(self):
         m = self.fake.model()
-        defaults = catalog.model_defaults({})  # Gemma 4 E4B's catalog entry: Google's sampler
+        defaults = resolve.model_defaults({})  # Gemma 4 E4B's catalog entry: Google's sampler
         m.complete("PROMPT", LOUD, 5, defaults)
         m.complete("PROMPT", LOUD, 5, {**defaults, "top_k": 1, "seed": 3})
         first, second = self.fake.completions()

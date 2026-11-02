@@ -7,7 +7,7 @@
   "workingPort": 8090,
   "sampleRate": 16000,
   "encoding": "pcm_s16le",
-  "serverLog": "~/Library/Logs/EchoFox/gemma-voice.log",
+  "serverLog": "~/Library/Logs/EchoFox/echofox-server.log",
   "configCheckSeconds": 2,
   "recordings": "~/speech/recordings",
   "labeled": "~/speech/labeled"

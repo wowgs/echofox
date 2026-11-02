@@ -15,8 +15,8 @@ TEST_URL = f"ws://{HOST}:{TEST_PORT}"
 # Files.
 CONFIG = "~/.echofox/config.json"                         # $ECHOFOX_CONFIG sets another
 LOGS = "~/Library/Logs/EchoFox"
-SERVER_LOG = f"{LOGS}/gemma-voice.log"  # the server's output, which the app writes there
-METRICS = f"{LOGS}/gemma-voice-metrics.jsonl"
+SERVER_LOG = f"{LOGS}/echofox-server.log"  # the server's output, which the app writes there
+METRICS = f"{LOGS}/echofox-server-metrics.jsonl"
 RECORDINGS = "~/speech/recordings"
 LABELED = "~/speech/labeled"  # the labeled pieces (the app writes them; the server only names the folder)
 MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model files, a folder for each model
