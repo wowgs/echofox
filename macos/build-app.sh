@@ -2,30 +2,42 @@
 # Builds macos/build/EchoFox.app, the app with everything it runs (docs/reference/7-development.md, "The package"): the server's code in
 # Contents/Resources/server, Python with the server's packages in Contents/Resources/python, and llama-server in
 # Contents/Resources/llama, at the versions of pins.sh. The app starts the server as its child process.
-# Usage: macos/build-app.sh [--dmg]
-#   --dmg  also build/EchoFox.dmg with the app, the installer window.
-# It needs Xcode (actool compiles the icon) and a Developer ID Application identity in the keychains: $ECHOFOX_SIGN
-# names it, else the build takes the one Developer ID Application identity it finds. It signs with the hardened
-# runtime, which notarization needs.
+# Usage: macos/build-app.sh [--dmg] [--adhoc]
+#   --dmg    also build/EchoFox.dmg with the app, the installer window.
+#   --adhoc  sign ad hoc, for a Mac without a Developer ID: no hardened runtime and no timestamp, so the app cannot be
+#            notarized and is only for this Mac. macOS ties the Accessibility and microphone permissions to the
+#            signature, and an ad hoc signature changes with every build, so each build asks for them again.
+# It needs Xcode (actool compiles the icon) and, without --adhoc, a Developer ID Application identity in the keychains:
+# $ECHOFOX_SIGN names it, else the build takes the one Developer ID Application identity it finds. It signs with the
+# hardened runtime, which notarization needs. macos/install-app.sh puts the built app into /Applications.
 # The version is the nearest git tag v<major>.<minor>[.<patch>] (CFBundleShortVersionString) and the number of commits
 # (CFBundleVersion), so the history must be whole (no shallow clone). The oldest macOS is pins.sh's MACOS_MIN.
 set -eu
 cd "$(dirname "$0")"
-dmg=false
+dmg=false adhoc=false
 for a in "$@"; do
   case $a in
     --dmg) dmg=true ;;
-    *) echo "usage: $0 [--dmg]" >&2; exit 2 ;;
+    --adhoc) adhoc=true ;;
+    *) echo "usage: $0 [--dmg] [--adhoc]" >&2; exit 2 ;;
   esac
 done
 . ./pins.sh
 
-identity=${ECHOFOX_SIGN:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p')}
-case $identity in
-  "Developer ID Application: "*) ;;
-  *) echo "no Developer ID Application identity (found: ${identity:-none}); name it in ECHOFOX_SIGN" >&2; exit 1 ;;
-esac
-security find-identity -v -p codesigning | grep -qF "\"$identity\"" || { echo "no signing identity \"$identity\" in the keychains" >&2; exit 1; }
+if $adhoc; then
+  identity=-
+else
+  identity=${ECHOFOX_SIGN:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p')}
+  case $identity in
+    "Developer ID Application: "*) ;;
+    *) echo "no Developer ID Application identity (found: ${identity:-none}); name it in ECHOFOX_SIGN, or build with --adhoc" >&2; exit 1 ;;
+  esac
+  security find-identity -v -p codesigning | grep -qF "\"$identity\"" || { echo "no signing identity \"$identity\" in the keychains" >&2; exit 1; }
+fi
+# Signs the files: with the Developer ID, the hardened runtime and a timestamp, or ad hoc
+sign() {
+  if $adhoc; then codesign --force --sign - "$@"; else codesign --force --sign "$identity" --options runtime --timestamp "$@"; fi
+}
 xcode=$(xcode-select -p)
 case $xcode in *CommandLineTools*) xcode=/Applications/Xcode.app/Contents/Developer ;; esac
 DEVELOPER_DIR=$xcode xcrun --find actool >/dev/null 2>&1 || { echo "no actool: the build needs Xcode" >&2; exit 1; }
@@ -124,13 +136,13 @@ if [ -n "$problems" ]; then echo "$problems" >&2; exit 1; fi
 # Inside out: Sparkle's helpers, then the framework; every executable and library in the bundle; then the app
 sparkle=$app/Contents/Frameworks/Sparkle.framework/Versions/B
 for f in "$sparkle/Autoupdate" "$sparkle/Updater.app" "$app/Contents/Frameworks/Sparkle.framework"; do
-  codesign --force --sign "$identity" --options runtime --timestamp "$f"
+  sign "$f"
 done
 find "$app/Contents/Resources" -type f \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) |
   while IFS= read -r f; do
-    if file -b "$f" | grep -q Mach-O; then codesign --force --sign "$identity" --options runtime --timestamp "$f"; fi
+    if file -b "$f" | grep -q Mach-O; then sign "$f"; fi
   done
-codesign --force --sign "$identity" --options runtime --timestamp --entitlements app/entitlements.plist "$app"
+sign --entitlements app/entitlements.plist "$app"
 codesign --verify --deep --strict "$app"
 codesign -dr - "$app" 2>&1 | tail -1
 echo "version $version ($build), macOS $MACOS_MIN or later"
@@ -143,7 +155,7 @@ if $dmg; then
   "$tools/bin/dmgbuild" -s dmg/settings.py -D app="$app" -D icon="$app/Contents/Resources/EchoFox.icns" \
     -D background=dmg/background.tiff EchoFox build/EchoFox.dmg >/dev/null
   # The dmg is signed too, so that Gatekeeper checks the file that was downloaded
-  codesign --force --sign "$identity" --timestamp build/EchoFox.dmg
+  if $adhoc; then codesign --force --sign - build/EchoFox.dmg; else codesign --force --sign "$identity" --timestamp build/EchoFox.dmg; fi
   echo build/EchoFox.dmg
 fi
 echo "$app"

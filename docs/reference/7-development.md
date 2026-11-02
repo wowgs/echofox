@@ -19,6 +19,23 @@ server/.venv/bin/pip install --require-hashes --only-binary :all: -r server/requ
 
 The build needs Xcode, because `actool` compiles the icon, and a Developer ID Application identity in the keychain. `ECHOFOX_SIGN` names the identity; without it, the build takes the one Developer ID Application identity it finds. Without one, the build stops. It signs with the hardened runtime.
 
+On a Mac without a Developer ID, `--adhoc` signs the app ad hoc, without the hardened runtime and a timestamp. Such an app runs only on the Mac that built it and cannot be notarized. macOS ties the Accessibility and microphone permissions to the signature, and an ad hoc signature changes with each build, so the app asks for the permissions again after each build.
+
+### Install a local build
+
+`macos/install-app.sh` puts `macos/build/EchoFox.app` (or the app it is given) into `/Applications` and opens it:
+
+```
+macos/build-app.sh && macos/install-app.sh
+```
+
+1. It checks that the app is EchoFox and that its signature is valid.
+2. It quits the running EchoFox and waits until the app, its server and its `llama-server` have ended. The server runs from the installed bundle.
+3. It moves the installed app to the Trash, under its version and the time, so it can be put back.
+4. It copies the new app to `/Applications` and opens it. `--no-open` leaves it closed.
+
+The config, the models and the recordings stay. The new app migrates the config at its start as a release does, and a release installs over it as usual. With the same Developer ID, macOS keeps the app's permissions.
+
 The app includes the server, Python 3.14 and its packages, and a Metal build of `llama-server`. Versions are pinned in `macos/pins.sh`, and so is the oldest macOS, `MACOS_MIN`; the build passes it to cmake, `actool` and `LSMinimumSystemVersion`. pip installs wheels only, and checks each against its SHA-256 in `server/requirements.txt`. The app leaves out the server's tests and its development tools, which are all in `server/tools`. The build keeps its downloads and the `llama-server` build in `macos/.cache`, which `macos/cache-deps.sh` fills (`build-app.sh` runs it first); it builds `llama-server` again when its commit or cmake flags change, and the dmgbuild environment again when `macos/dmg/requirements.txt` changes. In CI the cache lives on master (`cache.yml`): a run on a tag can restore only its own ref's cache or the default branch's, so a cache saved by one tag would never serve the next one. After the build, it reads the `minos` of every executable and library in the app and stops if one needs a newer macOS or links a library from Homebrew. It compiles the bytecode of Python, its packages and the server before signing, then checks the signature with `codesign --verify --deep --strict`. Models are downloaded separately.
 
 The version comes from git: `CFBundleShortVersionString` is the nearest tag `v<major>.<minor>[.<patch>]` without the `v`, and `CFBundleVersion` is the number of commits (`git rev-list --count HEAD`). The build stops in a shallow clone or without a tag.
