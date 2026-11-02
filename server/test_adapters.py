@@ -266,7 +266,7 @@ class ClaudeCodeTest(Fixture):
         self.assertTrue(c["about"] and c["source"].startswith("terminal title: "))
         self.assertEqual(c["messages"], [{"from": "Claude", "text": "Запушил в master."},
                                          {"from": "Claude", "text": "Тесты прошли: npm test, 38 из 38.\nКоммит в master готов."}])
-        self.assertEqual(c["terms"], ["master", "test", "npm"])
+        self.assertEqual(c["terms"], ["master", "npm", "test"])  # the newest reply's first
 
     def test_clean_takes_out_claude_codes_tags(self):
         clean = registry.packages()["claude-code"].adapter.clean
@@ -280,9 +280,10 @@ class ClaudeCodeTest(Fixture):
             self.assertIsNone(found({"identity": {"app": {"bundleId": app}}}), app)
         self.assertIsNone(found({}))
 
-    def test_terms_are_latin_script_words_the_most_frequent_first_without_common_english_words(self):
+    def test_terms_are_latin_script_words_in_the_texts_order_once_without_common_english_words(self):
+        # The texts come newest first: the budget takes the terms of the newest text first, not the most frequent
         self.assertEqual(adapters.terms(["the GitHub Actions and GitHub", "use node.js, CI/CD and /Users/x/y/z.js"]),
-                         ["GitHub", "CI/CD", "node.js", "Actions"])
+                         ["GitHub", "Actions", "node.js", "CI/CD"])
 
 
 class CleanTest(Fixture):
@@ -325,9 +326,7 @@ class CleanTest(Fixture):
 
     def test_names_in_other_scripts_are_terms_but_not_the_first_word_of_a_sentence(self):
         got = adapters.terms(["Поставь Убунту на ubu. Потом проверь Флинт и роутер.\nДальше Флинт снова."])
-        self.assertEqual(got[0], "Флинт")  # twice; the others once
-        self.assertIn("ubu", got)
-        self.assertIn("Убунту", got)
+        self.assertEqual(got[:3], ["ubu", "Убунту", "Флинт"])  # Флинт twice, once in the terms
         self.assertNotIn("Поставь", got)
         self.assertNotIn("Потом", got)
         self.assertNotIn("Дальше", got)
@@ -453,7 +452,7 @@ class UserAdapterTest(Fixture):
         c = found(EXAMPLE, enabled=["mine"])
         self.assertEqual((c["adapter"], c["surface"], c["about"], c["messages"][0], c["terms"]),
                          ("mine", "mine/main", "a chat with Anna", {"from": "Anna", "text": "Hello Kubernetes"},
-                          ["Anna", "Kubernetes", "Hello"]))
+                          ["Anna", "Hello", "Kubernetes"]))
         self.assertEqual(registry.packages()["mine"].info({"mine"})["surfaces"], user_manifest("mine")["surfaces"])
 
     def test_a_broken_adapter_stops_only_itself_and_says_why(self):

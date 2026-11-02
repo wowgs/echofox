@@ -54,11 +54,11 @@ The content message has no field for the reason a part is not whole. The outline
 Context is placed before the recognition prompt, between `<context>` and `</context>`:
 
 - A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
-- Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency. English speech gets no terms: every English word would be one.
+- Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets: those of the open files, then those of the messages from the newest, each once. English speech gets no terms: every English word would be one.
 - The files open beside the conversation, if the adapter gives them, in the adapter's order. They have a budget of their own.
 - The newest messages, arranged from oldest to newest.
 
-Every budget is taken the same way (`server/budget.py`): greedily and not strictly. The items are taken in their order (the terms most frequent first, the messages newest first, the files as the adapter gives them) until their sum reaches the budget. The item that reaches it is taken whole and is the last. So a long reply or file goes in whole, and the context can be bigger than its budget.
+Every budget is taken the same way (`server/budget.py`): greedily and not strictly. The items are taken in their order (the terms of the open files and then of the messages from the newest, the messages newest first, the files as the adapter gives them) until their sum reaches the budget. The item that reaches it is taken whole and is the last. So a long reply or file goes in whole, and the context can be bigger than its budget.
 
 Tokens are estimated, not counted by the model: the characters of each kind (Cyrillic, Latin, digit, whitespace, other) times the model's tokens per character of that kind (`tokenWeights` in its catalog entry), rounded up. A character is a Unicode scalar. Cyrillic is U+0400 to U+04FF, Latin letters and digits are ASCII only, and whitespace is Unicode's White_Space property. The estimate needs no running model, so the adapters and the app use it too. The server (`server/budget.py`) and the app (`TokenEstimate`) each have a copy of it, and the tests of both check the same examples (`shared/token-examples.json`). `server/tools/calibrate_tokens.py` fits the weights against llama.cpp's own tokenizer, and the record of each dictation gives the model's count beside the estimate (`chat_tokens`, `chat_tokens_estimated`). The weights of Gemma 4 E4B were fitted on Russian dictations with English terms; for other scripts the estimate is not measured.
 

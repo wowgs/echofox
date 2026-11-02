@@ -13,7 +13,7 @@ surface, what the client reads there and up to which budget. The client reads on
 message (CONTENT below). Then each matched surface's adapter gets its snapshot, the identity and the content of that
 surface, and gives the context of the conversation there, or None when it is not sure. With no context, or with more
 than one, the dictation runs without context. Every adapter has clean(text): the core passes each message and document
-of the context through it before it goes to the model, and takes the terms from the cleaned messages; the lines that
+of the context through it before it goes to the model, and takes the terms from the cleaned documents and messages; the lines that
 are not prose (prose()) go afterwards when the adapter's setting proseOnly says so. clean makes the app's text plain
 prose (adapters/markdown.py has why).
 
@@ -101,18 +101,18 @@ def names(text):
 
 
 def terms(texts):
-    """The terms of the texts: Latin-script words (product names, identifiers, files) and names in other scripts, the
-    most frequent first (ties: the later one first)."""
-    seen, i = {}, 0
+    """The terms of the texts: Latin-script words (product names, identifiers, files) and names in other scripts, in
+    the texts' order (inside a text: its Latin-script words as they come, then its names), each once. The texts come as the context is read (the
+    open files, then the messages from the newest), so the terms' budget takes them greedily from there, like the
+    messages; a term of an old message goes in only when the newer ones leave room."""
+    seen = {}
     for t in texts:
         for w in WORD.findall(t) + names(t):
-            i += 1
             w = re.sub(r"[.\-/]+$", "", w)
             if len(w) < 2 or len(w) > 40 or w.count("/") > 1 or w.lower() in STOP:
                 continue
-            n, _ = seen.get(w, (0, 0))
-            seen[w] = (n + 1, i)
-    return [w for w, _ in sorted(seen.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))]  # the terms' budget cuts them
+            seen.setdefault(w, None)
+    return list(seen)
 
 
 def prose(text):
@@ -187,8 +187,8 @@ def _cleaned(a, items, errors, keep):
 def context(identity, matched, content=None):
     """What the dictation goes into, from the matched surfaces (adapters.match) and the content the client sent for
     them, by surface name: {"adapter", "surface": <adapter>/<id>, "about", "source", "details", "messages": newest
-    first and cleaned, "documents": [{"name", "text"}] cleaned, "terms": the adapter's own terms, then the frequent
-    ones of the cleaned messages, "errors": what failed in the adapters}; without "messages", "documents" or "terms"
+    first and cleaned, "documents": [{"name", "text"}] cleaned, "terms": the adapter's own terms, then those of the
+    cleaned documents and of the cleaned messages from the newest (terms()), "errors": what failed in the adapters}; without "messages", "documents" or "terms"
     if the adapter gave none. None if no surface gives a context (with none matched: the base mode, no context). More
     than one context: none of them, and the errors name the surfaces, since the conversation is not certain. A
     document without a name, or empty once cleaned, is left out."""
@@ -219,7 +219,8 @@ def context(identity, matched, content=None):
         if documents:
             out["documents"] = documents
     own = [t for t in found.get("terms") or [] if isinstance(t, str)]
-    found_terms = own + [t for t in terms(m["text"] for m in reversed(messages)) if t not in own]
+    documents = out.get("documents") or []
+    found_terms = own + [t for t in terms([d["text"] for d in documents] + [m["text"] for m in messages]) if t not in own]
     if found_terms:
         out["terms"] = found_terms  # also without messages: the names of a place help on their own
     if errors:

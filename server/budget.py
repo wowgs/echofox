@@ -7,7 +7,7 @@ TokenEstimate), so that the screen is read up to the same budget. No model is ne
 can count before llama-server runs.
 
 The rule (take): greedy and not strict. The items are taken in their order (the messages newest first, the documents
-as the adapter gives them, the terms most frequent first) until the sum reaches the budget; the item that reaches it is
+as the adapter gives them, the terms of the documents and then of the messages from the newest) until the sum reaches the budget; the item that reaches it is
 taken whole, and the taking stops there.
 """
 import math
