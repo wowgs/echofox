@@ -98,6 +98,7 @@ class Session:
         self.audio, self.pending = bytearray(), asyncio.Queue()
         self.texts, self.errors, self.chat = [], [], {}
         self.stopped_at, self.stop_reason = None, None
+        self.stopped = asyncio.Event()  # set at the stop: the adapters' context is waited for until then
         self.mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if self.rec else None
         log.info("recording %s: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s",
                  self.id, start.model, start.client or "unknown", start.language,
@@ -172,8 +173,9 @@ class Session:
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
-        # An adapter that hangs: the dictation goes on without context
-        found = await adapters.context_within(self.start.snapshot, self.start.hints, self.args.adapters) or {}
+        # Adapters still running at the stop: the dictation goes on without context
+        found = await adapters.context_until(self.start.snapshot, self.start.hints, self.args.adapters,
+                                             self.stopped) or {}
         if not found.get("adapter") and found.get("errors"):
             log.error("recording %s: no context: %s", self.id, "; ".join(found["errors"]))
         self.chat.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source", "details",
@@ -268,6 +270,7 @@ class Session:
         try:
             self.stop_reason = await self.receive()
             self.stopped_at = time.monotonic()
+            self.stopped.set()
             if self.stop_reason is None:
                 log.warning("recording %s: the client closed the connection before the stop", self.id)
                 self.errors.append("the client closed the connection before the stop")

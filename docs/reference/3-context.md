@@ -1,6 +1,6 @@
 # Conversation context and adapters
 
-An adapter supplies recent conversation text to help the speech model recognize names and terms. Dictation also works without an adapter. If the conversation cannot be identified reliably, the server proceeds without context.
+An adapter supplies recent conversation text to help the speech model recognize names and terms. Dictation also works without an adapter. If the conversation cannot be identified reliably, the server proceeds without context. The adapters run while you speak, on a thread of their own. Their context is waited for until the recording stops; if they are still running then, the dictation goes without context. The log gives the adapters' time of each dictation (`adapters: 0.042 s`), also when they end after the stop.
 
 Private dictation never sends a context snapshot or runs an adapter.
 

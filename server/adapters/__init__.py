@@ -39,6 +39,7 @@ import asyncio
 import concurrent.futures
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 log = logging.getLogger("gemma_voice")
@@ -137,27 +138,34 @@ def bundle(snapshot):
 from . import registry  # noqa: E402
 
 
-CONTEXT_TIMEOUT_S = 5.0  # for the whole adapter step; it took 0.04 s for an adapter that reads a local transcript (2026-10-15)
-
 # The adapters run on a thread of their own, not in the event loop's default pool, which the model's requests use:
-# an adapter that hangs past the timeout keeps its thread, and must not take one of theirs. While it hangs, the next
-# dictations get no context instead of a second hung thread.
+# an adapter still running at the stop keeps its thread, and must not take one of theirs. While it runs, the next
+# dictations get no context instead of a second thread.
 _worker = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="adapters")
 _running = None  # the call that runs now, a concurrent.futures.Future
 
 
-async def context_within(focus, hints=None, enabled=None, timeout=None):
-    """context(), on the adapters' thread, for at most `timeout` seconds. A call that hangs gives {"errors": […]}; so
-    does a call while an earlier one still runs. `timeout`: CONTEXT_TIMEOUT_S unless given."""
+async def context_until(focus, hints=None, enabled=None, stop=None):
+    """context(), on the adapters' thread, until it ends or `stop` (an asyncio.Event: the end of the recording) is set,
+    whichever is first. No context by the stop gives {"errors": […]}; so does a call while an earlier one still runs.
+    The adapters' time is logged when they end, also after the stop."""
     global _running
-    timeout = CONTEXT_TIMEOUT_S if timeout is None else timeout
     if _running is not None and not _running.done():
         return {"errors": ["the adapters still run for an earlier dictation"]}
+    started = time.monotonic()
     _running = _worker.submit(context, focus, hints, enabled)
+    _running.add_done_callback(lambda f: log.info("adapters: %.3f s", time.monotonic() - started))
+    found = asyncio.ensure_future(asyncio.shield(asyncio.wrap_future(_running)))
+    stopped = asyncio.ensure_future(stop.wait()) if stop is not None else None
     try:
-        return await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(_running)), timeout)
-    except TimeoutError:
-        return {"errors": [f"no context in {timeout:.0f} s"]}
+        await asyncio.wait({found} | ({stopped} if stopped else set()), return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        if stopped:
+            stopped.cancel()
+    if found.done():
+        return found.result()
+    found.cancel()
+    return {"errors": [f"no context by the stop, {time.monotonic() - started:.1f} s after the start"]}
 
 
 def _guarded(adapter, what, fn, *args):

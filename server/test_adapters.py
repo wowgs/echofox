@@ -1,6 +1,7 @@
 """Tests of the adapters (adapters/): Claude Code transcripts, Claude Desktop, and the choice of an adapter.
 Run: server/.venv/bin/python -m unittest discover -s server"""
 import sandbox  # noqa: F401  (before any other import: see sandbox.py)
+import asyncio
 import json
 import os
 import tempfile
@@ -563,12 +564,18 @@ class HungAdapterTest(unittest.IsolatedAsyncioTestCase):
         saved = adapters.context
         adapters.context = hung
         try:
-            self.assertEqual(await adapters.context_within({}, timeout=0.05), {"errors": ["no context in 0 s"]})
-            self.assertEqual(await adapters.context_within({}, timeout=0.05),
+            stop = asyncio.Event()
+            asyncio.get_running_loop().call_later(0.05, stop.set)
+            got = await adapters.context_until({}, stop=stop)
+            self.assertTrue(got["errors"][0].startswith("no context by the stop"), got)
+            self.assertEqual(await adapters.context_until({}, stop=stop),
                              {"errors": ["the adapters still run for an earlier dictation"]})  # no second thread
             release.set()
             adapters._running.result(5)
-            self.assertEqual(await adapters.context_within({}, timeout=1), {"adapter": "slow"})
+            with self.assertLogs("gemma_voice", "INFO") as logs:
+                self.assertEqual(await adapters.context_until({}, stop=asyncio.Event()), {"adapter": "slow"})
+                await asyncio.sleep(0.01)
+            self.assertTrue(any("adapters:" in line for line in logs.output), logs.output)
             self.assertTrue(all(t.startswith("adapters") for t in threads), threads)  # not the loop's default pool
         finally:
             release.set()

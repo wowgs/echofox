@@ -25,6 +25,8 @@ from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, handle, st
 START = {"type": "start", "language": "ru"}
 
 
+SPEAKS_S = 0.2  # how long a test recording lasts before its stop, for the adapters to end
+
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.saved = recordings.input_info
@@ -46,6 +48,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                         await ws.send(audio[i:i + 3200])
                         if between and i == 0:
                             await ws.send(between)
+                    await asyncio.sleep(SPEAKS_S)  # the speaker talks; the adapters' context is waited for until the stop
                     await ws.send(json.dumps(stop or {"type": "stop"}))
                 except ConnectionClosed:
                     pass
@@ -162,17 +165,17 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.args.adapters = []
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
-    async def test_a_adapter_that_hangs_costs_the_context_not_the_dictation(self):
-        saved, release = (adapters.context, adapters.CONTEXT_TIMEOUT_S), threading.Event()
-        adapters.context, adapters.CONTEXT_TIMEOUT_S = (lambda *a: release.wait(5)), 0.2
+    async def test_adapters_still_running_at_the_stop_cost_the_context_not_the_dictation(self):
+        saved, release = adapters.context, threading.Event()
+        adapters.context = lambda *a: release.wait(5)
         try:
             stub, got = await self.run_stream(START, LOUD)
         finally:
             release.set()  # the hung call ends, so that the next tests' dictations get their context
             adapters._running.result(5)
-            adapters.context, adapters.CONTEXT_TIMEOUT_S = saved
+            adapters.context = saved
         self.assertEqual([m["type"] for m in got if m["type"] != "speech"], ["text", "done"])
-        self.assertIn("no context", self.latest()[1]["chat"]["errors"][0])
+        self.assertIn("no context by the stop", self.latest()[1]["chat"]["errors"][0])
 
     async def test_without_warm_text_nothing_is_warmed(self):
         self.args.warm_text = False
