@@ -1,4 +1,4 @@
-// The menu bar item: the fox of the state (idle, recording, Ultra Private Dictation, writing the text; MenuBarIcon), or
+// The menu bar item: the fox of the state (idle, recording, Private Dictation, writing the text; MenuBarIcon), or
 // the crossed-out microphone of a problem, as MenuBarStatus decides, and a short menu of what is touched often, built
 // each time it opens from MenuLine.all (its settings lines in SettingsLayout.menu's order; docs/design.md); everything
 // else is in the settings window. A dictation is the hotkeys', not the menu's. It shows; it never decides: the
@@ -97,7 +97,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
             switch fox {
             case .idle: (kind, label) = (.idle, "EchoFox: ready")
             case .recording: (kind, label) = (.recording, "EchoFox: recording")
-            case .ultraPrivate: (kind, label) = (.ultraPrivate, "EchoFox: recording, Ultra Private Dictation")
+            case .privateDictation: (kind, label) = (.privateDictation, "EchoFox: recording, Private Dictation")
             case .processing: (kind, label) = (.processing, "EchoFox: writing the text")
             }
             var dark = false

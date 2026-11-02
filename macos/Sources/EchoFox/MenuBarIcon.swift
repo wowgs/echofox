@@ -1,11 +1,11 @@
 // The fox of the menu bar: its face alone when idle, and with a large white headset, outlined in dark, while it
-// records (an earpiece with a red center), records Ultra Private (a shield with a keyhole) or waits for the text (an
+// records (an earpiece with a red center), records Private Dictation (a shield with a keyhole) or waits for the text (an
 // open ring turning on the earpiece). The drawing is the approved one (macos/art/README.md): 26 × 24 pt, the
 // geometry in points of that box, the origin at its bottom left. AppKit only, so that a check can compile it alone.
 import AppKit
 
 enum MenuBarIcon {
-    enum Kind { case idle, recording, ultraPrivate, processing }
+    enum Kind { case idle, recording, privateDictation, processing }
 
     static let size = NSSize(width: 26, height: 24)
 
@@ -85,12 +85,12 @@ enum MenuBarIcon {
                 shape.lineJoinStyle = .round
                 shape.stroke()
             }
-            // The microphone's boom and the headband, then the earpiece: a shield for Ultra Private
+            // The microphone's boom and the headband, then the earpiece: a shield for Private Dictation
             outlinedLine(path([NSPoint(x: 4.2, y: 8), NSPoint(x: 5, y: 4.5), NSPoint(x: 8, y: 2.7),
                                NSPoint(x: 11, y: 2.7)], close: false), width: 2.5)
             outlinedLine(path([NSPoint(x: 4.2, y: 12), NSPoint(x: 5, y: 15.5), NSPoint(x: 7, y: 17.5)], close: false),
                          width: 2.6)
-            if kind == .ultraPrivate {
+            if kind == .privateDictation {
                 outlinedFill(path([NSPoint(x: 0.7, y: 15), NSPoint(x: 7.8, y: 15), NSPoint(x: 7.8, y: 9),
                                    NSPoint(x: 6.2, y: 6.8), NSPoint(x: 4.2, y: 5.3), NSPoint(x: 2.2, y: 6.8),
                                    NSPoint(x: 0.7, y: 9)]))
@@ -103,7 +103,7 @@ enum MenuBarIcon {
             outline.setStroke()
             outline.setFill()
             switch kind {
-            case .ultraPrivate:
+            case .privateDictation:
                 NSBezierPath(ovalIn: NSRect(x: 2.7, y: 10.2, width: 3, height: 3)).fill()
                 NSBezierPath(rect: NSRect(x: 3.4, y: 7.8, width: 1.6, height: 3)).fill()
             case .processing:

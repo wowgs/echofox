@@ -43,7 +43,7 @@ struct ItemView: View {
         switch id {
         case "dictationKey": KeyPicker(model: model, isPrivate: false, title: "Dictation",
                                        note: "Tap to start and stop. The text goes where the cursor was.")
-        case "privateDictationKey": KeyPicker(model: model, isPrivate: true, title: "Private dictation",
+        case "privateDictationKey": KeyPicker(model: model, isPrivate: true, title: "Private Dictation",
                                               note: "Reads nothing on the screen and saves nothing.")
         case "language": LanguagePicker(model: model)
         case "commonNotes": LanguageList(model: model, list: .notes, title: "Notes for every language",

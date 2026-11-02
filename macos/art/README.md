@@ -26,7 +26,7 @@ sips -Z 450 macos/art/echofox-welcome.png --out macos/app/echofox-welcome.png
 ## Where the fox appears
 
 - The app icon: Finder, Applications, and the dialogs of macOS.
-- The menu bar: a fox face, drawn in code by `macos/Sources/EchoFox/MenuBarIcon.swift`. Idle is the face alone. Recording adds a large white headset with a red earpiece. Ultra Private Dictation has a shield with a keyhole on the earpiece. While the app waits for the text, a dark open ring turns on the earpiece. With Reduce Motion, the ring stands still. A problem (a missing permission, an error, no server) shows the crossed-out microphone of SF Symbols. No fox is drawn for it yet.
+- The menu bar: a fox face, drawn in code by `macos/Sources/EchoFox/MenuBarIcon.swift`. Idle is the face alone. Recording adds a large white headset with a red earpiece. Private Dictation has a shield with a keyhole on the earpiece. While the app waits for the text, a dark open ring turns on the earpiece. With Reduce Motion, the ring stands still. A problem (a missing permission, an error, no server) shows the crossed-out microphone of SF Symbols. No fox is drawn for it yet.
 - The first-start window: the full character, once, beside the choice of the model to download.
 
 The fox appears nowhere else: not in the settings, the menus or the other dialogs.

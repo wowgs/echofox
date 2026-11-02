@@ -864,7 +864,7 @@ do {
                          accessibility: accessibility, microphoneAllowed: microphone, lastError: error, serverProblem: server)
     }
     check(icon() == .fox(.idle), "icon: idle")
-    check(icon(recording: true, privateRecording: true, accessibility: false, error: "x") == .fox(.ultraPrivate)
+    check(icon(recording: true, privateRecording: true, accessibility: false, error: "x") == .fox(.privateDictation)
           && icon(recording: true, waiting: true, server: true) == .fox(.recording), "icon: a recording wins over all")
     check(icon(waiting: true, microphone: false) == .fox(.processing), "icon: the wait for the text wins over a problem")
     check(icon(accessibility: false, microphone: false, error: "x", server: true) == .problem("Accessibility permission needed")

@@ -5,14 +5,14 @@ import Foundation
 
 public enum MenuBarStatus: Equatable {
     /// The fox's faces: idle, recording, recording a private dictation, waiting for the text.
-    public enum Fox { case idle, recording, ultraPrivate, processing }
+    public enum Fox { case idle, recording, privateDictation, processing }
 
     case fox(Fox)
     case problem(String)
 
     public static func of(recording: Bool, privateRecording: Bool, waiting: Bool, accessibility: Bool,
                           microphoneAllowed: Bool, lastError: String?, serverProblem: Bool) -> MenuBarStatus {
-        if recording { return .fox(privateRecording ? .ultraPrivate : .recording) }
+        if recording { return .fox(privateRecording ? .privateDictation : .recording) }
         if waiting { return .fox(.processing) }
         if !accessibility { return .problem("Accessibility permission needed") }
         if !microphoneAllowed { return .problem("Microphone permission needed") }

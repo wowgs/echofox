@@ -39,7 +39,7 @@ Gemma 4 E4B runs locally through bundled llama.cpp. Pick a model variant in the 
 
 Tap <kbd>⌥</kbd> **right Option** to speak; tap again to insert the text.
 
-Use <kbd>⌘</kbd> **right Command** for **Ultra Private Dictation**: the same local recognition, without conversation context or saved recordings.
+Use <kbd>⌘</kbd> **right Command** for **Private Dictation**: the same local recognition, without conversation context or saved recordings.
 
 Nothing of your dictations leaves your Mac. EchoFox goes online only to download models and to check for and download its own updates. Regular dictations save audio, text, and context locally by default; saving can be turned off in Settings. [Recording privacy →](docs/reference/5-recordings.md)
 
