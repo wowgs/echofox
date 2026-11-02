@@ -1,6 +1,6 @@
 // What the menu bar item shows (MenuBar draws it): the fox of the state (MenuBarIcon), or the crossed-out microphone
 // of a problem with its words. A running dictation wins over a problem, so that the speaker sees that the app records;
-// then a missing permission, then the last dictation's error, then a server that does not answer.
+// then a missing permission, then the last dictation's error, then a server that does not answer, then no model.
 import Foundation
 
 public enum MenuBarStatus: Equatable {
@@ -11,13 +11,15 @@ public enum MenuBarStatus: Equatable {
     case problem(String)
 
     public static func of(recording: Bool, privateRecording: Bool, waiting: Bool, accessibility: Bool,
-                          microphoneAllowed: Bool, lastError: String?, serverProblem: Bool) -> MenuBarStatus {
+                          microphoneAllowed: Bool, lastError: String?, serverProblem: Bool,
+                          modelMissing: Bool = false) -> MenuBarStatus {
         if recording { return .fox(privateRecording ? .privateDictation : .recording) }
         if waiting { return .fox(.processing) }
         if !accessibility { return .problem("Accessibility permission needed") }
         if !microphoneAllowed { return .problem("Microphone permission needed") }
         if let e = lastError { return .problem(e) }
         if serverProblem { return .problem("the dictation server does not answer") }
+        if modelMissing { return .problem("No model downloaded. Download one in Settings.") }
         return .fox(.idle)
     }
 }

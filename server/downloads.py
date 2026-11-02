@@ -145,7 +145,7 @@ def remove(catalog_id, variant, models_folder):
 def variants(entry, models_folder):
     """The variants of a registry entry's model, for the settings window: the one in force, and each with its name,
     the bytes of its files, whether it is the catalog's default and whether its files are all in the models folder."""
-    vid, _ = catalog.variant(entry)
+    vid, _ = catalog.variant(catalog.in_force(entry, models_folder))
     default = catalog.of(entry).get("defaultVariant")
     now = running()
     out = []

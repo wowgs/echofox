@@ -32,7 +32,7 @@ macos/build-app.sh && macos/install-app.sh
 1. It checks that the app is EchoFox and that its signature is valid.
 2. It quits the running EchoFox and waits until the app, its server and its `llama-server` have ended. The server runs from the installed bundle.
 3. It moves the installed app to the Trash, under its version and the time, so it can be put back.
-4. It copies the new app to `/Applications` and opens it. `--no-open` leaves it closed.
+4. It moves the new app to `/Applications`, so that no second EchoFox stays in the build folder, and opens it. `--no-open` leaves it closed.
 
 The config, the models and the recordings stay. The new app migrates the config at its start as a release does, and a release installs over it as usual. With the same Developer ID, macOS keeps the app's permissions.
 

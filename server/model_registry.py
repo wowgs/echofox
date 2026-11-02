@@ -175,7 +175,7 @@ class Models:
         async with self.in_use:
             vid = catalog.variant({"catalog": catalog_id, "variant": variant})[0]
             if (self.entry is not None and (self.entry.get("catalog") or catalog.DEFAULT) == catalog_id
-                    and catalog.variant(self.entry)[0] == vid):
+                    and catalog.variant(catalog.in_force(self.entry, self.models_folder))[0] == vid):
                 await self.activate(None)
             return await asyncio.to_thread(delete)
 

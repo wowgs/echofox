@@ -64,7 +64,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
         let s = state()
         icon = MenuBarStatus.of(recording: s.recording, privateRecording: s.privateRecording, waiting: s.waiting,
                                 accessibility: s.accessibility, microphoneAllowed: s.microphone == .authorized,
-                                lastError: s.lastError, serverProblem: s.serverProblem != nil)
+                                lastError: s.lastError, serverProblem: s.serverProblem != nil,
+                                modelMissing: s.server?.model?.missing == true)
         let turning = icon == .fox(.processing) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if turning, spin == nil {
             let timer = Timer(timeInterval: Tuning.menuBarSpinSeconds, repeats: true) { [weak self] _ in

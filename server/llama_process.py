@@ -44,7 +44,8 @@ def local(entry):
 def command(entry, models_folder):
     """The command of a registry entry's llama-server: the files of the entry's variant, the address of its
     llamaServer, its catalog entry's arguments. Raises RuntimeError if a file of the variant or llama-server is
-    missing."""
+    missing. The variant is the one in force (catalog.in_force)."""
+    entry = catalog.in_force(entry, models_folder)
     vid, spec = catalog.variant(entry)
     if spec is None:
         raise RuntimeError(f"the catalog has no variant {vid!r} of {entry.get('catalog') or catalog.DEFAULT}")

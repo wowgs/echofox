@@ -1043,9 +1043,10 @@ do {
 // order, the clipboard's loan, the logs' folder and the one connection to the server.
 do {
     func icon(recording: Bool = false, privateRecording: Bool = false, waiting: Bool = false, accessibility: Bool = true,
-              microphone: Bool = true, error: String? = nil, server: Bool = false) -> MenuBarStatus {
+              microphone: Bool = true, error: String? = nil, server: Bool = false, noModel: Bool = false) -> MenuBarStatus {
         MenuBarStatus.of(recording: recording, privateRecording: privateRecording, waiting: waiting,
-                         accessibility: accessibility, microphoneAllowed: microphone, lastError: error, serverProblem: server)
+                         accessibility: accessibility, microphoneAllowed: microphone, lastError: error, serverProblem: server,
+                         modelMissing: noModel)
     }
     check(icon() == .fox(.idle), "icon: idle")
     check(icon(recording: true, privateRecording: true, accessibility: false, error: "x") == .fox(.privateDictation)
@@ -1054,8 +1055,15 @@ do {
     check(icon(accessibility: false, microphone: false, error: "x", server: true) == .problem("Accessibility permission needed")
           && icon(microphone: false, error: "x") == .problem("Microphone permission needed")
           && icon(error: "boom", server: true) == .problem("boom")
-          && icon(server: true) == .problem("the dictation server does not answer"),
-          "icon: the permissions, then the last error, then the server")
+          && icon(server: true, noModel: true) == .problem("the dictation server does not answer")
+          && icon(noModel: true) == .problem("No model downloaded. Download one in Settings."),
+          "icon: the permissions, then the last error, then the server, then no model")
+    let info = try ServerInfo.decode(data(examples["info"]!))
+    check(info.model?.missing == false, "model: the variant in force (q8_0) is downloaded")
+    var raw = examples["info"] as! [String: Any], model = raw["model"] as! [String: Any]
+    model["variant"] = "q4_0"  // not downloaded and not downloading: the server had no downloaded variant to run
+    raw["model"] = model
+    check((try? ServerInfo.decode(data(raw)))?.model?.missing == true, "model: the variant in force has no files")
 }
 final class QueuedDictation {}
 do {

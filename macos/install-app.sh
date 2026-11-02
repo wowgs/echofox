@@ -49,6 +49,6 @@ if [ -e "$target" ]; then
   mv "$target" "$trashed"
   echo "the installed EchoFox $old is in the Trash: $trashed"
 fi
-ditto "$app" "$target"
+mv "$app" "$target"  # moved, not copied: a second EchoFox in the build folder would show in Spotlight beside it
 echo "installed EchoFox $version ($build) in $target"
 if $open_after; then open "$target"; fi

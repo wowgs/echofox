@@ -80,6 +80,21 @@ def variant(model_entry):
     return vid, (cat.get("variants") or {}).get(vid)
 
 
+def in_force(model_entry, models_folder):
+    """The registry entry with the variant that runs: the chosen one ("variant") if its files are in the models folder,
+    else the catalog's default if its files are there, else the first variant of the catalog whose files are there;
+    with none downloaded, the chosen one or the default, which waits for its download. So a new default, or a removed
+    variant, never leaves the model without files while another variant of it is downloaded."""
+    entry = dict(model_entry or {})
+    cat = of(entry)
+    order = [entry.get("variant"), cat.get("defaultVariant"), *(cat.get("variants") or {})]
+    for vid in dict.fromkeys(v for v in order if v):
+        if vid in (cat.get("variants") or {}) and all(
+                os.path.isfile(p) for p in files({**entry, "variant": vid}, models_folder).values()):
+            return {**entry, "variant": vid}
+    return {**entry, "variant": entry.get("variant") or cat.get("defaultVariant")}
+
+
 def source(model_entry):
     """Where the files of the entry's variant come from: the variant's own source, else its catalog entry's."""
     _, spec = variant(model_entry)

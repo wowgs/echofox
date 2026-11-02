@@ -106,6 +106,13 @@ public struct ServerInfo: Decodable, Equatable {
         /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
         public let variant: String?
         public let variants: [Variant]?
+
+        /// The variant in force has no files and none is coming: dictation cannot run until a variant is downloaded.
+        /// The server runs a downloaded variant when there is one (catalog.in_force), so this means none is downloaded.
+        public var missing: Bool {
+            guard let variant, let v = variants?.first(where: { $0.id == variant }) else { return false }
+            return !v.downloaded && v.downloading != true
+        }
     }
     public struct Variant: Decodable, Equatable {
         public let id: String
