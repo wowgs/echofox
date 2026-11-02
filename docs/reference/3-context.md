@@ -8,12 +8,36 @@ See also: [configuration](2-config.md), [saved context](5-recordings.md), and [a
 
 ## How the server finds the conversation
 
-1. At the start of a regular dictation, the app captures the focused app and input element. For an app that an enabled adapter supports, it also captures the window, the accessibility metadata above the input element, the web page, and the working folders of the app's child processes. Input-field values are excluded.
+1. At the start of a regular dictation, the app captures the focused app and input element. For an app of an enabled adapter's surfaces, it also reads the identity: the app, the focused window's title, and the address and title of the web page. It sends the identity in the start message. Then the server asks for what the matched surfaces read, and the app reads only that ([What the app reads](#what-the-app-reads)). Input-field values are excluded.
 2. Enabled adapters inspect the snapshot and report whether they can handle it, with a confidence score.
 3. The server asks the most confident adapter to retrieve the conversation.
 4. If no adapter claims the snapshot or the conversation is ambiguous, recognition uses only the normal prompt.
 
-The app collects additional screen content only for enabled adapters that request it. The server does not choose a conversation just because it is the newest session in an app.
+The app reads screen content only when the server's read request asks for it. The server does not choose a conversation just because it is the newest session in an app.
+
+## What the app reads
+
+The app reads the screen through Accessibility (`macos/Sources/FocusSnapshot`), in two phases ([Adapter surfaces](../adapter-surfaces.md#the-flow)).
+
+At the hotkey, the app reads the identity of an app of an enabled adapter's surfaces, and of no other app:
+
+| Field | What |
+|---|---|
+| `app` | `bundleId`, `pid`, `name` |
+| `window` | `title` of the focused window |
+| `webArea` | `url` and `title` of the nearest web area above the focused element, if any |
+
+The app walks up from the focused element to find the web area, at most 80 ancestors. It does not send the ancestors. In the settings window, one line under an adapter's switch tells the user about the identity, in the same words for every adapter.
+
+The apps of the enabled adapters' surfaces with `treeOnRequest` build their accessibility tree only on request (Electron, Chromium). For them, and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a hotkey that finds no focused element.
+
+The server answers with a read request. For each surface in it, the app reads what the request asks, of the window and web area found at the hotkey, on a queue of its own while the audio goes on. It sends one content message, keyed by the surface:
+
+- `outline`: `{"root": "webArea" or "window", "complete", "nodes": [{"depth", "role", "subrole", "title", "description", "identifier", "domClasses", "url", "text", "skipped"}]}`. It is the tree under the web area, or under the focused window without one, flat in the tree's order, with the depth under the root. `text` is the shown text of a static text or a list marker, and never the value of an input field. An element whose AX role or one of whose DOM classes is in the request's `skip` goes in with `"skipped": true`, without its children. The app checks `skip` against all DOM classes of an element, and the element sent keeps the first 12 of them. `complete` says whether the outline has the whole tree.
+- `lists` and `focusedFrame`: the lists of the focused window in the tree's order, at most 6 within 4 levels of the window. Each list has its `frame`, its `rowCount` and its last `rows` (oldest first), with a row's `text` and the titles of its cells (`columns`). `focusedFrame` is the place of the focused element on the screen.
+- `processes`: the app's child processes, `pid` and `name`, breadth first, at most 40.
+
+The outline and the lists are read from their end, up to the request's budget, with the token estimate below and the same rule (`TokenBudget`): the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits them. When the budget stops the outline, the ancestors of the last element read still go in, without their text, so the place of that element is known. Without a budget only the structural limits apply: 80 levels of the outline.
 
 ## What the model gets
 
@@ -43,7 +67,7 @@ Each adapter supplies defaults in its manifest. Override them in its config entr
 
 Use `enabled` to turn an adapter on or off. The three built-in adapters are off in a new config. Budgets are in the selected model's tokens, estimated as above.
 
-The app reads the screen (the rows of lists, the outline of a page) from its end, up to the chat budget of the enabled adapters that ask for it, with the same estimate and the same rule (`TokenBudget`): the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits it. An adapter keeps less text than the screen shows (claude-chat keeps only Claude's replies), so its context can be smaller than its budget. The structure is limited instead: 80 levels of the outline, 80 ancestors of the focused element, 6 lists within 4 levels of the window, 12 DOM classes of an element and 40 processes of the app.
+A surface's outline and lists are read up to the setting that its manifest names as their `budget`. The server sends the value in force in its read request ([What the app reads](#what-the-app-reads)). An adapter keeps less text than the screen shows (claude-chat keeps only Claude's replies), so its context can be smaller than its budget.
 
 ## The built-in adapters
 
@@ -98,7 +122,7 @@ Config migrations never turn on an adapter that the user did not have on: a new 
 
 ## Write an adapter
 
-This is interface 2. The next interface, with surfaces, is designed in [Adapter surfaces](../adapter-surfaces.md) and not built yet.
+This is the manifest and the code of interface 2. Interface 3, with surfaces, is designed in [Adapter surfaces](../adapter-surfaces.md). The app already speaks it ([What the app reads](#what-the-app-reads)), and the server does not yet.
 
 An adapter is a Python package with two required files.
 
@@ -114,10 +138,8 @@ An adapter is a Python package with two required files.
 | `reads` | Declared file access. |
 | `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
 | `screenApps` | Optional: those among `apps` whose screen data it needs. Without it, all of them. |
-| `outlineSkip` | Names of the outline's elements that go in without their children: an element whose AX role (`AXButton`) or one of whose DOM classes (`sr-only`) is a name. The client never reads the children, so their text is not in the snapshot. The app gives the names of the enabled adapters of the app to the snapshot (`SnapshotPlan.outlineSkip`). The element itself is marked `"skipped": true`. |
+| `outlineSkip` | Names of the outline's elements that go in without their children: an element whose AX role (`AXButton`) or one of whose DOM classes (`sr-only`) is a name. The client never reads the children, so their text is not in the snapshot. The element itself is marked `"skipped": true`. |
 | `context` | This adapter's default context settings. |
-
-For the Electron apps of an enabled adapter (the info's `electronApps`), and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a snapshot that finds no focused element.
 
 `adapter.py` contains a subclass of `adapters.Adapter`:
 
@@ -145,4 +167,12 @@ swift build -c release --package-path macos
 macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/tools/which_session.py
 ```
 
-`--electron` asks an Electron app for its accessibility tree, as the app does for an enabled adapter's Electron apps; without it the tool sets no attribute of the app. For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--outline-skip AXButton,sr-only` takes the outline as the app does for an adapter with that `outlineSkip`. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.
+The tool takes the snapshot with the app's own code, in its two phases, and prints `{"identity": …, "content": …}`: the identity of the start message, and the content message that answers a read request. Recorded snapshots for the adapters' tests come from it.
+
+- `--read <file>` executes a read message as the server sends it: `echofox-snapshot --app com.anthropic.claudefordesktop --read read.json --out snapshot.json`.
+- Flags build a read of one surface, named `snapshot`, instead. `--outline` reads the outline of the page or window, and `--outline-skip AXButton,sr-only` leaves out the children of those elements. `--lists` reads the rows of the lists, and `--processes` the app's child processes. `--budget <tokens>` limits the outline and the lists, counted with `--weights '<the model's tokenWeights>'`.
+- Without `--read` and these flags, the tool prints the identity only.
+- `--electron` asks the app for its accessibility tree first, as the app does for a surface with `treeOnRequest`. Without it the tool sets no attribute of the app.
+- `--app <bundle id>` takes the snapshot of that running app at once, without bringing it to the front.
+
+Snapshots with an outline or lists contain window text. Treat them as conversation data.

@@ -3,35 +3,90 @@
 import Foundation
 
 /// The server's interface this app speaks (constants.PROTOCOL_INTERFACE on the server).
-public let protocolInterface = 2
+public let protocolInterface = 3
 /// The audio this app sends; a server that takes another one is refused.
 public let audioEncoding = "pcm_s16le"
 
 /// What the server tells about itself ({"type": "info"}).
 public struct ServerInfo: Decodable, Equatable {
+    /// An adapter: a product the speaker writes into (Claude Code, Telegram), with its surfaces, the places of the
+    /// product on the screen (shared/adapter.schema.json has its manifest).
     public struct Adapter: Decodable, Equatable {
         public let name: String
-        /// Its name for people, from its manifest; an older server or a manifest without one sends none.
+        /// Its name for people, from its manifest; a manifest without one sends none.
         public let title: String?
         public let enabled: Bool
-        public let apps: [String]
-        public let electronTree: Bool
-        /// Its apps that build their accessibility tree only on request; an older server sends none, and then all of
-        /// its apps do when electronTree is true.
-        public let electronApps: [String]?
-        /// What of the screen the adapter needs from its apps: "lists", the rows of the focused window's lists.
-        public let screen: [String]?
-        /// Its apps whose screen it needs; an older server sends none, and then all of its apps.
-        public let screenApps: [String]?
-        /// The names (an AX role or a DOM class) of the outline's elements whose children it does not need; an older
-        /// server sends none.
-        public let outlineSkip: [String]?
-        /// The files it reads.
-        public let reads: [String]?
+        /// Its surfaces as its manifest gives them; an adapter whose manifest did not load has none.
+        public let surfaces: [Surface]
         public let description: String?
         public let error: String?
         /// The defaults of its context settings, from its manifest.
         public let context: [String: SettingValue]?
+
+        /// The apps of its surfaces, each once, in their order: its icon and its rows.
+        public var apps: [String] {
+            var seen = Set<String>()
+            return surfaces.flatMap(\.apps).filter { seen.insert($0).inserted }
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = try c.decode(String.self, forKey: .name)
+            title = try c.decodeIfPresent(String.self, forKey: .title)
+            enabled = try c.decode(Bool.self, forKey: .enabled)
+            surfaces = try c.decodeIfPresent([Surface].self, forKey: .surfaces) ?? []
+            description = try c.decodeIfPresent(String.self, forKey: .description)
+            error = try c.decodeIfPresent(String.self, forKey: .error)
+            context = try c.decodeIfPresent([String: SettingValue].self, forKey: .context)
+        }
+
+        private enum CodingKeys: String, CodingKey { case name, title, enabled, surfaces, description, error, context }
+    }
+    /// A place of a product on the screen: its apps, the rules on the identity that tell it there, and what is read
+    /// there once the server has matched it.
+    public struct Surface: Decodable, Equatable {
+        /// Unique within the adapter; the server names the surface <adapter>/<id>.
+        public let id: String
+        public let title: String
+        public let apps: [String]
+        /// Its apps build their accessibility tree only on request (Electron, Chromium); none sent is false.
+        public let treeOnRequest: Bool?
+        public let match: Match?
+        public let screen: Screen?
+        public let reads: [Read]?
+
+        /// Patterns of the web area's address and of the window's title: * is any text, every other character itself.
+        public struct Match: Decodable, Equatable {
+            public let url: String?
+            public let title: String?
+
+            /// A pattern as the settings window shows it: "…" for any text.
+            public static func shown(_ pattern: String) -> String { pattern.replacingOccurrences(of: "*", with: "…") }
+        }
+        /// What of the screen is read: the outline with its skip list and the key of its budget's knob, the rows of
+        /// the window's lists, the app's child processes.
+        public struct Screen: Decodable, Equatable {
+            public struct Outline: Decodable, Equatable {
+                public let skip: [String]?
+                public let budget: String?
+            }
+            public struct Lists: Decodable, Equatable { public let budget: String? }
+            public struct Processes: Decodable, Equatable {}
+            public let outline: Outline?
+            public let lists: Lists?
+            public let processes: Processes?
+
+            /// What is read, in words for the settings window, in the schema's order.
+            public var kinds: [String] {
+                [outline.map { _ in "Page text" }, lists.map { _ in "Message lists" },
+                 processes.map { _ in "Running programs" }].compactMap { $0 }
+            }
+        }
+        /// A file the adapter reads here: its place, when it is a fixed one, and what it is.
+        public struct Read: Decodable, Equatable, Hashable {
+            public let path: String?
+            public let what: String
+        }
     }
     /// A language the server's prompt names (server/dictation.py LANGUAGES).
     public struct Language: Decodable, Equatable {
@@ -51,9 +106,6 @@ public struct ServerInfo: Decodable, Equatable {
         /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
         public let variant: String?
         public let variants: [Variant]?
-        /// The model's tokens per character of each kind, for the screen's token budget (FocusSnapshot's
-        /// TokenEstimate); an older server sends none.
-        public let tokenWeights: [String: Double]?
     }
     public struct Variant: Decodable, Equatable {
         public let id: String
@@ -94,41 +146,19 @@ public struct ServerInfo: Decodable, Equatable {
     /// The names of the server's model registry.
     public let models: [String]?
 
-    /// Apps whose focus an enabled adapter reads.
-    public var snapshotApps: Set<String> { Set(adapters.filter(\.enabled).flatMap(\.apps)) }
-    /// Electron apps whose accessibility tree an enabled adapter needs.
+    /// The apps whose identity the app reads at the hotkey: those of the enabled adapters' surfaces.
+    public var identityApps: Set<String> {
+        Set(adapters.filter(\.enabled).flatMap(\.surfaces).flatMap(\.apps))
+    }
+    /// The apps that the app asks for their accessibility tree: those of the enabled adapters' surfaces that build it
+    /// only on request.
     public var treeApps: Set<String> {
-        Set(adapters.filter(\.enabled).flatMap { $0.electronApps ?? ($0.electronTree ? $0.apps : []) })
-    }
-    /// Apps whose window lists an enabled adapter reads (a messenger's messages): the snapshot takes their rows.
-    public var listApps: Set<String> {
-        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("lists") }.flatMap { $0.screenApps ?? $0.apps })
-    }
-    /// Apps whose page or window tree an enabled adapter reads (a web app's chat): the snapshot takes its outline.
-    public var outlineApps: Set<String> {
-        Set(adapters.filter { $0.enabled && ($0.screen ?? []).contains("outline") }.flatMap { $0.screenApps ?? $0.apps })
+        Set(adapters.filter(\.enabled).flatMap(\.surfaces).filter { $0.treeOnRequest == true }.flatMap(\.apps))
     }
 
-    /// What the focus snapshot takes of the app `bundleId` at the start of a dictation, as the enabled adapters ask.
-    /// The outline leaves out the children of the elements that an enabled adapter of the app names in outlineSkip.
-    /// The screen is read up to the chat budget of those adapters (chatHistoryTokenBudget: the config's entry, else
-    /// the manifest's, else the setting's default), the biggest of them; the text an adapter keeps is less than what
-    /// the screen shows, so its context can be smaller than its budget.
-    public func snapshotPlan(for bundleId: String, config: Config? = nil) -> SnapshotPlan {
-        let screen = adapters.filter {
-            $0.enabled && ($0.screenApps ?? $0.apps).contains(bundleId) && !($0.screen ?? []).isEmpty
-        }
-        let outline = outlineApps.contains(bundleId)
-        let skip = screen.filter { ($0.screen ?? []).contains("outline") }.flatMap { $0.outlineSkip ?? [] }
-        let knob = settings?.first { $0.key == "chatHistoryTokenBudget" }
-        let budgets = screen.compactMap { a -> Int? in
-            guard let knob, case .number(let n)? = config.map({ SettingStore.state(of: knob, in: $0, scope: .adapter(a)).value })
-                    ?? a.context?[knob.key] ?? knob.default else { return nil }
-            return Int(n)
-        }
-        return SnapshotPlan(full: snapshotApps.contains(bundleId), tree: treeApps.contains(bundleId),
-                            lists: listApps.contains(bundleId), outline: outline, outlineSkip: Set(skip),
-                            screenBudget: budgets.max(), tokenWeights: screen.isEmpty ? nil : model?.tokenWeights)
+    /// What the app reads of the app `bundleId` at the hotkey. What it reads afterwards is the server's read request.
+    public func identityPlan(for bundleId: String) -> IdentityPlan {
+        IdentityPlan(identity: identityApps.contains(bundleId), tree: treeApps.contains(bundleId))
     }
 
     /// A folder setting's value as the server has it (its config's, else its default), nil from an older server.
@@ -174,14 +204,20 @@ public enum ClientMessage {
         json(["type": "remove", "catalog": catalog, "variant": variant])
     }
 
-    /// The start of a recording. `isPrivate`: the server saves nothing of it, runs no adapter and logs no text.
+    /// The start of a recording, with the identity of the focused app (FocusSnapshot.capture), nil for none.
+    /// `isPrivate`: the server saves nothing of it, runs no adapter and logs no text; it gets no identity.
     public static func start(model: String?, language: String, sampleRate: Int, client: String,
-                             snapshot: [String: Any], isPrivate: Bool = false) -> String {
+                             identity: [String: Any]?, isPrivate: Bool = false) -> String {
         var m: [String: Any] = ["type": "start", "language": language, "sampleRate": sampleRate,
-                                "encoding": audioEncoding, "client": client, "snapshot": snapshot]
+                                "encoding": audioEncoding, "client": client]
         if let model { m["model"] = model }
-        if isPrivate { m["private"] = true }
+        if isPrivate { m["private"] = true } else if let identity { m["identity"] = identity }
         return json(m)
+    }
+
+    /// The answer to the server's read request: what was read of each surface, by its name, and how long it took.
+    public static func content(surfaces: [String: [String: Any]], tookMs: Int) -> String {
+        json(["type": "content", "surfaces": surfaces, "tookMs": tookMs])
     }
 
     /// Why the app stops a recording; the server stops it itself at its time limit ("max_duration").
@@ -198,6 +234,8 @@ public enum ClientMessage {
 /// A message from the server during a recording.
 public enum ServerMessage: Equatable {
     case speech, text(String), error(String), stopped(String), done, other
+    /// What to read of the screen for the surfaces that the server matched with the start's identity.
+    case read(ReadRequest)
     /// A model's download (docs/reference/6-protocol.md): its bytes so far of its total; its end; a removal's bytes.
     case progress(bytes: Double, total: Double), downloaded, removed(Double)
 
@@ -209,6 +247,7 @@ public enum ServerMessage: Equatable {
         case "error": return .error(m["message"] as? String ?? "error")
         case "stopped": return .stopped(m["reason"] as? String ?? "")
         case "done": return .done
+        case "read": return (try? JSONDecoder().decode(ReadRequest.self, from: Data(s.utf8))).map { .read($0) } ?? .other
         case "progress": return .progress(bytes: (m["bytes"] as? NSNumber)?.doubleValue ?? 0,
                                           total: (m["total"] as? NSNumber)?.doubleValue ?? 0)
         case "downloaded": return .downloaded
@@ -297,20 +336,48 @@ public struct SettingInfo: Decodable, Equatable {
     }
 }
 
-/// What the focus snapshot takes of an app (ServerInfo.snapshotPlan): `full`, its window, ancestors and processes, for
-/// an enabled adapter's app; `tree`, its Electron accessibility tree turned on; `lists`, the rows of its window's lists;
-/// `outline`, the tree of its page or window. An app that no enabled adapter reads gets none of these.
-public struct SnapshotPlan: Equatable {
-    public let full, tree, lists, outline: Bool
-    /// The names (an AX role or a DOM class) of the outline's elements that go in without their children.
-    public let outlineSkip: Set<String>
-    /// The tokens of screen text to read (lists, outline), nil for no limit; the model's weights to count them.
-    public let screenBudget: Int?
+/// What the app reads of an app at the hotkey (ServerInfo.identityPlan): `identity`, the app, its window's title and
+/// the web area's address and title, for an app of an enabled adapter's surfaces; `tree`, its accessibility tree
+/// asked for first, for an app that builds it only on request. Another app gets neither: the app reads only its
+/// focused element, for the insertion.
+public struct IdentityPlan: Equatable {
+    public let identity, tree: Bool
+    public static let none = IdentityPlan(identity: false, tree: false)
+    public init(identity: Bool, tree: Bool) { (self.identity, self.tree) = (identity, tree) }
+}
+
+/// The server's read request ({"type": "read"}): for each surface it matched, what to read. The server resolves the
+/// budgets: a budget is a number of estimated tokens, counted with `tokenWeights`, or nil for only the structural
+/// limits.
+public struct ReadRequest: Decodable, Equatable {
+    public struct Surface: Decodable, Equatable {
+        /// Its name, <adapter>/<id>: the key of its content.
+        public let surface: String
+        public let outline: Outline?
+        public let lists: Lists?
+        public let processes: Processes?
+
+        /// The outline, without the children of the elements whose AX role or one of whose DOM classes is in `skip`.
+        public struct Outline: Decodable, Equatable {
+            public let skip: [String]?
+            public let budget: Int?
+            public init(skip: [String]? = nil, budget: Int? = nil) { (self.skip, self.budget) = (skip, budget) }
+        }
+        public struct Lists: Decodable, Equatable {
+            public let budget: Int?
+            public init(budget: Int? = nil) { self.budget = budget }
+        }
+        public struct Processes: Decodable, Equatable { public init() {} }
+
+        public init(surface: String, outline: Outline? = nil, lists: Lists? = nil, processes: Processes? = nil) {
+            (self.surface, self.outline, self.lists, self.processes) = (surface, outline, lists, processes)
+        }
+    }
+    public let surfaces: [Surface]
+    /// The model's tokens per character of each kind (FocusSnapshot's TokenEstimate); none: the fallback.
     public let tokenWeights: [String: Double]?
-    public static let none = SnapshotPlan(full: false, tree: false, lists: false, outline: false)
-    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool, outlineSkip: Set<String> = [],
-                screenBudget: Int? = nil, tokenWeights: [String: Double]? = nil) {
-        (self.full, self.tree, self.lists, self.outline, self.outlineSkip) = (full, tree, lists, outline, outlineSkip)
-        (self.screenBudget, self.tokenWeights) = (screenBudget, tokenWeights)
+
+    public init(surfaces: [Surface], tokenWeights: [String: Double]? = nil) {
+        (self.surfaces, self.tokenWeights) = (surfaces, tokenWeights)
     }
 }

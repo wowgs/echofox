@@ -1,11 +1,11 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// FocusSnapshot: the focus snapshot (Accessibility). EchoFoxCore: the app's logic that needs no screen and no
-// permission (the config, the protocol's messages, the hotkey's logic, the app's numbers), checked by echofox-tests.
-// EchoFox: the menu bar app. echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore and of
-// FocusSnapshot's token estimate and budget, an executable because XCTest and Swift Testing come only with Xcode
-// (`swift run echofox-tests`).
+// FocusSnapshot: the focus snapshot (Accessibility), which reads what the server's read request asks (EchoFoxCore's
+// ReadRequest). EchoFoxCore: the app's logic that needs no screen and no permission (the config, the protocol's
+// messages, the hotkey's logic, the app's numbers), checked by echofox-tests. EchoFox: the menu bar app.
+// echofox-snapshot: the snapshot tool. echofox-tests: the checks of EchoFoxCore and of FocusSnapshot's token estimate,
+// budget and outline, an executable because XCTest and Swift Testing come only with Xcode (`swift run echofox-tests`).
 let package = Package(
     name: "EchoFox",
     platforms: [.macOS("26.0")],  // pins.sh MACOS_MIN
@@ -22,9 +22,9 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
     ],
     targets: [
-        .target(name: "FocusSnapshot"),
+        .target(name: "FocusSnapshot", dependencies: ["EchoFoxCore"]),
         .target(name: "EchoFoxCore"),
-        .executableTarget(name: "echofox-snapshot", dependencies: ["FocusSnapshot"]),
+        .executableTarget(name: "echofox-snapshot", dependencies: ["FocusSnapshot", "EchoFoxCore"]),
         .executableTarget(name: "EchoFox", dependencies: ["FocusSnapshot", "EchoFoxCore",
                                                          .product(name: "Sparkle", package: "Sparkle")],
                           // Sparkle.framework is in the app's Contents/Frameworks (build-app.sh)
