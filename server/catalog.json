@@ -2,6 +2,13 @@
   "gemma-4-e4b": {
     "name": "Gemma 4 E4B",
     "maxAudioSeconds": 30,
+    "tokenWeights": {
+      "cyrillic": 0.238,
+      "latin": 0.199,
+      "digit": 1.649,
+      "space": 0.362,
+      "other": 0.717
+    },
     "source": {
       "repo": "ggml-org/gemma-4-E4B-it-GGUF",
       "revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc"

@@ -93,6 +93,17 @@ Input WAV files must be 16 kHz, mono, 16-bit. The client prints server messages 
 
 The ports are in `server/constants.py`.
 
+## Calibrate the token estimate
+
+The context's budgets estimate tokens from the characters (`server/budget.py`) with the model's `tokenWeights` from `server/catalog.json`. To fit them again, for a new model or new kinds of text, build llama.cpp's `llama-tokenize` at the pinned commit and run the calibration on the saved texts before the audio:
+
+```
+cmake --build macos/.cache/llama.cpp-<commit>-macos<version>/build --target llama-tokenize
+server/.venv/bin/python server/calibrate_tokens.py --tokenizer macos/.cache/llama.cpp-<commit>-macos<version>/build/bin/llama-tokenize --model <the model's .gguf>
+```
+
+It fits the weights on half of the texts, prints them with the error on the other half, and writes nothing. `llama-tokenize` reads only the model's vocabulary.
+
 ## CI
 
 | Workflow | Trigger | Result |

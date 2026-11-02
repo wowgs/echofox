@@ -157,9 +157,19 @@ do {
 do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     check(info.snapshotPlan(for: "com.anthropic.claudefordesktop") == SnapshotPlan(full: true, tree: true, lists: false, outline: true,
-                                                                                         outlineSkip: ["AXButton", "sr-only"]),
+                                                                                         outlineSkip: ["AXButton", "sr-only"],
+                                                                                         screenBudget: 1000, tokenWeights: info.model?.tokenWeights),
           "plan: Claude Desktop, its tree and its outline, without the children of the adapter's outlineSkip")
-    check(info.snapshotPlan(for: "com.tdesktop.Telegram") == SnapshotPlan(full: true, tree: false, lists: true, outline: false),
+    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop").screenBudget == 1000
+          && info.snapshotPlan(for: "com.anthropic.claudefordesktop").tokenWeights?["cyrillic"] == 0.238,
+          "plan: the screen up to the adapter's chat budget (the setting's default), counted with the model's weights")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-plan-\(getpid()).json")
+    try Data(#"{"version": 11, "adapters": {"claude-chat": {"enabled": true, "chatHistoryTokenBudget": 300}}}"#.utf8).write(to: file)
+    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop", config: Config.load(from: file)).screenBudget == 300,
+          "plan: the config's entry sets the screen's budget")
+    try? FileManager.default.removeItem(at: file)
+    check(info.snapshotPlan(for: "com.tdesktop.Telegram") == SnapshotPlan(full: true, tree: false, lists: true, outline: false,
+                                                                           screenBudget: 1000, tokenWeights: info.model?.tokenWeights),
           "plan: Telegram, its lists")
     check(info.snapshotPlan(for: "com.apple.TextEdit") == .none, "plan: an app no adapter reads gets nothing")
 } catch {
@@ -351,8 +361,8 @@ do {
     let info = try ServerInfo.decode(data(examples["info"]!))
     let settings = info.settings ?? []
     let by = Dictionary(uniqueKeysWithValues: settings.map { ($0.key, $0) })
-    check(settings.map(\.key) == ["maxRecordingSeconds", "recordings", "temperature"]
-          && settings.map(\.owner) == ["server", "server", "model"]
+    check(settings.map(\.key) == ["maxRecordingSeconds", "recordings", "temperature", "chatHistoryTokenBudget"]
+          && settings.map(\.owner) == ["server", "server", "model", "adapter"]
           && by["maxRecordingSeconds"]?.advanced == nil && by["temperature"]?.advanced == true, "settings: decoded \(settings.map(\.key))")
     check(by["maxRecordingSeconds"]?.unit == "s" && by["temperature"]?.unit == nil && by["recordings"]?.kind == "folder",
           "settings: the server names units and folders")

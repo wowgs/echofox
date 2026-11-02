@@ -30,6 +30,7 @@ def info(args, models=None):
             "model": {"name": name, "catalog": (entry or {}).get("catalog", catalog.DEFAULT) if entry else None,
                       "title": model.get("name"),
                       "prompt": model.get("prompt"), "maxAudioSeconds": model.get("maxAudioSeconds"),
+                      "tokenWeights": model.get("tokenWeights"),
                       **(variants(entry, getattr(args, "models_folder", None)) if entry else {})},
             "settings": settings.schema(args, entry)}
 

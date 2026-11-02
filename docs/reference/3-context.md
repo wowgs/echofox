@@ -21,8 +21,12 @@ Context is placed before the recognition prompt, between `<context>` and `</cont
 
 - A short description of where you are writing, such as “a Telegram chat with Anna”, with instructions not to repeat the context.
 - Likely terms: first the names the adapter supplies, such as chat members, then Latin-script words and names in other alphabets, ranked by frequency. English speech gets no terms: every English word would be one.
-- The files open beside the conversation, if the adapter gives them. They have a budget of their own. Each file is read from its start, in the adapter's order, until the budget ends; the last file can be cut.
-- The newest messages that fit the adapter's budget, arranged from oldest to newest.
+- The files open beside the conversation, if the adapter gives them, in the adapter's order. They have a budget of their own.
+- The newest messages, arranged from oldest to newest.
+
+Every budget is taken the same way (`server/budget.py`): greedily and not strictly. The items are taken in their order (the terms most frequent first, the messages newest first, the files as the adapter gives them) until their sum reaches the budget. The item that reaches it is taken whole and is the last. So a long reply or file goes in whole, and the context can be bigger than its budget.
+
+Tokens are estimated, not counted by the model: the characters of each kind (Cyrillic, Latin, digit, whitespace, other) times the model's tokens per character of that kind (`tokenWeights` in its catalog entry). The estimate needs no running model, so the adapters and the app use it too. `server/calibrate_tokens.py` fits the weights against llama.cpp's own tokenizer, and the record of each dictation gives the model's count beside the estimate (`chat_tokens`, `chat_tokens_estimated`). The weights of Gemma 4 E4B were fitted on Russian dictations with English terms; for other scripts the estimate is not measured.
 
 Adapters clean app-specific formatting first. The server then removes lines made mostly of digits and symbols, such as table rows. Terms from those lines can still appear in the term list.
 
@@ -37,7 +41,9 @@ Each adapter supplies defaults in its manifest. Override them in its config entr
 | `chatDocumentsTokenBudget` | The budget of the open files, apart from the total budget | 1000 | 1000 |
 | `proseOnly` | Exclude lines made mostly of digits and symbols, from the messages and the files | on | on |
 
-Use `enabled` to turn an adapter on or off; both built-in adapters are off in a new config. Budgets use the selected model’s tokenizer.
+Use `enabled` to turn an adapter on or off; both built-in adapters are off in a new config. Budgets are in the selected model's tokens, estimated as above.
+
+The app reads the screen (the rows of lists, the outline of a page) from its end, up to the chat budget of the enabled adapters that ask for it, with the same estimate; the element or row whose text reaches the budget is the last one. No count of rows, elements or characters limits it. An adapter keeps less text than the screen shows (claude-chat keeps only Claude's replies), so its context can be smaller than its budget. The structure is limited instead: 80 levels of the outline, 80 ancestors of the focused element, 6 lists within 4 levels of the window, 12 DOM classes of an element and 40 processes of the app.
 
 ## The built-in adapters
 

@@ -49,6 +49,9 @@ public struct ServerInfo: Decodable, Equatable {
         /// The variant in force (a quantization: "q8_0"), and the catalog's variants of the model.
         public let variant: String?
         public let variants: [Variant]?
+        /// The model's tokens per character of each kind, for the screen's token budget (FocusSnapshot's
+        /// TokenEstimate); an older server sends none.
+        public let tokenWeights: [String: Double]?
     }
     public struct Variant: Decodable, Equatable {
         public let id: String
@@ -106,12 +109,22 @@ public struct ServerInfo: Decodable, Equatable {
 
     /// What the focus snapshot takes of the app `bundleId` at the start of a dictation, as the enabled adapters ask.
     /// The outline leaves out the children of the elements that an enabled adapter of the app names in outlineSkip.
-    public func snapshotPlan(for bundleId: String) -> SnapshotPlan {
+    /// The screen is read up to the chat budget of those adapters (chatHistoryTokenBudget: the config's entry, else
+    /// the manifest's, else the setting's default), the biggest of them; the text an adapter keeps is less than what
+    /// the screen shows, so its context can be smaller than its budget.
+    public func snapshotPlan(for bundleId: String, config: Config? = nil) -> SnapshotPlan {
+        let screen = adapters.filter { $0.enabled && $0.apps.contains(bundleId) && !($0.screen ?? []).isEmpty }
         let outline = outlineApps.contains(bundleId)
-        let skip = outline ? adapters.filter { $0.enabled && $0.apps.contains(bundleId) && ($0.screen ?? []).contains("outline") }
-            .flatMap { $0.outlineSkip ?? [] } : []
+        let skip = screen.filter { ($0.screen ?? []).contains("outline") }.flatMap { $0.outlineSkip ?? [] }
+        let knob = settings?.first { $0.key == "chatHistoryTokenBudget" }
+        let budgets = screen.compactMap { a -> Int? in
+            guard let knob, case .number(let n)? = config.map({ SettingStore.state(of: knob, in: $0, scope: .adapter(a)).value })
+                    ?? a.context?[knob.key] ?? knob.default else { return nil }
+            return Int(n)
+        }
         return SnapshotPlan(full: snapshotApps.contains(bundleId), tree: treeApps.contains(bundleId),
-                            lists: listApps.contains(bundleId), outline: outline, outlineSkip: Set(skip))
+                            lists: listApps.contains(bundleId), outline: outline, outlineSkip: Set(skip),
+                            screenBudget: budgets.max(), tokenWeights: screen.isEmpty ? nil : model?.tokenWeights)
     }
 
     /// A folder setting's value as the server has it (its config's, else its default), nil from an older server.
@@ -292,8 +305,13 @@ public struct SnapshotPlan: Equatable {
     public let full, tree, lists, outline: Bool
     /// The names (an AX role or a DOM class) of the outline's elements that go in without their children.
     public let outlineSkip: Set<String>
+    /// The tokens of screen text to read (lists, outline), nil for no limit; the model's weights to count them.
+    public let screenBudget: Int?
+    public let tokenWeights: [String: Double]?
     public static let none = SnapshotPlan(full: false, tree: false, lists: false, outline: false)
-    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool, outlineSkip: Set<String> = []) {
+    public init(full: Bool, tree: Bool, lists: Bool, outline: Bool, outlineSkip: Set<String> = [],
+                screenBudget: Int? = nil, tokenWeights: [String: Double]? = nil) {
         (self.full, self.tree, self.lists, self.outline, self.outlineSkip) = (full, tree, lists, outline, outlineSkip)
+        (self.screenBudget, self.tokenWeights) = (screenBudget, tokenWeights)
     }
 }

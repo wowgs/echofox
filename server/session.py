@@ -213,9 +213,11 @@ class Session:
                 # audio keeps coming meanwhile, and its pieces wait for the model
                 context = asyncio.ensure_future(self.context())
                 try:
-                    dictation = Dictation(await self.models.get(self.start.model), self.start.text_prompt,
-                                          self.start.options, self.args, self.meta, self.rec,
-                                          client_options=self.start.client_options)
+                    model = await self.models.get(self.start.model)
+                    entry = (getattr(self.models, "entries", None) or {}).get(getattr(model, "name", None))
+                    dictation = Dictation(model, self.start.text_prompt, self.start.options, self.args, self.meta,
+                                          self.rec, client_options=self.start.client_options,
+                                          token_weights=catalog.token_weights(entry))
                     await dictation.prepare(await context)
                 except Exception as e:
                     log.exception("recording %s: preparing failed", self.id)

@@ -7,6 +7,7 @@ import logging
 import time
 
 import adapters
+import budget
 import catalog
 import fillers
 import languages
@@ -14,7 +15,6 @@ import metrics
 import tuning
 from audio import seconds, wav
 
-NEWEST_TAIL_MIN_TOKENS = 32  # the newest message alone too long for the budget: its end, if this much fits
 log = logging.getLogger("gemma_voice")
 
 
@@ -67,86 +67,58 @@ class Dictation:
     puts the text into a slot's cache, so that after the stop a piece processes only its audio.
     `server`: the server's recording settings; `recording`: where its files go (recordings.Recording), or None."""
 
-    def __init__(self, model, text_prompt, options, server, meta, recording=None, client_options=None):
+    def __init__(self, model, text_prompt, options, server, meta, recording=None, client_options=None,
+                 token_weights=None):
         self.m, self.prompt, self.options, self.server, self.meta = model, text_prompt, options, server, meta
+        self.weights = token_weights or {}  # the model's tokens per character (budget.count)
         self.client = client_options or {}  # the start message's own: they win over the adapter's settings too
         self.recording = recording
         self.text, self.chat_tokens = text_prompt, 0
         self.sounds = fillers.words(meta.get("language", ""), getattr(server, "languages", None))
         model.begin()
 
-    def _fit(self, items, budget, render):
-        """The longest start of `items` whose rendering fits `budget` tokens: (count, tokens), by bisection, so it
-        takes a few tokenize calls, not one per item."""
-        lo, hi, used = 0, len(items), 0
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            n = len(self.m.tokenize(render(items[:mid])))
-            if n <= budget:
-                lo, used = mid, n
-            else:
-                hi = mid - 1
-        return lo, used
-
     def adapter_options(self, name):
         """The options for the context of adapter `name`: the recording's, then the adapter's owners (tuning.resolve)."""
         return tuning.resolve(self.options, adapters.registry.context_defaults(name), context_options(name, self.server),
                               client=self.client)
 
-    def _documents(self, documents, budget):
-        """The documents as they fit `budget` tokens, in their order, each from its start: those that fit whole, then
-        the start of the next one, if at least NEWEST_TAIL_MIN_TOKENS of it fit."""
-        kept = []
-        for d in documents:
-            block = f"File {d['name']}:\n{d['text']}"
-            if len(self.m.tokenize("\n\n".join(kept + [block]))) <= budget:
-                kept.append(block)
-                continue
-            left = budget - (len(self.m.tokenize("\n\n".join(kept) + "\n\n")) if kept else 0)
-            if left > NEWEST_TAIL_MIN_TOKENS:
-                kept.append(self.m.detokenize(self.m.tokenize(block)[:left - 2]) + "…")
-            break
-        return kept
-
     def _build(self, context):
-        """The text before the audio: the context within the token budgets, then the prompt. The context's settings
-        are its adapter's (adapter_options). The documents have a budget of their own and are read from their start;
-        the messages fill the chat budget from the newest."""
+        """The text before the audio: the context within the token budgets (budget.take: greedy, the item that reaches
+        a budget taken whole), then the prompt. The context's settings are its adapter's (adapter_options). The terms
+        take their part of the chat budget first, the messages the rest from the newest; the documents have a budget of
+        their own, in the adapter's order."""
         if not context:
             return
         options = self.adapter_options(context.get("adapter"))
-        budget = tuning.value("chat_history_token_budget", options, self.server)
+        chat_budget = tuning.value("chat_history_token_budget", options, self.server)
         terms_budget = tuning.value("chat_terms_token_budget", options, self.server)
         all_terms = [t for t in context.get("terms") or [] if isinstance(t, str)]
         if languages.base(self.meta.get("language")) == languages.TERMS:  # English speech: every word is one
             all_terms = []
-        n_terms, used = self._fit(all_terms, terms_budget, lambda ts: "Terms: " + ", ".join(ts))
-        terms = all_terms[:n_terms]
+        cost = lambda text: budget.count(text, self.weights)  # noqa: E731
+        terms, used = budget.take(all_terms, terms_budget, lambda t: cost(t + ", ")) if terms_budget else ([], 0)
         messages = context.get("messages") or []
         if tuning.value("prose_only", options, self.server):  # the terms were taken before (adapters.context)
             messages = [{**m, "text": t} for m in messages if (t := adapters.prose(str(m.get("text", ""))))]
         lines = [f"{m.get('from') or 'Someone'}: {str(m.get('text', '')).strip()}" for m in messages]  # newest first
-        left = budget - used
-        n_lines, _ = self._fit(lines, left, lambda ls: "\n\n".join(ls))
-        kept = lines[:n_lines]
-        if not kept and lines and left > NEWEST_TAIL_MIN_TOKENS:  # the newest message alone is too long: its end
-            ids = self.m.tokenize(lines[0])
-            kept = ["…" + self.m.detokenize(ids[-(left - 2):])]
+        kept, _ = budget.take(lines, chat_budget - used, lambda line: cost(line + "\n\n"))
         documents = [d for d in context.get("documents") or [] if isinstance(d, dict)]
         if tuning.value("prose_only", options, self.server):
             documents = [{**d, "text": t} for d in documents if (t := adapters.prose(str(d.get("text", ""))))]
         docs_budget = tuning.value("chat_documents_token_budget", options, self.server)
-        docs = self._documents(documents, docs_budget) if docs_budget else []
+        blocks = [f"File {d['name']}:\n{d['text']}" for d in documents]
+        docs, _ = budget.take(blocks, docs_budget, lambda b: cost(b + "\n\n"))
         if not kept and not terms and not docs:
             return
         parts = (["<context>"] + (["Terms: " + ", ".join(terms)] if terms else []) + docs + list(reversed(kept))
                  + ["</context>"])
         block = context_header(context.get("about"), bool(docs)) + "\n\n" + "\n\n".join(parts)
         self.text = block + "\n\n" + self.prompt
-        self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))
+        self.chat_tokens = len(self.m.tokenize(self.text)) - len(self.m.tokenize(self.prompt))  # the model's count
+        estimated = cost(block + "\n\n")
         self.meta = {**self.meta, "chat_tokens": self.chat_tokens, "chat_messages": len(kept),
-                     "chat_documents": len(docs), "chat_terms": len(terms), "chat_budget": budget,
-                     "chat_documents_budget": docs_budget}
+                     "chat_documents": len(docs), "chat_terms": len(terms), "chat_budget": chat_budget,
+                     "chat_documents_budget": docs_budget, "chat_tokens_estimated": estimated}
 
     async def prepare(self, context=None):
         """Builds the text before the audio."""

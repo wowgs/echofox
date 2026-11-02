@@ -56,7 +56,8 @@ final class Dictation {
         let plan = isPrivate ? SnapshotPlan.none : self.plan  // a private dictation reads nothing of the screen
         queue.async { [weak self] in
             let capture = FocusSnapshot.capture(full: plan.full, enableElectron: plan.tree, lists: plan.lists, outline: plan.outline,
-                                                outlineSkip: plan.outlineSkip)
+                                                outlineSkip: plan.outlineSkip, screenBudget: plan.screenBudget,
+                                                tokens: TokenEstimate(plan.tokenWeights))
             DispatchQueue.main.async { self?.capture = capture }
             Log.write("snapshot: app \(capture.snapshot["app"].flatMap { ($0 as? [String: Any])?["bundleId"] } ?? "none"), "
                       + "focused \(capture.focused != nil), web area \(capture.snapshot["webArea"] != nil), "

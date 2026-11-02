@@ -18,6 +18,8 @@ import tuning
 from fakes import LOUD, FakeLlamaServer, StubModel, args
 
 
+ONE_A_CHAR = dict.fromkeys(("cyrillic", "latin", "digit", "space", "other"), 1.0)
+
 class OptionsTest(unittest.TestCase):
     def test_known_options_are_checked_and_renamed(self):
         self.assertEqual(tuning.parse_options({"temperature": 0, "topK": 1, "maxTokensPerPiece": 15,
@@ -77,10 +79,10 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         lines = pathlib.Path(self.file).read_text(encoding="utf-8").splitlines()
         return [m for m in map(json.loads, lines) if m["event"] == event]
 
-    def dictation(self, options=None, model=None, recording=None):
+    def dictation(self, options=None, model=None, recording=None, weights=None):
         # the model's options as a start message gives them: its catalog entry's, then these
         return d.Dictation(model or self.fake.model(), "PROMPT", {**settings.model_defaults({}), **(options or {})},
-                           args(), {}, recording)
+                           args(), {}, recording, token_weights=weights)
 
     async def test_each_piece_is_one_request_with_the_text_then_the_audio(self):
         d = self.dictation({"chat_history_token_budget": 20, "seed": 3})
@@ -112,32 +114,30 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(piece["id_slot"], 1)
         self.assertEqual(self.metrics("warm")[0]["slot"], 1)
 
-    async def test_the_chat_context_fits_the_token_budget_newest_kept(self):
-        d = self.dictation({"chat_history_token_budget": 12, "chat_terms_token_budget": 3})
-        chat = {"messages": [{"from": "Assistant", "text": "new reply here"},       # 4 tokens with the author
-                             {"from": "Speaker", "text": "a question asked"},          # 4
-                             {"from": "Assistant", "text": "an old long reply that does not fit"}],
-                "terms": ["GitHub", "Kubernetes", "PostgreSQL"]}  # "Terms:" and a token each
+    async def test_the_chat_context_is_taken_greedily_the_item_that_reaches_a_budget_whole(self):
+        # A token a character, so that the costs are the lengths
+        d = self.dictation({"chat_history_token_budget": 40, "chat_terms_token_budget": 10}, weights=ONE_A_CHAR)
+        chat = {"messages": [{"from": "Assistant", "text": "new reply here"},  # 27 with its author and its break
+                             {"from": "Speaker", "text": "a question asked"},
+                             {"from": "Assistant", "text": "an old reply"}],
+                "terms": ["GitHub", "Kubernetes", "PostgreSQL"]}  # 8 and 12 with their commas: 20 of the 10
         await d.prepare(chat)
-        self.assertIn("Terms: GitHub, Kubernetes\n", d.text)
-        self.assertLess(d.text.index("Speaker: a question asked"), d.text.index("Assistant: new reply here"))
-        self.assertNotIn("old long reply", d.text)
+        self.assertIn("Terms: GitHub, Kubernetes\n", d.text)  # Kubernetes reaches the terms' budget: whole, the last
+        self.assertIn("Assistant: new reply here", d.text)  # 27 of the 20 left: whole, the last
+        self.assertNotIn("a question asked", d.text)
         self.assertTrue(d.text.endswith("</context>\n\nPROMPT"))
-        self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 2)
-
-    async def test_documents_have_their_own_budget_and_are_read_from_their_start(self):
-        d = self.dictation({"chat_history_token_budget": 12, "chat_terms_token_budget": 3,
-                            "chat_documents_token_budget": 40})
+        self.assertEqual(self.metrics("prepare")[0]["chat_messages"], 1)
+    async def test_documents_have_their_own_budget_and_the_one_that_reaches_it_goes_whole(self):
+        d = self.dictation({"chat_history_token_budget": 40, "chat_terms_token_budget": 10,
+                            "chat_documents_token_budget": 30}, weights=ONE_A_CHAR)
         long = " ".join(["word"] * 100)
         chat = {"messages": [{"from": "Assistant", "text": "new reply here"}],
-                "documents": [{"name": "a.md", "text": "first file text"},  # 5 tokens with its header
+                "documents": [{"name": "a.md", "text": "first file text"},  # 28 with its header and its break
                               {"name": "b.md", "text": long}, {"name": "c.md", "text": "never reached"}]}
         await d.prepare(chat)
-        self.assertIn("File a.md:\nfirst file text\n\n", d.text)
-        start = d.text.index("first file text") + len("first file text\n\n")
-        cut = d.text[start:d.text.index("\n\nAssistant: new reply here")]
-        self.assertTrue(cut.endswith("…") and len(cut.split()) == 40 - 5 - 2, cut)  # b.md's start, what fits
+        self.assertIn("File a.md:\nfirst file text\n\nFile b.md:\n" + long + "\n\n", d.text)  # b.md whole
         self.assertNotIn("never reached", d.text)
+        self.assertLess(d.text.index("File b.md"), d.text.index("Assistant: new reply here"))
         self.assertIn("the files open beside it", d.text)
         self.assertEqual(self.metrics("prepare")[0]["chat_documents"], 2)
         # Only terms: the context still goes
@@ -145,7 +145,6 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         await d.prepare({"terms": ["GitHub"]})
         self.assertIn("Terms: GitHub", d.text)
         self.assertNotIn("files open", d.text)
-
     async def test_english_speech_gets_no_terms_since_every_word_of_it_is_one(self):
         chat = {"messages": [{"from": "Anna", "text": "hello there"}], "terms": ["GitHub"]}
         for language, terms in (("en-GB", False), ("ru", True)):
@@ -188,20 +187,22 @@ class DictationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("imperative mood", d.prompt("en"))
 
     async def test_an_adapters_entry_sets_the_budget_of_its_own_context(self):
-        chat = {"adapter": "telegram", "messages": [{"from": "Anna", "text": "hello there"}], "terms": []}
+        chat = {"adapter": "telegram", "terms": [],
+                "messages": [{"from": "Anna", "text": "hello there"}, {"from": "Bob", "text": "older message"}]}
         server = args(adapter_options={"telegram": {"chat_history_token_budget": 2}})
         small = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
         await small.prepare(chat)
-        self.assertEqual(small.text, "PROMPT")  # the adapter's 2 wins over the model's 500: no message fits
+        self.assertEqual(small.meta["chat_budget"], 2)  # the adapter's 2 wins over the model's 500
+        self.assertIn("Anna: hello there", small.text)  # the newest reaches the 2: whole, and the last
+        self.assertNotIn("older message", small.text)
         on = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 2},
                          args(adapter_options={"telegram": {"chat_history_token_budget": 500}}), {})
         await on.prepare(chat)
-        self.assertIn("Anna: hello there", on.text)
+        self.assertIn("older message", on.text)
         self.assertEqual(on.meta["chat_budget"], 500)
         other = d.Dictation(self.fake.model(), "PROMPT", {"chat_history_token_budget": 500}, server, {})
         await other.prepare({**chat, "adapter": "claude-code"})
-        self.assertIn("Anna: hello there", other.text)  # another adapter keeps the model's budget
-
+        self.assertEqual(other.meta["chat_budget"], 1000)  # another adapter: its own manifest's, not telegram's entry
     async def test_the_text_of_a_piece_has_a_fixed_limit(self):
         await self.dictation({}).piece(LOUD * 20, 1, 12.3)
         await self.dictation({"max_tokens_per_piece": 5}).piece(LOUD, 1, 1)

@@ -22,17 +22,13 @@ public enum FocusSnapshot {
     /// How long take() waits for an Electron app's tree after asking for it (it took 2.1 s in Claude Desktop).
     public static let electronWaitSeconds = 3.0
     static let electronPollSeconds = 0.05
-    /// The lists of the focused window: how deep under the window to look for them, how many, and how much of each.
-    /// A chat's newest messages are at the end of its list, so a long list keeps its last rows.
+    /// The lists of the focused window: how deep under the window to look for them, and how many. How much of each
+    /// is the token budget's: a chat's newest messages are at the end of its list, so a list is read from its end.
     static let maxListDepth = 4
     static let maxLists = 6
-    static let maxListRows = 150
-    static let maxListChars = 30_000
-    /// The outline: how many elements and characters of text at most, and how deep under its root. A chat's newest
-    /// messages are at the end of the tree, so a big tree keeps its end. A chat of 4 messages in Claude Desktop had 547
-    /// elements, 32 levels deep (2026-10-25).
-    static let maxOutlineNodes = 3000
-    static let maxOutlineChars = 30_000
+    /// The outline: how deep under its root. How much of it is the token budget's: a chat's newest messages are at the
+    /// end of the tree, so the tree is read from its end. A chat of 4 messages in Claude Desktop had 547 elements, 32
+    /// levels deep (2026-10-25).
     static let maxOutlineDepth = 80
     /// The roles whose AXValue is text shown on the screen; an input field's value never goes in.
     static let shownTextRoles: Set<String> = ["AXStaticText", "AXListMarker"]
@@ -46,9 +42,10 @@ public enum FocusSnapshot {
 
     /// The snapshot of the frontmost app (or of `app`), as a JSON-ready dictionary.
     public static func take(enableElectron: Bool = false, lists: Bool = false, outline: Bool = false,
-                            outlineSkip: Set<String> = [], of app: NSRunningApplication? = nil) -> [String: Any] {
+                            outlineSkip: Set<String> = [], screenBudget: Int? = nil, tokens: TokenEstimate = .fallback,
+                            of app: NSRunningApplication? = nil) -> [String: Any] {
         capture(full: true, enableElectron: enableElectron, lists: lists, outline: outline, outlineSkip: outlineSkip,
-                of: app).snapshot
+                screenBudget: screenBudget, tokens: tokens, of: app).snapshot
     }
 
     /// The snapshot of the frontmost app (or of `target`, any running app: for tools), with its focused element and
@@ -56,8 +53,8 @@ public enum FocusSnapshot {
     /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
     /// the text goes into later.
     public static func capture(full: Bool = true, enableElectron: Bool = false, lists: Bool = false,
-                               outline: Bool = false, outlineSkip: Set<String> = [],
-                               of target: NSRunningApplication? = nil) -> Capture {
+                               outline: Bool = false, outlineSkip: Set<String> = [], screenBudget: Int? = nil,
+                               tokens: TokenEstimate = .fallback, of target: NSRunningApplication? = nil) -> Capture {
         let started = Date()
         guard let front = target ?? NSWorkspace.shared.frontmostApplication else {
             return Capture(snapshot: ["error": "no frontmost app"], focused: nil, pid: nil)
@@ -85,7 +82,7 @@ public enum FocusSnapshot {
         if let w = window {
             out["window"] = compact(["title": string(w, "AXTitle"), "document": string(w, "AXDocument")])
             if lists {
-                out["lists"] = windowLists(w)
+                out["lists"] = windowLists(w, budget: screenBudget, tokens: tokens)
                 if let f = focused, let r = frame(f) { out["focusedFrame"] = r }
             }
         }
@@ -107,7 +104,8 @@ public enum FocusSnapshot {
             out["ancestors"] = ancestors
         }
         if outline, let root = webArea ?? window {
-            out["outline"] = self.outline(root, root: webArea == nil ? "window" : "webArea", skip: outlineSkip)
+            out["outline"] = self.outline(root, root: webArea == nil ? "window" : "webArea", skip: outlineSkip,
+                                          budget: screenBudget, tokens: tokens)
         }
         out["processes"] = descendants(of: pid)
         out["tookMs"] = Int(Date().timeIntervalSince(started) * 1000)
@@ -141,7 +139,7 @@ public enum FocusSnapshot {
         if let classes = value(e, "AXDOMClassList") as? [String], !classes.isEmpty {
             d["domClasses"] = Array(classes.prefix(maxDomClasses))
         }
-        if let url = string(e, "AXURL") { d["url"] = url }
+        if let url = string(e, "AXURL"), !url.hasPrefix("data:") { d["url"] = url }  // an image's data is no address
         return d
     }
 
@@ -161,8 +159,9 @@ public enum FocusSnapshot {
     }
 
     /// The lists in `window`, in the tree's order: each one's frame, its row count and its last rows (oldest first),
-    /// a row's accessible text and its cells' titles.
-    static func windowLists(_ window: AXUIElement) -> [[String: Any]] {
+    /// a row's accessible text and its cells' titles. Each list is read from its end until its text reaches `budget`
+    /// tokens; the row that reaches it is the last one (no budget: every row).
+    static func windowLists(_ window: AXUIElement, budget: Int?, tokens: TokenEstimate) -> [[String: Any]] {
         var found: [AXUIElement] = []
         func look(_ e: AXUIElement, _ depth: Int) {
             for c in children(e) where found.count < maxLists {
@@ -176,12 +175,12 @@ public enum FocusSnapshot {
         look(window, 0)
         return found.map { list in
             let rows = children(list)
-            var kept: [[String: Any]] = [], chars = 0
-            for r in rows.suffix(maxListRows).reversed() {
+            var kept: [[String: Any]] = [], used = 0
+            for r in rows.reversed() {
+                if let budget, used >= budget { break }
                 let text = string(r, "AXTitle") ?? string(r, "AXValue") ?? string(r, "AXDescription") ?? ""
-                chars += text.count
-                if chars > maxListChars { break }
                 let columns = children(r).compactMap { string($0, "AXTitle") }
+                used += tokens.count(([text] + columns).joined(separator: " "))
                 kept.append(compact(["text": text.isEmpty ? nil : text, "columns": columns.isEmpty ? nil : columns]))
             }
             return compact(["frame": frame(list), "rowCount": rows.count, "rows": Array(kept.reversed())])
@@ -189,11 +188,13 @@ public enum FocusSnapshot {
     }
 
     /// The tree under `root`, flat in the tree's order: each element's depth under the root, its service fields, and
-    /// the shown text of a static text or a list marker. It is walked from the end, last child first, so that when a
-    /// limit stops the walk the outline keeps the end of the tree; "complete" says whether it has all of it. An element
-    /// whose role or one of whose DOM classes is in `skip` goes in alone, marked "skipped": its children are not read.
-    static func outline(_ root: AXUIElement, root name: String, skip: Set<String> = []) -> [String: Any] {
-        var nodes: [[String: Any]] = [], chars = 0, stopped = false, complete = true
+    /// the shown text of a static text or a list marker. It is walked from the end, last child first, until its text
+    /// reaches `budget` tokens (no budget: the whole tree): the element whose text reaches it is the last one, so the
+    /// outline keeps the end of the tree; "complete" says whether it has all of it. An element whose role or one of
+    /// whose DOM classes is in `skip` goes in alone, marked "skipped": its children are not read.
+    static func outline(_ root: AXUIElement, root name: String, skip: Set<String> = [], budget: Int? = nil,
+                        tokens: TokenEstimate = .fallback) -> [String: Any] {
+        var nodes: [[String: Any]] = [], used = 0, stopped = false, complete = true
         func visit(_ e: AXUIElement, _ depth: Int) {
             var d = describe(e)
             let skipped = !skip.isEmpty && !skip.isDisjoint(with: [d["role"] as? String ?? ""] + (d["domClasses"] as? [String] ?? []))
@@ -210,10 +211,10 @@ public enum FocusSnapshot {
             d["depth"] = depth
             if let role = d["role"] as? String, shownTextRoles.contains(role), let text = string(e, "AXValue") {
                 d["text"] = text
-                chars += text.count
+                used += tokens.count(text)
             }
             nodes.append(d)
-            if nodes.count >= maxOutlineNodes || chars >= maxOutlineChars {
+            if let budget, used >= budget {
                 stopped = true
                 complete = false
             }

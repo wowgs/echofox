@@ -23,15 +23,15 @@ apps of an enabled adapter whose manifest asks for it in "screen"):
    "lists": [{"frame": {"x", "y", "width", "height"}, "rowCount": rows in the list,
               "rows": [{"text": the row's accessible text, "columns": [the titles of its cells]}, ...]}, ...]
             (screen "lists": the lists in the focused window, in the tree's order; the last rows of each, oldest
-             first, within the client's limits),
+             first, up to the screen's token budget),
    "outline": {"root": "webArea" or "window", "complete": whether it has the whole tree under the root,
                "nodes": [{"depth": under the root (the root is 0), "role", "subrole", "title", "description",
                           "domClasses", "text": the shown text of a static text or a list marker,
                           "skipped": true for an element of the manifest's outlineSkip, whose children are left out},
                          ...]}
             (screen "outline": the tree under the web area of the focused element, or under the focused window
-             without one, in the tree's order, flat with depths; when it is too big, its end: a chat's newest
-             messages are there. Never the text of input fields.)}
+             without one, in the tree's order, flat with depths; read from its end up to the screen's token budget: a
+             chat's newest messages are there. Never the text of input fields.)}
 Any part may be missing.
 """
 import abc
@@ -44,7 +44,6 @@ from dataclasses import dataclass
 
 log = logging.getLogger("gemma_voice")
 
-MAX_TERMS = 500
 SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+")
 LETTERS = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")  # a word of letters in any script, with its hyphens
 PROSE_LETTERS = 0.6  # a line is prose when this share of its characters are letters; not tuned
@@ -117,7 +116,7 @@ def terms(texts):
                 continue
             n, _ = seen.get(w, (0, 0))
             seen[w] = (n + 1, i)
-    return [w for w, _ in sorted(seen.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))][:MAX_TERMS]
+    return [w for w, _ in sorted(seen.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))]  # the terms' budget cuts them
 
 
 def prose(text):

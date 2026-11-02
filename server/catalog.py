@@ -4,6 +4,12 @@ defaults (docs/design.md, "Settings"):
   name               for people
   maxAudioSeconds    the audio a request takes: Gemma 4, 30 s (model card and processor_config.json: 25 tokens a
                      second, 750 tokens)
+  tokenWeights       its tokenizer's tokens per character of each kind (budget.py), for the context's budgets:
+                     Gemma 4 E4B's, fitted by calibrate_tokens.py with llama-tokenize (llama.cpp d81235049, the Q8_0
+                     file's vocabulary) on 100 saved texts before the audio and measured on 100 others: |error|
+                     median 1.8 %, 90th percentile 4.8 %, largest 7.5 % (2026-11-02; texts of 460 to 4181 tokens, of
+                     Russian dictations with English terms: 54 % of their letters Cyrillic). Other scripts count as
+                     "other": not measured
   source             where its files come from: a Hugging Face repository at a fixed revision, so that a file
                      never changes under its name
   variants           one for each quantization: its name, its files by role ("model", "mmproj"), each with its
@@ -52,6 +58,11 @@ def entries():
 def of(model_entry):
     """The catalog entry of a registry entry ({} if the catalog has none of that name)."""
     return entries().get((model_entry or {}).get("catalog") or DEFAULT, {})
+
+
+def token_weights(model_entry):
+    """The tokens per character of each kind of the entry's model (budget.count)."""
+    return of(model_entry).get("tokenWeights") or {}
 
 
 def max_audio_seconds(model_entry):

@@ -12,6 +12,13 @@ The development Mac: Apple M5 with a 10-core GPU, 24 GB of memory, macOS 27.0.1.
 - One snapshot of the working Mac had 23 of 24 GB in use and 9.2 GB of swap. That is the state of a busy computer, not a requirement.
 - 2026-10-25: the whole Q8 stack took about 9.7 GiB (7.46 GiB of weights resident plus 2.13 GiB of llama-server's footprint); decoding ran at 22.8 tokens/s; a 13 s piece took 2.35 s. One Q4_0 run recognized a 15.7 s recording in 2.89 s, with a footprint of 2194 MB.
 
+## Token estimate and screen reading
+
+- 2026-11-02, llama.cpp `llama-tokenize` (commit d81235049, vocabulary only) on the Q8_0 file: 11 KB of text, 1988 tokens. The first run took 4.56 s (the file not in the cache), the next two 0.29 s each; about 207 MB resident each time. A process per count is too slow for every budget, so the context uses an estimate.
+- 2026-11-02, the estimate of `server/budget.py`, fitted on 100 random saved texts before the audio and measured on 100 others (460 to 4181 tokens, Russian dictations with English terms, 54 % of the letters Cyrillic): |error| median 1.8 %, 90th percentile 4.8 %, largest 7.5 %. Characters / 3.4 alone, on an earlier sample: median 4.6 %, 90th percentile 10.7 %, largest 16.9 %.
+- 2026-10-28 to 2026-11-02, the app's log, Claude Desktop with the outline: 192 snapshots, 198 ms on average, 562 ms at most; the old cap of 3000 elements took about 530 ms. Telegram with lists: 80 snapshots, 157 ms on average, 244 ms at most.
+- 2026-11-02, Claude Desktop's Code tab with the files panel open, `echofox-snapshot --app … --outline`: the whole window, 1212 elements, 5436 estimated tokens of text, 170 ms; up to 1000 tokens, 173 elements, 1006 tokens, 49 ms. One image of the README preview had its picture as a `data:` URL in `AXURL`; the snapshot leaves such URLs out.
+
 ## Recognition
 
 | Observation | Consequence |
