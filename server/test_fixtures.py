@@ -83,7 +83,7 @@ class ToolTest(unittest.TestCase):
             f.write(text)
         return p
 
-    def code_session(self, lines=None, notes="# Notes\n\nТекст про `git rebase`.\n"):
+    def code_session(self, lines=None, notes="# Notes\n\nТекст про `git rebase` и `~/.claude/sessions`.\n"):
         """A Claude Code session of Claude Desktop, its transcript of `lines`, with notes.md of its folder open in the
         Files panel."""
         folder = os.path.join(self.home, "work")
@@ -154,7 +154,8 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(sorted(e), ["about", "details", "documents", "messages", "source", "terms"])
         self.assertEqual((e["details"]["file"], e["documents"][0]["name"], e["messages"][0]["text"]),
                          ("~/" + TRANSCRIPT, "notes.md", "Ответ.\nСмотри ~/work/notes.md и git log."))
-        self.assertNotIn(self.home, json.dumps(code["sources"]) + json.dumps(e))
+        self.assertNotIn(self.home, json.dumps(e))  # the kept files keep it: a replay puts its own home in its place
+        self.assertIn("~/.claude/sessions", e["documents"][0]["text"])  # a "~/" of the file's own text stays as it is
         os.remove(os.path.join(self.home, TRANSCRIPT))
         self.assertEqual(tool.replay(code), e)
         review = "\n".join(self.said)

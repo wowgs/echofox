@@ -313,8 +313,9 @@ def expected(found, home_dir, pids=()):
 
 
 def sources(paths, home_dir):
-    """The files of `paths` as a fixture keeps them: [{"path": from ~/ under the home folder, "mtime": in ns, "text":
-    with the home folder written ~}]; and the other paths, which are not files of UTF-8 text and are not kept."""
+    """The files of `paths` as a fixture keeps them: [{"path": from ~/ under the home folder, "mtime": in ns, "text": as
+    it is}]; and the other paths, which are not files of UTF-8 text and are not kept. The text keeps the home folder's
+    real path: a replay puts its own home folder in its place (replay), and a "~/" that the text itself holds stays."""
     kept, others = [], []
     for p in sorted(paths):
         if p.endswith((".py", ".pyc", ".so")):
@@ -325,7 +326,7 @@ def sources(paths, home_dir):
             others.append(p)
             continue
         if os.path.isfile(p):
-            kept.append({"path": tilde(p, home_dir), "mtime": mtime, "text": normalized(text, home_dir)})
+            kept.append({"path": tilde(p, home_dir), "mtime": mtime, "text": text})
         else:
             others.append(p)
     return kept, others
@@ -389,7 +390,11 @@ def replay(fixture):
             path = os.path.join(root, s["path"][2:])
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
-                f.write(s["text"].replace("~/", root + "/"))
+                text = s["text"]
+                for recorded in sorted({fixture["home"].rstrip("/"), os.path.realpath(fixture["home"]).rstrip("/")},
+                                       key=len, reverse=True):
+                    text = text.replace(recorded + "/", root + "/")
+                f.write(text)
             os.utime(path, ns=(s["mtime"], s["mtime"]))
         with home_at(root):
             found, _ = parse(surface, fixture["identity"], fixture["content"])
