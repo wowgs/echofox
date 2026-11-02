@@ -11,32 +11,32 @@ Related docs: [the dictation server](1-server.md), [the chat context](3-context.
   "version": 11,
   "model": "Gemma E4B llama.cpp",
   "language": "ru",
-  "microphone": "builtin",
-  "dictationKey": "rightOption",
-  "privateDictationKey": "rightCommand",
-  "silenceStopSeconds": 60,
+  "microphone": "system",
+  "dictationKey": "rightShift",
+  "privateDictationKey": "none",
+  "silenceStopSeconds": 30,
   "adapters": {"claude-code": {"enabled": true}, "claude-chat": {"enabled": true}, "telegram": {"enabled": true, "chatHistoryTokenBudget": 600}},
   "models": {
     "Gemma E4B llama.cpp": {"catalog": "gemma-4-e4b", "llamaServer": "http://127.0.0.1:8092",
                             "options": {"topK": 40}}
   },
   "languages": {"ru": {"fillers": ["э", "мм"]}},
-  "server": {"host": "127.0.0.1", "port": 8090, "maxRecordingSeconds": 1800, "saveRecordings": true}
+  "server": {"maxRecordingSeconds": 900, "saveRecordings": false}
 }
 ```
 
-This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The server logs an invalid setting and uses its default. If the file is not valid JSON, the server keeps its current settings. A key that a version does not know is left out and kept in the file; a wrong value is replaced by its default, and the server logs it. The rules for changing the file over versions are in the [design](../design.md#the-config-file-over-versions); the keys and their types are in `shared/config.schema.json`.
+This example enables the three built-in adapters and overrides several defaults. Use only the entries you need. Missing settings use their defaults. The app writes only the values that differ from their defaults: a choice of a default in the app takes its key out of the file. The server logs an invalid setting and uses its default. If the file is not valid JSON, the server keeps its current settings. A key that a version does not know is left out and kept in the file; a wrong value is replaced by its default, and the server logs it. The rules for changing the file over versions are in the [design](../design.md#the-config-file-over-versions); the keys and their types are in `shared/config.schema.json`.
 
 ## Settings reference
 
 | Key | Purpose |
 |---|---|
 | `version` | The config's format, 11. It changes only for a change that an older version would read wrong. The server brings a file of an older format to 11 once at its start and keeps the old file as `config.json.v<N>.bak`; a file of a newer format is read key by key. Format 11 left out a model's `launchd`. Format 10 left out a model's `prompt` and the Russian `notes` that were copies of format 9's defaults. Format 9 has the recording's time limit in seconds (`maxRecordingSeconds`). Format 8 renamed the adapter `claude` to `claude-code`; `claude-chat`, new in it, stays off until the user turns it on. |
-| `model` | Selected model: a name in `models`. With no model selected, no model is kept in memory. |
+| `model` | Selected model: a name in `models`. Without it, the server uses the first model of its registry. |
 | `models` | Model registry; see [model entries](#model-entries) below. |
 | `language` | Recognition language, for example `ru` or `en`. An empty value lets the model infer the spoken language. If omitted, the app uses the first macOS language. |
 | `microphone` | `builtin` (default) keeps using the built-in microphone when a headset connects. `system` follows the macOS input selection. A device UID selects a specific microphone; if unavailable, the app falls back to the built-in microphone. |
-| `dictationKey`, `privateDictationKey` | The keys to tap: `rightOption` (the default for dictation), `rightCommand` (the default for private dictation), `rightShift`, `rightControl`, or `none`. |
+| `dictationKey`, `privateDictationKey` | The keys to tap: `rightOption` (the default for dictation), `rightCommand` (the default for private dictation), `rightShift`, `rightControl`, or `none` for no key. Another value is the key's default. If both name the same key, only dictation gets it. |
 | `silenceStopSeconds` | The app stops a recording after this many seconds without speech. It must be more than 0. |
 | `adapters` | Adapter enablement (`enabled`) and context settings. See [the chat context](3-context.md). |
 | `languages` | Your changes to a language: `notes`, the lines added to the prompt, and `fillers`, hesitation sounds to remove. `"*"` holds the notes of every language; `{LANGUAGE}` in them is replaced with the language's name, and English speech gets none of them. An empty list turns one off. The defaults are in `server/languages.json`. |

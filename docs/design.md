@@ -83,7 +83,7 @@ The file must stay readable by an older and a newer EchoFox: a rollback, a local
 - **The file holds only the user's choices.** A default is never written to it; a value equal to the default takes the key out. A new default applies by itself, with no change to the file.
 - **A reader takes each key on its own.** It uses the keys it knows, leaves out a key it does not know, and replaces a wrong value with the default of that key alone. It never drops the whole file. A writer keeps the keys it does not know.
 - **A key keeps its meaning.** Its type, unit and meaning never change. A new meaning is a new key (`maxRecordingSeconds`, not minutes under the old name); a key that is no longer used is left out by readers and stays in the file.
-- **One writer.** Only the app writes the file, one key at a time, in place (`Config.set`). The server only reads it.
+- **One writer.** Only the app writes the file, one key at a time, in place (`Config.set`). The server only reads it. Every write of the app is a change that `SettingStore.swift` makes from the choice and the key's default, and `ConfigStore.swift` writes it. A choice equal to the default takes the key out.
 - **`version` is the format.** It changes only for a change that a reader that leaves out unknown keys would get wrong, which these rules avoid. A file of a newer format is read key by key as above, with a note in the log and on the settings window. A file of a format before 11 is brought to 11 once by the server, after it copies the file to `config.json.v<N>.bak`; that is the only time the server writes the file.
 - **One schema.** `shared/config.schema.json` (JSON Schema) lists every key, its type and its owner. The server's tests check its settings against it, and the app's tests check the keys that the app reads and writes.
 
@@ -92,6 +92,8 @@ The file must stay readable by an older and a newer EchoFox: a rollback, a local
 A setting's meaning is separate from its place. The server sends the settings of the server, the models and the adapters in its info; the app's own settings are described in Swift. `SettingsLayout.swift` puts each setting on a page, in a section and in an order; a new server setting without a line there goes to the page of its owner. The window changes one value in `~/.echofox/config.json` and keeps the file's formatting (`JSONEdit.swift`). The server picks up the change by itself. Blue is the app, orange is the server, gray is the config; the dashed line is a write.
 
 A setting has the owner's default and an optional change by the user. A reset removes the change from the config. A value equal to the default does not count as changed. The same rule drives the "2 changed" counter, the reset button and the "Set here." note (`SettingStore.swift`). An empty number field shows the default in gray, and the allowed range appears with a wrong value.
+
+The settings window and the first start's window only show values and pass choices on. The decisions behind them are in `EchoFoxCore`, with checks in `echofox-tests`. `SettingStore.swift` decides what is in force and what a choice writes. `SettingText.swift` has the words for values, ranges and sources. `SettingsLayout.swift` places the items and defines the sidebar, with the form in which the window keeps its last row. `FirstRun.swift` decides when the first start's window opens. `ServerInfo.adapterTitle` is the one rule for an adapter's name.
 
 ## Interface
 
