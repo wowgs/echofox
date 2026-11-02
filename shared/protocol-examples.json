@@ -31,7 +31,7 @@
                          "apps": ["com.tdesktop.Telegram"], "electronTree": false, "electronApps": [], "reads": [], "screen": ["lists"], "context": {}, "error": null}],
            "models": ["gemma-e4b"],
            "model": {"name": "gemma-e4b", "catalog": "gemma-4-e4b", "title": "Gemma 4 E4B", "prompt": "Transcribe the following speech segment in {LANGUAGE} + English terms into {LANGUAGE} + English terms text. …", "maxAudioSeconds": 30,
-                     "variant": "q8_0", "variants": [{"id": "q4_0", "name": "Q4_0", "bytes": 5582359648, "memoryBytes": 6900000000, "downloaded": false},
+                     "variant": "q8_0", "variants": [{"id": "q4_0", "name": "Q4_0 QAT", "bytes": 6146493536, "memoryBytes": 7350000000, "default": true, "downloaded": false},
                                                      {"id": "q8_0", "name": "Q8_0", "bytes": 9022794944, "memoryBytes": 10400000000, "downloaded": true}]},
            "settings": [{"key": "maxRecordingSeconds", "group": "recording", "kind": "number",
                          "title": "Recording time limit", "default": 1800.0, "min": 0, "minExclusive": true,

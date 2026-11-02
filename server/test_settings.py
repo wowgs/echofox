@@ -97,39 +97,45 @@ class VariantTest(unittest.TestCase):
         llama.BUNDLED_LLAMA_SERVER = bundled
         self.assertEqual(llama.llama_server(), bundled)
 
-    def put(self, *names):
-        d = os.path.join(self.folder, "gemma-4-E4B-it-GGUF")
+    def put(self, *names, repo="gemma-4-E4B-it-GGUF"):
+        d = os.path.join(self.folder, repo)
         os.makedirs(d, exist_ok=True)
         for n in names:
             open(os.path.join(d, n), "w").close()
 
     def test_a_registry_entry_has_its_catalogs_default_variant_unless_it_names_one(self):
-        self.assertEqual(catalog.variant({"catalog": "gemma-4-e4b"})[0], "q8_0")
-        vid, spec = catalog.variant({"catalog": "gemma-4-e4b", "variant": "q4_0"})
-        self.assertEqual((vid, spec["files"]["model"]["file"]), ("q4_0", "gemma-4-E4B-it-Q4_0.gguf"))
+        self.assertEqual(catalog.variant({"catalog": "gemma-4-e4b"})[0], "q4_0")
+        vid, spec = catalog.variant({"catalog": "gemma-4-e4b", "variant": "q8_0"})
+        self.assertEqual((vid, spec["files"]["model"]["file"]), ("q8_0", "gemma-4-E4B-it-Q8_0.gguf"))
         problems = []
         models = {"a": {"llamaServer": "http://h:1", "variant": "q2_k"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}}
         self.assertEqual(s.clean_models(models, lambda *p: problems.append(p)),
                          {"a": {"llamaServer": "http://h:1"}, "b": {"llamaServer": "http://h:1", "variant": "q4_0"}})
         self.assertEqual([wrong for _, wrong in problems], [True])  # a wrong variant: the model stays, without it
+        # A variant's own source (Google's QAT), else the catalog entry's (ggml-org's)
         self.assertEqual(catalog.files({"variant": "q4_0"}, "/m"),
-                         {"model": "/m/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0.gguf",
-                          "mmproj": "/m/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf"})
-        self.assertEqual(catalog.url({}, "gemma-4-E4B-it-Q4_0.gguf"),
+                         {"model": "/m/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B_q4_0-it.gguf",
+                          "mmproj": "/m/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B-it-mmproj.gguf"})
+        self.assertEqual(catalog.url({}, "gemma-4-E4B_q4_0-it.gguf"),
+                         "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/"
+                         "4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B_q4_0-it.gguf")
+        self.assertEqual(catalog.url({"variant": "q8_0"}, "gemma-4-E4B-it-Q8_0.gguf"),
                          "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/"
-                         "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q4_0.gguf")
+                         "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q8_0.gguf")
 
     def test_the_command_runs_the_variants_files(self):
         entry = {"llamaServer": "http://127.0.0.1:8092", "catalog": "gemma-4-e4b"}
-        with self.assertRaisesRegex(RuntimeError, "files of variant q8_0 are missing"):
+        with self.assertRaisesRegex(RuntimeError, "files of variant q4_0 are missing"):
             llama.command(entry, self.folder)
-        self.put("gemma-4-E4B-it-Q8_0.gguf", "gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
-        a = llama.command(entry, self.folder)
+        self.put("gemma-4-E4B-it-Q8_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
+        self.put("gemma-4-E4B_q4_0-it.gguf", "gemma-4-E4B-it-mmproj.gguf", repo="gemma-4-E4B-it-qat-q4_0-gguf")
+        a = llama.command({**entry, "variant": "q8_0"}, self.folder)
         self.assertEqual(a[:9], [self.binary, "-m", f"{self.folder}/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q8_0.gguf",
                                  "--mmproj", f"{self.folder}/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf",
                                  "--host", "127.0.0.1", "--port", "8092"])
         self.assertEqual(a[9:], catalog.of(entry)["llamaServer"]["args"])
-        self.assertIn("gemma-4-E4B-it-Q4_0.gguf", llama.command({**entry, "variant": "q4_0"}, self.folder)[2])
+        self.assertEqual(llama.command(entry, self.folder)[2],
+                         f"{self.folder}/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B_q4_0-it.gguf")
 
     def test_an_entry_of_the_default_models_name_gets_the_defaults_fields(self):
         f = os.path.join(self.folder, "config.json")
@@ -138,11 +144,13 @@ class VariantTest(unittest.TestCase):
         self.assertEqual(s.file_settings(f)["models"]["gemma-e4b"], {**s.MODEL_DEFAULT["gemma-e4b"], "variant": "q4_0"})
 
     def test_the_info_says_which_variants_are_downloaded(self):
-        self.put("gemma-4-E4B-it-Q4_0.gguf", "mmproj-gemma-4-E4B-it-BF16.gguf")
+        self.put("gemma-4-E4B_q4_0-it.gguf", "gemma-4-E4B-it-mmproj.gguf", repo="gemma-4-E4B-it-qat-q4_0-gguf")
+        self.put("mmproj-gemma-4-E4B-it-BF16.gguf")  # Q8_0's mmproj alone: not a whole variant
         v = variants.variants({"catalog": "gemma-4-e4b"}, self.folder)
-        self.assertEqual(v["variant"], "q8_0")
+        self.assertEqual(v["variant"], "q4_0")
+        self.assertEqual([x.get("default") for x in v["variants"]], [True, None])
         self.assertEqual([(x["id"], x["downloaded"], x["bytes"]) for x in v["variants"]],
-                         [("q4_0", True, 4590807392 + 991552256), ("q8_0", False, 8031242688 + 991552256)])
+                         [("q4_0", True, 5154941280 + 991552256), ("q8_0", False, 8031242688 + 991552256)])
 
 
 class SettingsTest(unittest.IsolatedAsyncioTestCase):

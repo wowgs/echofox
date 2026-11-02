@@ -50,12 +50,12 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
                "electronTree", "electronApps", "reads", "screen", "context", "error"}],
  "models": ["<name>"],
  "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "variant",
-           "variants": [{"id", "name", "bytes", "memoryBytes", "downloaded", "downloading"}]},
+           "variants": [{"id", "name", "bytes", "memoryBytes", "default", "downloaded", "downloading"}]},
  "settings": [{"key", "owner", "group", "kind", "title", "advanced", "default", "value", "min", "max",
                "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
-The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant. `model.variant` identifies the active variant.
+The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant; `default` is true for the catalog's default variant. `model.variant` identifies the active variant.
 
 `settings` describes each setting that the settings window can show and change:
 
@@ -91,4 +91,4 @@ The client sends `{"type": "download", "catalog": "gemma-4-e4b", "variant": "q4_
 
 ## Remove a model
 
-The client sends `{"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server deletes the files of that variant that no other downloaded variant uses. The variant in use is removed too: after the running recording the server takes the model out of memory and removes its `llama-server` agent, and the next dictation has no model until one is downloaded. It answers `{"type": "removed", "bytes": 4590807392}` or an error, and closes the connection.
+The client sends `{"type": "remove", "catalog": "gemma-4-e4b", "variant": "q4_0"}`. The server deletes the files of that variant that no other downloaded variant uses. The variant in use is removed too: after the running recording the server takes the model out of memory (its `llama-server` process ends), and the next dictation has no model until one is downloaded. It answers `{"type": "removed", "bytes": 5154941280}` or an error, and closes the connection.

@@ -37,10 +37,10 @@ The two downloads are differently compressed variants of Gemma 4 E4B:
 
 | Variant | Download size | Approximate memory use | Suggested Mac memory |
 |---|---|---|---|
-| Q4_0 | 5.6 GB | 7 GB | 16 GB |
+| Q4_0 QAT (default) | 6.1 GB | 7.4 GB | 16 GB or more |
 | Q8_0 | 9.0 GB | 10 GB | 24 GB or more |
 
-Memory figures are approximate. A systematic comparison of recognition quality and speed is still pending. Change the variant later in **Settings → Model**.
+Q4_0 QAT is Google's quantization-aware trained Q4_0: the model was trained for the 4-bit format. Memory figures are approximate, and the one of Q4_0 QAT is not measured. A systematic comparison of recognition quality and speed is still pending. Change the variant later in **Settings → Model**.
 
 ## The first start
 
@@ -54,7 +54,7 @@ EchoFox needs the **Microphone** and **Accessibility** permissions; Accessibilit
 
 While one of its windows is open (the first start, Settings, labeling), also minimized, EchoFox is in the Dock and in ⌘Tab, with its own menu bar; a click on its Dock icon brings a minimized window back. With no window open, it lives only in the menu bar; a click on its icon in the Dock's recent apps, or opening it again from Finder, opens Settings.
 
-The model's row shows each variant's download size and estimated memory use, and recommends Q4_0 for a 16 GB Mac or Q8_0 for a Mac with at least 24 GB; a variant already on the disk says so. While the download runs, the window shows its speed and the time left.
+The model's row shows each variant's download size and estimated memory use, and recommends the default, Q4_0 QAT, when it takes at most half of the Mac's memory; a variant already on the disk says so. While the download runs, the window shows its speed and the time left.
 
 The download goes on if you close the window. While it runs, Settings shows the variant as downloading, without a Download button.
 

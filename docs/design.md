@@ -18,7 +18,7 @@ The gain from the context on mixed speech is not measured yet, and no comparison
 ## Decisions
 
 - macOS on Apple Silicon. Dictation works through system features. EchoFox does not change the target apps.
-- One model catalog. Now it has Gemma 4 E4B in two variants, Q4_0 and Q8_0.
+- One model catalog. Now it has Gemma 4 E4B in two variants: Google's quantization-aware trained Q4_0, the default, and ggml-org's Q8_0.
 - One app package without the model. The model is downloaded from the app.
 - Adapters are optional. When the conversation is not certain, the dictation runs without context.
 - The keys are toggles, not hold-to-talk.

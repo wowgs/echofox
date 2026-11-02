@@ -53,6 +53,8 @@ public struct ServerInfo: Decodable, Equatable {
         /// The size of its files, and its memory while it is loaded.
         public let bytes: Double
         public let memoryBytes: Double?
+        /// Whether it is the catalog's default; an older server sends none.
+        public let `default`: Bool?
         /// Whether all its files are in the models folder, and whether the server downloads them now.
         public let downloaded: Bool
         public let downloading: Bool?
@@ -61,12 +63,13 @@ public struct ServerInfo: Decodable, Equatable {
         /// request would only follow the same download, and a cancel there would stop both).
         public var canDownload: Bool { !downloaded && downloading != true }
 
-        /// The variant to offer for a Mac with this much memory: the biggest that takes at most half of it, so that
-        /// macOS and the other apps keep the rest; else the smallest.
+        /// The variant to offer for a Mac with this much memory: the catalog's default if it takes at most half of it,
+        /// so that macOS and the other apps keep the rest; else the biggest that does; else the smallest.
         public static func recommended(_ variants: [Variant], memory: UInt64) -> String {
             let size = { (v: Variant) in v.memoryBytes ?? v.bytes }
             let fits = variants.filter { size($0) <= Double(memory) / 2 }
-            return (fits.max { size($0) < size($1) } ?? variants.min { size($0) < size($1) })?.id ?? ""
+            return (fits.first { $0.default == true } ?? fits.max { size($0) < size($1) }
+                    ?? variants.min { size($0) < size($1) })?.id ?? ""
         }
     }
     public let interface: Int

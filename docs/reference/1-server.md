@@ -54,16 +54,16 @@ Recognition makes only local connections; see [privacy](../design.md#privacy). E
 
 ### The catalog and the downloads
 
-`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. The source of the current model is `ggml-org/gemma-4-E4B-it-GGUF` on Hugging Face; it needs no account. The files go to `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-GGUF/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments of llama-server; a change of the active variant applies after the current recording.
+`server/catalog.json` has the variants, their files, the pinned revision of the source, the sizes and the SHA-256 of each file. A catalog entry names its source, and a variant can name its own (`catalog.source`). The default variant, Q4_0, is Google's quantization-aware trained file from `google/gemma-4-E4B-it-qat-q4_0-gguf`. Q8_0 comes from the entry's source, `ggml-org/gemma-4-E4B-it-GGUF`. Both repositories are on Hugging Face and need no account. The files of a variant go to a folder named after its source repository, for example `~/Library/Application Support/EchoFox/models/gemma-4-E4B-it-qat-q4_0-gguf/`; `server.modelsFolder` changes the root. A model's config entry names its catalog entry and can choose a `variant`; without one, the catalog's default applies. The server builds the arguments of llama-server; a change of the active variant applies after the current recording.
 
 The server, not the app's window, runs a download:
 
 - it goes on when the window closes, and every connected client sees its progress;
 - it resumes a part with an HTTP Range request;
 - it checks the size and the SHA-256 before it renames the part;
-- it keeps the files that another downloaded variant uses, and refuses to remove the active variant.
+- a removal keeps the files that another downloaded variant uses. A removal of the active variant waits for the running recording, then takes the model out of memory.
 
-A download uses one connection per file: more connections were not faster on the measured link. The windows show the speed over the last 5 seconds and the time left (`TransferRate`), from the progress that the server sends every 0.5 seconds. The messages are in the [protocol](6-protocol.md#download-a-model). At the first start, the app recommends Q4_0 for a 16 GB Mac and Q8_0 for 24 GB or more.
+A download uses one connection per file: more connections were not faster on the measured link. The windows show the speed over the last 5 seconds and the time left (`TransferRate`), from the progress that the server sends every 0.5 seconds. The messages are in the [protocol](6-protocol.md#download-a-model). At the first start, the app recommends the catalog's default variant if its memory is at most half of the Mac's memory, else the biggest variant that fits in half, else the smallest.
 
 ## Code map
 

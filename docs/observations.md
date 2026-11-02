@@ -6,7 +6,7 @@ The development Mac: Apple M5 with a 10-core GPU, 24 GB of memory, macOS 27.0.1.
 
 ## Model and memory
 
-- The Q8_0 file is about 8.0 GB, Q4_0 4.6 GB; the shared BF16 audio projector adds 0.99 GB.
+- The Q8_0 file of ggml-org is about 8.0 GB and its Q4_0 file 4.6 GB. Their shared BF16 audio projector adds 0.99 GB. Google's quantization-aware trained (QAT) Q4_0 file is 5.15 GB, with its own audio projector of 0.99 GB. The measurements below, before 2026-11-02, are of ggml-org's files.
 - 2026-10-19: about 7.6 GB of the Q8_0 weights were mapped from the file (mmap). macOS can drop clean pages and read them again, so the model still weighs on memory.
 - The process's own memory after start was about 0.66 GB. With the prompt cache in RAM on (8 GiB), it grew to 8.85 GB in 27 hours and the system swapped. So the RAM cache is off: `--cache-ram 0`.
 - One snapshot of the working Mac had 23 of 24 GB in use and 9.2 GB of swap. That is the state of a busy computer, not a requirement.

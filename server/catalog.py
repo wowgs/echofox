@@ -6,13 +6,16 @@ defaults (docs/design.md, "Settings"):
                      second, 750 tokens)
   source             where its files come from: a Hugging Face repository at a fixed revision, so that a file
                      never changes under its name
-  variants           one for each quantization: its name and its files by role ("model", "mmproj"), each with its
-                     size and sha256 (Hugging Face's for that revision; the same as the files on the author's Mac,
-                     2026-10-25); the variants share a file of the same name
+  variants           one for each quantization: its name, its files by role ("model", "mmproj"), each with its
+                     size and sha256 (Hugging Face's for that revision), and its own source if its files come from
+                     another repository (source()); the variants of one source share a file of the same name.
+                     Q4_0 is Google's quantization-aware trained Q4_0 (google/gemma-4-E4B-it-qat-q4_0-gguf), with its
+                     own mmproj; Q8_0 is ggml-org's
   defaultVariant     the variant of a registry entry that names none
   memoryBytes        a variant's memory while it is loaded: llama-server's own footprint and the model file in memory.
                      Q8_0: 2.13 GiB and 7.46 GiB (footprint, mincore; Apple M5, 2026-10-25); Q4_0: 2.19 GB footprint
-                     (one run) and its file, 4.59 GB, taken as all in memory as Q8_0's was
+                     (one run, ggml-org's Q4_0) and the QAT file, 5.15 GB, taken as all in memory as Q8_0's was: not
+                     measured for the QAT file
   languages          the codes of the languages its prompt names (languages.json has their names)
   prompt             the prompt's template; {LANGUAGE} becomes the language's name. Gemma 4's is Google's speech
                      recognition prompt and formatting rules from the model card, and one rule of ours, punctuation
@@ -62,9 +65,15 @@ def variant(model_entry):
     return vid, (cat.get("variants") or {}).get(vid)
 
 
+def source(model_entry):
+    """Where the files of the entry's variant come from: the variant's own source, else its catalog entry's."""
+    _, spec = variant(model_entry)
+    return (spec or {}).get("source") or of(model_entry)["source"]
+
+
 def folder(model_entry, models_folder):
-    """Where the files of a model are: the models folder, then the name of its source repository."""
-    return os.path.join(models_folder, of(model_entry)["source"]["repo"].split("/")[-1])
+    """Where the files of the entry's variant are: the models folder, then the name of their source repository."""
+    return os.path.join(models_folder, source(model_entry)["repo"].split("/")[-1])
 
 
 def files(model_entry, models_folder):
@@ -74,6 +83,6 @@ def files(model_entry, models_folder):
 
 
 def url(model_entry, name):
-    """Where a file of the model is downloaded from."""
-    src = of(model_entry)["source"]
+    """Where a file of the entry's variant is downloaded from."""
+    src = source(model_entry)
     return f"https://huggingface.co/{src['repo']}/resolve/{src['revision']}/{name}"

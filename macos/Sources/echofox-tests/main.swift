@@ -359,8 +359,15 @@ do {
           "settings: the model and the languages")
     let gib: UInt64 = 1 << 30
     let pick = { (m: UInt64) in ServerInfo.Variant.recommended(info.model?.variants ?? [], memory: m * gib) }
-    check(pick(8) == "q4_0" && pick(16) == "q4_0" && pick(24) == "q8_0" && pick(64) == "q8_0",
+    check(pick(8) == "q4_0" && pick(16) == "q4_0" && pick(24) == "q4_0" && pick(64) == "q4_0",
           "settings: the variant for 8, 16, 24 and 64 GB: \([8, 16, 24, 64].map { pick(UInt64($0)) })")
+    // Without a default (an older server): the biggest that takes at most half of the memory
+    let plain = try JSONDecoder().decode([ServerInfo.Variant].self, from: Data("""
+        [{"id": "q4_0", "name": "Q4_0", "bytes": 5582359648, "memoryBytes": 6900000000, "downloaded": false},
+         {"id": "q8_0", "name": "Q8_0", "bytes": 9022794944, "memoryBytes": 10400000000, "downloaded": true}]
+        """.utf8))
+    check(ServerInfo.Variant.recommended(plain, memory: 16 * gib) == "q4_0"
+          && ServerInfo.Variant.recommended(plain, memory: 24 * gib) == "q8_0", "settings: the variant without a default")
     check(info.model?.variant == "q8_0" && info.model?.variants?.map(\.id) == ["q4_0", "q8_0"]
           && info.model?.variants?.first?.downloaded == false, "settings: the model's variants")
     let cut = by["maxRecordingSeconds"]!, temperature = by["temperature"]!

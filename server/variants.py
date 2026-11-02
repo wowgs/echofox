@@ -74,14 +74,16 @@ async def remove(ws, send, m, models, args):
 
 def variants(entry, models_folder):
     """The variants of a registry entry's model, for the settings window: the one in force, and each with its name,
-    the bytes of its files and whether they are all in the models folder."""
+    the bytes of its files, whether it is the catalog's default and whether its files are all in the models folder."""
     vid, _ = catalog.variant(entry)
+    default = catalog.of(entry).get("defaultVariant")
     folder = models_folder or constants.path(constants.MODELS_FOLDER)
     running = downloads.running()
     out = []
     for v, spec in (catalog.of(entry).get("variants") or {}).items():
         paths = catalog.files({**entry, "variant": v}, folder)
         out.append({"id": v, "name": spec["name"], "bytes": sum(f["bytes"] for f in spec["files"].values()),
+                    **({"default": True} if v == default else {}),
                     **({"memoryBytes": spec["memoryBytes"]} if "memoryBytes" in spec else {}),
                     "downloaded": all(os.path.isfile(p) for p in paths.values()),
                     **({"downloading": True} if (entry.get("catalog", catalog.DEFAULT), v) in running else {})})
