@@ -21,7 +21,7 @@ See also: [configuration](2-config.md), [conversation context](3-context.md), [p
 6. Each piece becomes a separate model request: conversation context, recognition prompt, and audio. Two requests can run at once.
 7. The server removes configured hesitation sounds, such as “э” and “мм” in Russian, and returns the text in recording order.
 
-While you speak, the server also prepares the shared context and prompt in the model's two processing slots. This reduces repeated work when the audio is ready. The server handles one recording at a time; a second waits for the first to finish.
+While you speak, the server also prepares the context and the prompt in the model's processing slot. This reduces repeated work when the audio is ready. The server handles one recording at a time; a second waits for the first to finish.
 
 Speech detection also drives the app's silence timeout. Audio levels are used to choose cut points and report recording quality, not to decide whether speech is present.
 
@@ -45,7 +45,7 @@ Gemma runs at `http://127.0.0.1:8092` with:
 
 | Setting | Reason |
 |---|---|
-| 16,384-token context, split into two 8,192-token slots | Process two audio pieces concurrently. |
+| One slot with a 32,768-token context | Room for a large open file and the conversation beside the longest audio and the answer. The model takes 131,072 tokens (`gemma4.context_length` in its file). One slot is enough: a dictation's pieces go one after the other, the pieces cut while you speak are done before the stop (1,769 of 2,534 recordings to 2026-11-02 had one piece), and a piece reuses the text before the audio that the slot already holds. |
 | All model layers on the GPU | Use Apple Silicon's GPU for inference. |
 | `--swa-full` | Let later pieces reuse the shared prompt text. |
 | `--cache-ram 0` | Disable the separate RAM prompt cache, which caused memory growth and swapping in a local run. |

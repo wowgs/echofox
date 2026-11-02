@@ -20,7 +20,7 @@ class Dictation:
     """One recording on one model. Each piece is a request of its own: the text (chat history, then the prompt),
     then the piece's audio. The model never sees its answers to earlier pieces: in one conversation for the whole
     recording, a piece often began by repeating the earlier piece's text (2026-10-14, Gemma 4 E4B). So the pieces do
-    not depend on each other, and llama-server can run them at once, one per slot. While the speaker talks, warm()
+    not depend on each other, and a llama-server with several slots runs them at once (the catalog gives one). While the speaker talks, warm()
     puts the text into a slot's cache, so that after the stop a piece processes only its audio.
     `server`: the server's recording settings; `files`: where its files go (recordings.Folder), else nothing is
     saved."""
