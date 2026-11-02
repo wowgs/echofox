@@ -1,6 +1,7 @@
 // The dictation server as the app's child process (ServerProcess): started with the app, started again if it ends
 // while the app runs, ended at the app's quit. Its output goes to its log. The app keeps the write end of the
 // server's standard input open and writes nothing: when the app ends in any way, the pipe closes and the server ends.
+// Before the first start it removes the launchd agents of the versions that ran the server without the app.
 import EchoFoxCore
 import Foundation
 
@@ -20,8 +21,31 @@ final class ServerRunner {
         self.log = log
     }
 
-    /// Starts the server; on the main thread.
+    /// The server that this app carries, of this app version; nil for an app without one, which uses the server at
+    /// the config's address.
+    static func bundled(version: String) -> ServerRunner? {
+        guard let (python, server) = ServerProcess.bundled(resources: Bundle.main.resourceURL) else { return nil }
+        return ServerRunner(launch: ServerProcess.launch(python: python, server: server, version: version),
+                            log: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(ServerProcess.logInHome))
+    }
+
+    /// The first start, on the main thread: the launchd agents of older versions go first. launchctl waits, so that
+    /// runs off the main thread, and the server starts after it.
     func start() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        DispatchQueue.global(qos: .userInitiated).async {
+            for (command, file) in ServerProcess.legacyRemoval(domain: "gui/\(getuid())", home: home)
+            where FileManager.default.fileExists(atPath: file.path) {
+                let code = Self.launchctl(command)
+                try? FileManager.default.removeItem(at: file)
+                Log.write("server: the launchd agent \(file.lastPathComponent) of an older version removed, bootout exit \(code)")
+            }
+            DispatchQueue.main.async { self.run() }
+        }
+    }
+
+    /// Starts the server; on the main thread.
+    private func run() {
         guard !quitting else { return }
         let p = Process(), pipe = Pipe()
         p.executableURL = launch.executable
@@ -59,7 +83,19 @@ final class ServerRunner {
         guard !quitting else { return }
         delay = ServerProcess.restartDelay(previous: delay, ranSeconds: Date().timeIntervalSince(startedAt))
         Log.write("server: starting again in \(delay) s")
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.start() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.run() }
+    }
+
+    @discardableResult
+    private static func launchctl(_ args: [String]) -> Int32 {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return -1 }
+        p.waitUntilExit()
+        return p.terminationStatus
     }
 
     private static func append(to url: URL) -> FileHandle? {

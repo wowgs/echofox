@@ -1,7 +1,8 @@
-// The downloads and removals of model variants that this app started (ModelJob), by variant: one owner, so that the
-// first-start window and the settings window show the same job, and a second window never starts a second download
-// of a variant that downloads. The server's info is asked when a job begins to run and when it ends, so that it says
-// whether the variant downloads or is there.
+// The downloads and removals of model variants that this app starts (ModelJob), by variant: one owner, so that the
+// first-start window and the settings window show the same job, a second window never starts a second download of a
+// variant that downloads, and the uninstall's removals show as removals too. The server's info is asked when a job
+// begins to run and when it ends, so that it says whether the variant downloads or is there (not for the uninstall's
+// removals: removeForUninstall).
 import Combine
 import EchoFoxCore
 import Foundation
@@ -33,6 +34,23 @@ final class ModelDownloads: ObservableObject {
     }
 
     func cancel(_ variant: String) { running(variant)?.cancel() }
+
+    /// The removals of an uninstall (Uninstaller), one after another in the order of `variants`; then `done`, also
+    /// when one fails (its files stay, said in the log). They ask the server nothing and call no end hook: the app
+    /// quits after them, and the first start's window must not open meanwhile.
+    func removeForUninstall(catalog: String, variants: [String], url: URL, done: @escaping () -> Void) {
+        guard let variant = variants.first else { return done() }
+        let job = ModelJob(url: url, message: ClientMessage.remove(catalog: catalog, variant: variant))
+        job.onChange = { [weak self, weak job] in
+            guard let self, let job else { return }
+            self.objectWillChange.send()
+            guard job.finished else { return }
+            if let e = job.error { Log.write("uninstall: \(variant) not removed: \(e)") }
+            self.removeForUninstall(catalog: catalog, variants: Array(variants.dropFirst()), url: url, done: done)
+        }
+        jobs[variant] = job
+        job.start()
+    }
 
     @discardableResult
     private func run(_ variant: String, _ job: ModelJob, isDownload: Bool) -> ModelJob {

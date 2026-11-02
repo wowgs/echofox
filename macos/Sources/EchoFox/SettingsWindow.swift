@@ -55,7 +55,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             titles = model.$selection.sink { [weak w] item in w?.title = item?.title ?? "Settings" }
             window = w
         }
-        if let window { MainMenu.bringForward(window) }
+        if let window { DockPresence.bringForward(window) }
     }
 
     /// The server's info changed: the window shows it.

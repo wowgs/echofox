@@ -161,11 +161,6 @@ public struct ServerInfo: Decodable, Equatable {
     }
 }
 
-public struct MessageError: Error, CustomStringConvertible {
-    public let description: String
-    public init(_ d: String) { description = d }
-}
-
 public enum ClientMessage {
     public static let info = #"{"type":"info"}"#
     public static let cancel = #"{"type":"cancel"}"#

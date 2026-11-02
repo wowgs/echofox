@@ -2,6 +2,7 @@
 // Swift Testing come only with Xcode. It exits 1 if a check fails.
 import Foundation
 import EchoFoxCore
+import Network
 
 var failures = 0
 func check(_ ok: @autoclosure () -> Bool, _ what: String, file: String = #fileID, line: Int = #line) {
@@ -640,6 +641,142 @@ do {
     check(TransferRate.speed(74.4e6) == "74 MB/s" && TransferRate.speed(4.25e6) == "4.2 MB/s", "rate: the speed's words")
     check(TransferRate.left(30) == "less than a minute left" && TransferRate.left(250) == "about 4 min left"
           && TransferRate.left(4800) == "about 1 h 20 min left", "rate: the time's words")
+}
+
+// The app's runtime: the menu bar's icon, the queue of dictations, the hotkeys, the menu's lines, the uninstall's
+// order, the clipboard's loan, the logs' folder and the one connection to the server.
+do {
+    func icon(recording: Bool = false, privateRecording: Bool = false, waiting: Bool = false, accessibility: Bool = true,
+              microphone: Bool = true, error: String? = nil, server: Bool = false) -> MenuBarStatus {
+        MenuBarStatus.of(recording: recording, privateRecording: privateRecording, waiting: waiting,
+                         accessibility: accessibility, microphoneAllowed: microphone, lastError: error, serverProblem: server)
+    }
+    check(icon() == .fox(.idle), "icon: idle")
+    check(icon(recording: true, privateRecording: true, accessibility: false, error: "x") == .fox(.ultraPrivate)
+          && icon(recording: true, waiting: true, server: true) == .fox(.recording), "icon: a recording wins over all")
+    check(icon(waiting: true, microphone: false) == .fox(.processing), "icon: the wait for the text wins over a problem")
+    check(icon(accessibility: false, microphone: false, error: "x", server: true) == .problem("Accessibility permission needed")
+          && icon(microphone: false, error: "x") == .problem("Microphone permission needed")
+          && icon(error: "boom", server: true) == .problem("boom")
+          && icon(server: true) == .problem("the dictation server does not answer"),
+          "icon: the permissions, then the last error, then the server")
+}
+final class QueuedDictation {}
+do {
+    var q = DictationQueue<QueuedDictation>()
+    let a = QueuedDictation(), b = QueuedDictation(), c = QueuedDictation()
+    check(!q.busy, "dictations: none at first")
+    q.start(a)
+    check(q.current === a && q.busy && !q.changed(a, to: .recording), "dictations: one records")
+    check(!q.changed(a, to: .waiting) && q.current == nil && q.waiting.count == 1 && q.waiting[0] === a,
+          "dictations: one that stopped waits for its text")
+    q.start(b)
+    check(!q.changed(b, to: .waiting) && q.waiting.count == 2 && q.waiting[1] === b, "dictations: the next waits after it")
+    check(q.changed(b, to: .finished) && q.waiting.count == 1 && q.waiting[0] === a, "dictations: a later one may finish first")
+    check(q.changed(a, to: .finished) && !q.busy, "dictations: all finished")
+    q.start(c)
+    check(q.changed(c, to: .finished) && !q.busy, "dictations: one that ends while it records leaves the queue at once")
+}
+do {
+    let shared = HotkeyAssignment.assign([("dictation", TapKeyChoice.rightOption), ("private", .rightOption)])
+    check(shared.map(\.0) == ["dictation"] && shared.first?.1 == .rightOption, "hotkeys: the first action keeps a shared key")
+    let one = HotkeyAssignment.assign([("dictation", nil), ("private", TapKeyChoice.rightCommand)])
+    check(one.map(\.0) == ["private"] && one.first?.1 == .rightCommand, "hotkeys: an action without a key has none")
+    let both = HotkeyAssignment.assign([("dictation", TapKeyChoice.rightOption), ("private", .rightCommand)])
+    check(both.map(\.0) == ["dictation", "private"] && both.map(\.1) == [.rightOption, .rightCommand], "hotkeys: two keys")
+}
+do {
+    check(Set(SettingsLayout.menu) == Set(MenuSetting.allCases.map(\.rawValue)),
+          "menu: every id of SettingsLayout.menu has a line, and every line a place: \(SettingsLayout.menu)")
+    let settings = SettingsLayout.menu.compactMap(MenuSetting.init).map(MenuLine.setting)
+    check(MenuLine.all(update: false) == settings + [.separator, .checkForUpdates, .settings, .quit],
+          "menu: the settings lines in the layout's order, then the fixed lines")
+    check(MenuLine.all(update: true) == [.update, .separator] + MenuLine.all(update: false), "menu: an update's line on top")
+}
+do {
+    // The comparator `{ a, _ in a != inUse }` that came before was no strict weak ordering: these checks failed with it
+    check(Uninstall.removalOrder(["a", "b", "c", "d", "e"], inUse: "b") == ["a", "c", "d", "e", "b"]
+          && Uninstall.removalOrder(["q4_0", "q8_0"], inUse: "q4_0") == ["q8_0", "q4_0"],
+          "uninstall: the variant in use last, the others in their order")
+    check(Uninstall.removalOrder(["a", "b"], inUse: nil) == ["a", "b"] && Uninstall.removalOrder([], inUse: "a") == [],
+          "uninstall: no variant in use")
+    check(ServerProcess.logInHome.hasPrefix(LogFolder.inHome + "/"), "logs: the server's log is in the logs' folder")
+}
+do {
+    // The clipboard's change count: 10 is the speaker's; each write of ours or theirs adds one.
+    var loan = ClipboardLoan<String>()
+    check(loan.mustSave(changeCount: 10), "clipboard: the first lend saves the speaker's")
+    let first = loan.lent(saving: "theirs", changeCount: 11)
+    check(!loan.mustSave(changeCount: 11), "clipboard: a lend right after ours keeps what was saved first")
+    let second = loan.lent(saving: nil, changeCount: 12)
+    check(loan.restore(first, changeCount: 12) == nil, "clipboard: an earlier lend's restore does nothing")
+    check(loan.restore(second, changeCount: 12) == "theirs" && loan.restore(second, changeCount: 12) == nil,
+          "clipboard: the last lend's restore brings the speaker's back, once")
+    let copied = loan.lent(saving: "theirs", changeCount: 21)
+    check(loan.restore(copied, changeCount: 22) == nil && loan.saved == nil, "clipboard: the speaker copied meanwhile: theirs stays")
+    _ = loan.lent(saving: "old", changeCount: 31)
+    check(loan.mustSave(changeCount: 32), "clipboard: the speaker copied between two lends: saved again")
+    let after = loan.lent(saving: "new", changeCount: 33)
+    check(loan.restore(after, changeCount: 33) == "new", "clipboard: the newer contents come back")
+    let kept = loan.lent(saving: "theirs", changeCount: 41)
+    loan.kept(changeCount: 42)
+    check(loan.restore(kept, changeCount: 42) == nil && loan.mustSave(changeCount: 42), "clipboard: kept text stays")
+}
+do {
+    check(ServerConnection.text(of: .string("a")) == "a" && ServerConnection.text(of: .data(Data("б".utf8))) == "б",
+          "connection: a text frame as it is, a binary frame as UTF-8")
+    // A WebSocket server on the loopback: it answers a text frame with that text and a binary frame, then closes.
+    let queue = DispatchQueue(label: "echofox-tests.server")
+    let parameters = NWParameters.tcp
+    parameters.requiredInterfaceType = .loopback
+    parameters.defaultProtocolStack.applicationProtocols.insert(NWProtocolWebSocket.Options(), at: 0)
+    let listener = try NWListener(using: parameters)
+    func frame(_ opcode: NWProtocolWebSocket.Opcode) -> NWConnection.ContentContext {
+        NWConnection.ContentContext(identifier: "frame", metadata: [NWProtocolWebSocket.Metadata(opcode: opcode)])
+    }
+    listener.newConnectionHandler = { c in
+        c.start(queue: queue)
+        c.receiveMessage { data, _, _, _ in
+            c.send(content: data, contentContext: frame(.text), completion: .contentProcessed { _ in })
+            c.send(content: Data(#"{"type":"done"}"#.utf8), contentContext: frame(.binary), completion: .contentProcessed { _ in
+                queue.asyncAfter(deadline: .now() + 0.2) { c.cancel() }
+            })
+        }
+    }
+    var port: UInt16?
+    listener.stateUpdateHandler = { if case .ready = $0 { DispatchQueue.main.async { port = listener.port?.rawValue } } }
+    listener.start(queue: queue)
+    func spin(seconds: Double, until done: () -> Bool) {
+        let end = Date().addingTimeInterval(seconds)
+        while !done(), Date() < end { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01)) }
+    }
+    spin(seconds: 5) { port != nil }
+    let url = URL(string: "ws://127.0.0.1:\(port ?? 0)")!
+    func describe(_ e: ServerConnection.Event) -> String {
+        switch e {
+        case .text(let s): return s
+        case .ended: return "ended"
+        }
+    }
+    var events: [String] = []
+    let whole = ServerConnection(url: url)
+    whole.open { events.append(describe($0)) }
+    whole.send(#"{"type":"info"}"#)
+    spin(seconds: 5) { events.last == "ended" }
+    check(events == [#"{"type":"info"}"#, #"{"type":"done"}"#, "ended"],
+          "connection: the frames as text in order, then the end: \(events)")
+    var closed: [String] = []
+    let early = ServerConnection(url: url)
+    early.open { e in
+        closed.append(describe(e))
+        early.close()
+    }
+    early.send("first")
+    spin(seconds: 1) { false }
+    check(closed == ["first"], "connection: no event after close(): \(closed)")
+    listener.cancel()
+} catch {
+    check(false, "connection: \(error)")
 }
 
 print(failures == 0 ? "echofox-tests: all checks pass" : "echofox-tests: \(failures) failed")

@@ -1,7 +1,8 @@
 // The menu bar item: the fox of the state (idle, recording, Ultra Private Dictation, writing the text; MenuBarIcon), or
-// the crossed-out microphone of a problem, and a short menu of what is touched often, built each time it opens from
-// SettingsLayout.menu (docs/design.md); everything else is in the settings window. A dictation is the hotkeys',
-// not the menu's. It shows; it never decides: the actions go back to the App.
+// the crossed-out microphone of a problem, as MenuBarStatus decides, and a short menu of what is touched often, built
+// each time it opens from MenuLine.all (its settings lines in SettingsLayout.menu's order; docs/design.md); everything
+// else is in the settings window. A dictation is the hotkeys', not the menu's. It shows; it never decides: the
+// actions go back to the App.
 import AppKit
 import AVFoundation
 import EchoFoxCore
@@ -29,17 +30,15 @@ protocol MenuActions: AnyObject {
 }
 
 final class MenuBar: NSObject, NSMenuDelegate {
-    /// What the icon shows: the fox (MenuBarIcon), or the crossed-out microphone of a problem, with its words.
-    private enum Icon: Equatable {
-        case fox(MenuBarIcon.Kind)
-        case problem(String)
-    }
+    /// The processing ring's turn at each frame (Tuning.menuBarSpinSeconds), in degrees.
+    private static let spinStep: CGFloat = 24
 
     // 30 pt: the fox is 26 × 24 pt and needs some room on its sides
     private let item = NSStatusBar.system.statusItem(withLength: 30)
     private weak var actions: MenuActions?
     var state: () -> MenuState = { MenuState() }
-    private var icon = Icon.fox(.idle)
+    /// What the icon shows (MenuBarStatus decides).
+    private var icon = MenuBarStatus.fox(.idle)
     private var appearance: NSKeyValueObservation?
     /// The processing ring turns only while the app waits for the text, and not with Reduce Motion.
     private var spin: Timer?
@@ -63,26 +62,14 @@ final class MenuBar: NSObject, NSMenuDelegate {
 
     func update() {
         let s = state()
-        if s.recording {
-            icon = .fox(s.privateRecording ? .ultraPrivate : .recording)
-        } else if s.waiting {
-            icon = .fox(.processing)
-        } else if !s.accessibility {
-            icon = .problem("Accessibility permission needed")
-        } else if s.microphone != .authorized {
-            icon = .problem("Microphone permission needed")
-        } else if let e = s.lastError {
-            icon = .problem(e)
-        } else if s.serverProblem != nil {
-            icon = .problem("the dictation server does not answer")
-        } else {
-            icon = .fox(.idle)
-        }
+        icon = MenuBarStatus.of(recording: s.recording, privateRecording: s.privateRecording, waiting: s.waiting,
+                                accessibility: s.accessibility, microphoneAllowed: s.microphone == .authorized,
+                                lastError: s.lastError, serverProblem: s.serverProblem != nil)
         let turning = icon == .fox(.processing) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if turning, spin == nil {
-            let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: Tuning.menuBarSpinSeconds, repeats: true) { [weak self] _ in
                 guard let self else { return }
-                self.phase = (self.phase + 24).truncatingRemainder(dividingBy: 360)
+                self.phase = (self.phase + Self.spinStep).truncatingRemainder(dividingBy: 360)
                 self.draw()
             }
             RunLoop.main.add(timer, forMode: .common)  // also while the menu is open
@@ -105,12 +92,13 @@ final class MenuBar: NSObject, NSMenuDelegate {
             let image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: label)
             image?.isTemplate = true
             button.image = image
-        case .fox(let kind):
-            switch kind {
-            case .idle: label = "EchoFox: ready"
-            case .recording: label = "EchoFox: recording"
-            case .ultraPrivate: label = "EchoFox: recording, Ultra Private Dictation"
-            case .processing: label = "EchoFox: writing the text"
+        case .fox(let fox):
+            let kind: MenuBarIcon.Kind
+            switch fox {
+            case .idle: (kind, label) = (.idle, "EchoFox: ready")
+            case .recording: (kind, label) = (.recording, "EchoFox: recording")
+            case .ultraPrivate: (kind, label) = (.ultraPrivate, "EchoFox: recording, Ultra Private Dictation")
+            case .processing: (kind, label) = (.processing, "EchoFox: writing the text")
             }
             var dark = false
             button.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -123,31 +111,31 @@ final class MenuBar: NSObject, NSMenuDelegate {
         button.setAccessibilityLabel(label)
     }
 
+    /// The menu's lines in MenuLine.all's order, each with its view.
     func menuNeedsUpdate(_ menu: NSMenu) {
         let s = state()
         menu.removeAllItems()
         handlers.removeAll()
         let inputs = AudioInputs.all()
-        if let v = s.update {
-            menu.addItem(action("Update to EchoFox \(v)…") { $0.checkForUpdates() })
-            menu.addItem(.separator())
-        }
-        for id in SettingsLayout.menu {
-            switch id {
-            case "permissions":  // only while one is missing
+        for line in MenuLine.all(update: s.update != nil) {
+            switch line {
+            case .update: menu.addItem(action("Update to EchoFox \(s.update ?? "")…") { $0.checkForUpdates() })
+            case .separator: menu.addItem(.separator())
+            case .setting(.permissions):  // only while one is missing
                 if !s.accessibility || s.microphone != .authorized { menu.addItem(permissionsItem(s)) }
-            case "microphone": menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
-            case "inputVolume": menu.addItem(volumeItem(s))
-            case "labelRecordings": menu.addItem(action("Label Recordings…") { $0.openLabeling() })
-            default: break
+            case .setting(.microphone):
+                menu.addItem(submenu("Microphone: " + microphoneName(s, inputs), microphoneItems(s, inputs)))
+            case .setting(.inputVolume): menu.addItem(volumeItem(s))
+            case .setting(.labelRecordings): menu.addItem(action("Label Recordings…") { $0.openLabeling() })
+            case .checkForUpdates: menu.addItem(action("Check for Updates…") { $0.checkForUpdates() })
+            case .settings:
+                let settings = action("Settings…") { $0.openSettings() }
+                settings.keyEquivalent = ","
+                menu.addItem(settings)
+            case .quit:
+                menu.addItem(NSMenuItem(title: "Quit EchoFox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
             }
         }
-        menu.addItem(.separator())
-        menu.addItem(action("Check for Updates…") { $0.checkForUpdates() })
-        let settings = action("Settings…") { $0.openSettings() }
-        settings.keyEquivalent = ","
-        menu.addItem(settings)
-        menu.addItem(NSMenuItem(title: "Quit EchoFox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     /// One line for the permissions, shown only while one is missing: its title names what is missing; in it, a

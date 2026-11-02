@@ -11,38 +11,25 @@ final class ModelJob {
     private(set) var rate = TransferRate()
     var onChange: () -> Void = {}
 
-    private let task: URLSessionWebSocketTask
+    private let connection: ServerConnection
     private let message: String
 
     init(url: URL, message: String) {
-        task = URLSession.shared.webSocketTask(with: url)
+        connection = ServerConnection(url: url)
         self.message = message
     }
 
     func start() {
-        task.resume()
-        task.send(.string(message)) { [weak self] e in
-            if let e { DispatchQueue.main.async { self?.end(error: "\(e.localizedDescription)") } }
-        }
-        receive()
-    }
-
-    func cancel() { task.send(.string(ClientMessage.cancel)) { _ in } }
-
-    private func receive() {
-        task.receive { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self, !self.finished else { return }
-                switch result {
-                case let .success(.string(s)): self.handle(s)
-                case let .success(.data(d)): self.handle(String(decoding: d, as: UTF8.self))
-                case .success: break
-                case .failure: self.end(error: "the dictation server closed the connection")
-                }
-                if !self.finished { self.receive() }
+        connection.open { [weak self] event in
+            switch event {
+            case .text(let s): self?.handle(s)
+            case .ended: self?.end(error: "the dictation server closed the connection")
             }
         }
+        connection.send(message) { [weak self] e in self?.end(error: e.localizedDescription) }
     }
+
+    func cancel() { connection.send(ClientMessage.cancel) }
 
     private func handle(_ s: String) {
         switch ServerMessage.parse(s) {
@@ -70,7 +57,7 @@ final class ModelJob {
         guard !finished else { return }
         finished = true
         self.error = error
-        task.cancel(with: .normalClosure, reason: nil)
+        connection.close()
         onChange()
     }
 }
