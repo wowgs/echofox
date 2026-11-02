@@ -91,6 +91,8 @@ An adapter is a Python package with two required files.
 | `interface` | Adapter API version; currently `2`. |
 | `apps` | Bundle IDs of supported apps. |
 | `electronTree` | Whether its apps build their accessibility tree only on request (Electron): `true` for all of them, or the list of those among `apps` that do. |
+
+For these apps of an enabled adapter (the info's `electronApps`), and for no other app, the app sets two attributes of the app's accessibility element (`ElectronTree.swift`): `AXManualAccessibility`, Electron's switch for assistive apps, and always `AXEnhancedUserInterface`, which VoiceOver sets and Chromium watches. It sets them when such an app starts or comes to the front, and again at a snapshot that finds no focused element.
 | `reads` | Declared file access. |
 | `screen` | Additional screen data: `lists`, the rows of the lists in the focused window, or `outline`, the tree of the focused web page or window. |
 | `context` | This adapter's default context settings. |
@@ -120,4 +122,4 @@ swift build -c release --package-path macos
 macos/.build/release/echofox-snapshot --delay 5 | server/.venv/bin/python server/which_session.py
 ```
 
-For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.
+`--electron` asks an Electron app for its accessibility tree, as the app does for an enabled adapter's Electron apps; without it the tool sets no attribute of the app. For an adapter that reads the screen, `--lists` adds the rows of the lists, and `--outline` adds the outline of the page. `--app <bundle id>` takes the snapshot of that app at once, without bringing it to the front: `echofox-snapshot --app com.tdesktop.Telegram --lists --out snapshot.json`. These snapshots contain window text; treat them as conversation data.

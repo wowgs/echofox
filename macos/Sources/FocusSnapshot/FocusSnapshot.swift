@@ -5,11 +5,11 @@
 // messages), `outline` the tree of the focused web page or window (a web app's chat, whose messages are not in lists),
 // and the app asks only for the apps of an enabled adapter whose manifest wants them.
 //
-// Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps (Claude Desktop,
-// VS Code) build their accessibility tree only on request: without AXManualAccessibility set, Claude Desktop showed
-// only its window (measured 2026-10-15). After it is set, the focused element appeared 2.1 s later (2087–2104 ms, three
-// runs, Claude Desktop 2.37337.1). take() sets it when the focused element is missing, waits up to
-// electronWaitSeconds, and leaves it set; prepare(pid:) sets it ahead, so that a later take() need not wait.
+// Accessibility needs the "Accessibility" permission of the process that runs this. Electron apps build their
+// accessibility tree only on request (ElectronTree). After AXManualAccessibility was set, the focused element appeared
+// 2.1 s later (2087–2104 ms, three runs, Claude Desktop 2.37337.1). With enableElectron, take() asks for the tree when
+// the focused element is missing and waits up to electronWaitSeconds; the app asks ahead (ElectronTree.enable), so
+// that a later take() need not wait.
 import AppKit
 import ApplicationServices
 import Darwin
@@ -45,7 +45,7 @@ public enum FocusSnapshot {
     }
 
     /// The snapshot of the frontmost app (or of `app`), as a JSON-ready dictionary.
-    public static func take(enableElectron: Bool = true, lists: Bool = false, outline: Bool = false,
+    public static func take(enableElectron: Bool = false, lists: Bool = false, outline: Bool = false,
                             of app: NSRunningApplication? = nil) -> [String: Any] {
         capture(full: true, enableElectron: enableElectron, lists: lists, outline: outline, of: app).snapshot
     }
@@ -54,7 +54,7 @@ public enum FocusSnapshot {
     /// pid. `full`: the window, the focused element's
     /// ancestors and the app's processes too, for adapters; without it, only the app and the focused element, which
     /// the text goes into later.
-    public static func capture(full: Bool = true, enableElectron: Bool = true, lists: Bool = false,
+    public static func capture(full: Bool = true, enableElectron: Bool = false, lists: Bool = false,
                                outline: Bool = false, of target: NSRunningApplication? = nil) -> Capture {
         let started = Date()
         guard let front = target ?? NSWorkspace.shared.frontmostApplication else {
@@ -66,8 +66,7 @@ public enum FocusSnapshot {
                                           "name": front.localizedName ?? ""]]
         out["trusted"] = AXIsProcessTrusted()
         var focused = element(app, "AXFocusedUIElement")
-        if focused == nil, enableElectron, hasAttribute(app, "AXManualAccessibility") {
-            AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        if focused == nil, enableElectron, ElectronTree.enable(pid: pid) {
             out["electronTreeEnabled"] = true
             for _ in 0..<Int(electronWaitSeconds / electronPollSeconds) where focused == nil {
                 Thread.sleep(forTimeInterval: electronPollSeconds)
@@ -113,16 +112,6 @@ public enum FocusSnapshot {
         return Capture(snapshot: out, focused: focused, pid: pid)
     }
 
-    /// Asks an Electron app to build its accessibility tree now (AXManualAccessibility), so that a snapshot taken
-    /// later need not wait for it. Returns whether the app has the attribute.
-    @discardableResult
-    public static func prepare(pid: pid_t) -> Bool {
-        let app = AXUIElementCreateApplication(pid)
-        guard hasAttribute(app, "AXManualAccessibility") else { return false }
-        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        return true
-    }
-
     // MARK: Accessibility
 
     public static func value(_ e: AXUIElement, _ name: String) -> AnyObject? {
@@ -142,11 +131,6 @@ public enum FocusSnapshot {
         return nil
     }
 
-    static func hasAttribute(_ e: AXUIElement, _ name: String) -> Bool {
-        var names: CFArray?
-        AXUIElementCopyAttributeNames(e, &names)
-        return (names as? [String] ?? []).contains(name)
-    }
 
     /// Service fields of an element: role, title, description, identifier, DOM classes, URL. Never AXValue.
     static func describe(_ e: AXUIElement) -> [String: Any] {

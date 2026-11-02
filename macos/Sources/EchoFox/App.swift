@@ -131,7 +131,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
     // MARK: Electron apps
 
     /// Electron apps build their accessibility tree only on request, about 2 s after it (see FocusSnapshot), and forget
-    /// it when they quit. Only the apps of enabled adapters are asked: the tree costs the app CPU and memory.
+    /// it when they quit. Only the Electron apps of enabled adapters are asked (ElectronTree).
     private func prepareAll() {
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular { prepare(app) }
     }
@@ -140,7 +140,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         guard permissions.accessibility, let id = app.bundleIdentifier, server.info?.treeApps.contains(id) == true
         else { return }
         let pid = app.processIdentifier
-        prepareQueue.async { FocusSnapshot.prepare(pid: pid) }
+        prepareQueue.async { ElectronTree.enable(pid: pid) }
     }
 
     // MARK: Dictation
