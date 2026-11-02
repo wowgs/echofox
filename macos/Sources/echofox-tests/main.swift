@@ -1,4 +1,4 @@
-// The checks of EchoFoxCore and of FocusSnapshot's token estimate: `swift run --package-path macos echofox-tests`.
+// The checks of EchoFoxCore and of FocusSnapshot's token estimate and outline: `swift run --package-path macos echofox-tests`.
 // An executable, not a test target: XCTest and Swift Testing come only with Xcode. It exits 1 if a check fails.
 import Foundation
 import EchoFoxCore
@@ -24,10 +24,40 @@ do {
     check(info.sampleRate == 16000 && info.textWaitSeconds == 180, "info: the audio and the wait")
     check(info.model?.title == "Gemma 4 E4B", "info: the model's name for people")
     check(info.proposedLanguage("ru") == "ru" && info.proposedLanguage("xx") == "en", "info: the first start's language")
-    check(info.snapshotApps == ["com.anthropic.claudefordesktop", "com.mitchellh.ghostty", "com.tdesktop.Telegram"]
-          && info.treeApps == ["com.anthropic.claudefordesktop"] && info.listApps == ["com.tdesktop.Telegram"]
-          && info.outlineApps == ["com.anthropic.claudefordesktop"],
-          "info: apps, trees, lists and outlines (only of an adapter's screenApps)")
+    check(info.identityApps == ["com.anthropic.claudefordesktop", "com.mitchellh.ghostty", "com.tdesktop.Telegram"]
+          && info.treeApps == ["com.anthropic.claudefordesktop"],
+          "info: the identity's apps (the surfaces' apps) and the trees asked for (treeOnRequest)")
+    let code = info.adapters.first { $0.name == "claude-code" }!
+    let desktop = code.surfaces[0], terminal = code.surfaces[1]
+    check(code.surfaces.map(\.id) == ["desktop", "terminal"] && code.apps == ["com.anthropic.claudefordesktop", "com.mitchellh.ghostty"]
+          && desktop.treeOnRequest == true && terminal.treeOnRequest == nil
+          && desktop.match?.url == "https://claude.ai/epitaxy/*" && desktop.match?.title == nil
+          && desktop.screen?.outline?.skip == ["epitaxy-document-page"] && desktop.screen?.outline?.budget == nil
+          && desktop.screen?.lists == nil && terminal.screen?.processes != nil
+          && desktop.reads?.map(\.path) == ["~/.claude/projects"] && desktop.reads?.map(\.what) == ["The session's transcript"],
+          "info: an adapter's surfaces as the example gives them")
+    let chat = info.adapters.first { $0.name == "claude-chat" }!.surfaces[0]
+    let telegram = info.adapters.first { $0.name == "telegram" }!.surfaces[0]
+    check(chat.screen?.outline?.budget == "chatHistoryTokenBudget" && telegram.screen?.lists?.budget == "chatHistoryTokenBudget"
+          && telegram.screen?.outline == nil, "info: the surfaces' budgets are the keys of their knobs")
+    check(desktop.screen?.kinds == ["Page text"] && terminal.screen?.kinds == ["Running programs"]
+          && telegram.screen?.kinds == ["Message lists"] && ServerInfo.Surface.Match.shown("https://claude.ai/chat/*")
+              == "https://claude.ai/chat/…", "info: a surface in the settings window's words")
+    var off = examples["info"] as! [String: Any]
+    off["adapters"] = (off["adapters"] as! [[String: Any]]).map { a in
+        var a = a
+        a["enabled"] = a["name"] as? String == "telegram"
+        return a
+    }
+    let some = try ServerInfo.decode(data(off))
+    check(some.identityApps == ["com.tdesktop.Telegram"] && some.treeApps.isEmpty,
+          "info: only the enabled adapters' apps get an identity and a tree")
+    check(some.identityPlan(for: "com.tdesktop.Telegram") == IdentityPlan(identity: true, tree: false)
+          && info.identityPlan(for: "com.anthropic.claudefordesktop") == IdentityPlan(identity: true, tree: true)
+          && some.identityPlan(for: "com.anthropic.claudefordesktop") == .none
+          && info.identityPlan(for: "com.apple.TextEdit") == .none, "info: the plan at the hotkey")
+    let broken = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"x","enabled":true,"error":"bad"}"#.utf8))
+    check(broken.surfaces.isEmpty && broken.apps.isEmpty, "info: an adapter whose manifest did not load has no surfaces")
     check(info.languages.first.map { [$0.code, $0.name] } == ["cs", "Czech"] && info.languages.count == 20,
           "info: the languages")
     check(info.commonNotes?.first?.contains("{LANGUAGE}") == true, "info: the notes of every language, not filled in")
@@ -156,39 +186,93 @@ do {
           "mic: no built-in one, or macOS's input: nil")
 }
 
-// What the focus snapshot takes of an app, as the example's enabled adapters ask.
-do {
-    let info = try ServerInfo.decode(data(examples["info"]!))
-    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop") == SnapshotPlan(full: true, tree: true, lists: false, outline: true,
-                                                                                         outlineSkip: ["AXButton", "sr-only", "epitaxy-document-page"],
-                                                                                         screenBudget: 1000, tokenWeights: info.model?.tokenWeights),
-          "plan: Claude Desktop, its tree and its outline, without the children of the adapters' outlineSkip")
-    check(info.snapshotPlan(for: "com.mitchellh.ghostty") == SnapshotPlan(full: true, tree: false, lists: false, outline: false),
-          "plan: a terminal of claude-code, whose screen it does not need (screenApps): no outline, no budget")
-    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop").screenBudget == 1000
-          && info.snapshotPlan(for: "com.anthropic.claudefordesktop").tokenWeights?["cyrillic"] == 0.238,
-          "plan: the screen up to the adapter's chat budget (the setting's default), counted with the model's weights")
-    let file = FileManager.default.temporaryDirectory.appendingPathComponent("echofox-plan-\(getpid()).json")
-    try Data(#"{"version": 11, "adapters": {"claude-chat": {"enabled": true, "chatHistoryTokenBudget": 300}, "claude-code": {"enabled": true, "chatHistoryTokenBudget": 200}}}"#.utf8).write(to: file)
-    check(info.snapshotPlan(for: "com.anthropic.claudefordesktop", config: Config.load(from: file)).screenBudget == 300,
-          "plan: the config's entries set the screen's budget, the biggest of the app's screen adapters")
-    try? FileManager.default.removeItem(at: file)
-    check(info.snapshotPlan(for: "com.tdesktop.Telegram") == SnapshotPlan(full: true, tree: false, lists: true, outline: false,
-                                                                           screenBudget: 1000, tokenWeights: info.model?.tokenWeights),
-          "plan: Telegram, its lists")
-    check(info.snapshotPlan(for: "com.apple.TextEdit") == .none, "plan: an app no adapter reads gets nothing")
-} catch {
-    check(false, "plan: \(error)")
-}
-
-// The app's start and stop, as in the example: the same keys, except the hints, which the app has none of.
+// The app's start and stop, as in the example: the start with the identity, a private one without it.
+let identity = (examples["start"] as! [String: Any])["identity"] as! [String: Any]
 let start = try JSONSerialization.jsonObject(with: Data(ClientMessage.start(
-    model: "gemma-e4b", language: "ru", sampleRate: 16000, client: "echofox-mac",
-    snapshot: ["app": ["bundleId": "com.example.app"]]).utf8)) as! [String: Any]
-check(Set(start.keys) == Set((examples["start"] as! [String: Any]).keys).subtracting(["hints"]), "start: the example's keys")
+    model: "gemma-e4b", language: "ru", sampleRate: 16000, client: "echofox-mac", identity: identity).utf8)) as! NSDictionary
+check(start == examples["start"] as! NSDictionary, "start: as in the example")
+let quiet = try JSONSerialization.jsonObject(with: Data(ClientMessage.start(
+    model: nil, language: "ru", sampleRate: 16000, client: "echofox-mac", identity: identity, isPrivate: true).utf8)) as! [String: Any]
+check(quiet["identity"] == nil && quiet["private"] as? Bool == true && quiet["snapshot"] == nil,
+      "start: a private one carries no identity")
 let stop = try JSONSerialization.jsonObject(with: Data(ClientMessage.stop(.user).utf8)) as! [String: String]
 check(stop == examples["stop"] as! [String: String], "stop: as in the example")
 check(ClientMessage.StopReason.silence.rawValue == "silence", "stop: the reasons' names")
+
+// The server's read request, and the content that answers it: the example's outline, walked on a made-up tree of the
+// example's page with the example's skip list, is the example's content.
+struct FakeNode {
+    var fields: [String: Any] = [:]
+    var kids: [FakeNode] = []
+    var value: String?
+}
+func walk(_ root: FakeNode, skip: [String] = [], budget: Int? = nil, asked: ((FakeNode) -> Void)? = nil) -> [String: Any] {
+    FocusSnapshot.outline(of: root, root: "webArea", skip: Set(skip), budget: budget, describe: { $0.fields },
+                          children: { $0.kids }, shownText: { asked?($0); return $0.value })
+}
+func nodes(_ outline: [String: Any]) -> [[String: Any]] { outline["nodes"] as? [[String: Any]] ?? [] }
+func text(_ s: String) -> FakeNode { FakeNode(fields: ["role": "AXStaticText"], value: s) }
+do {
+    let read = ServerMessage.parse(String(decoding: data(examples["read"]!), as: UTF8.self))
+    let weights = (examples["read"] as! [String: Any])["tokenWeights"] as? [String: Double]
+    check(read == .read(ReadRequest(surfaces: [.init(surface: "claude-code/desktop",
+                                                     outline: .init(skip: ["epitaxy-document-page"], budget: nil))],
+                                    tokenWeights: weights)), "read: as in the example, \(String(describing: read))")
+    let more = #"{"type": "read", "surfaces": [{"surface": "telegram/desktop", "outline": null, "lists": {"budget": 600}, "processes": null}, {"surface": "claude-code/terminal", "processes": {}}], "tokenWeights": {}}"#
+    check(ServerMessage.parse(more) == .read(ReadRequest(surfaces: [.init(surface: "telegram/desktop", lists: .init(budget: 600)),
+                                                                     .init(surface: "claude-code/terminal", processes: .init())],
+                                                          tokenWeights: [:])),
+          "read: lists with a budget in tokens, processes, null as not asked")
+    check(ServerMessage.parse(#"{"type": "read", "surfaces": [{"outline": {}}]}"#) == .other, "read: a surface without its name")
+    guard case .read(let request)? = read, let surface = request.surfaces.first else { throw MessageError("no read") }
+    let page = FakeNode(fields: ["role": "AXWebArea", "title": "Local Speech - Claude Code", "url": "https://claude.ai/epitaxy/x"], kids: [
+        FakeNode(fields: ["role": "AXPopUpButton", "title": "docs"]),
+        FakeNode(fields: ["role": "AXPopUpButton", "title": "4-app.md"]),
+        FakeNode(fields: ["role": "AXButton", "description": "View source"]),
+        FakeNode(fields: ["role": "AXGroup", "domClasses": ["epitaxy-document-page"]], kids: [text("The file's text")]),
+    ])
+    var outline = walk(page, skip: surface.outline?.skip ?? [], budget: surface.outline?.budget)
+    var first = nodes(outline)[0]
+    first["url"] = nil  // the example leaves the web area's address out: the identity has it
+    outline["nodes"] = [first] + nodes(outline).dropFirst()
+    let content = try JSONSerialization.jsonObject(with: Data(ClientMessage.content(
+        surfaces: [surface.surface: ["outline": outline]], tookMs: 64).utf8)) as! NSDictionary
+    check(content == examples["content"] as! NSDictionary, "content: as in the example, \(content)")
+} catch {
+    check(false, "read: \(error)")
+}
+
+// The outline's walk: the skip list against all DOM classes, the cut to 12 only in the copy sent, the ancestors of the
+// last element read, and no input field's value.
+do {
+    let many = (1...12).map { "c\($0)" } + ["private-part"]
+    let skipped = walk(FakeNode(fields: ["role": "AXWebArea"], kids: [
+        FakeNode(fields: ["role": "AXGroup", "domClasses": many], kids: [text("secret")])]), skip: ["private-part"])
+    let group = nodes(skipped).last ?? [:]
+    check(nodes(skipped).count == 2 && group["skipped"] as? Bool == true && (group["domClasses"] as? [String]) == Array(many.prefix(12))
+          && skipped["complete"] as? Bool == true, "outline: a skip on the 13th class, 12 classes sent, \(skipped)")
+
+    let tree = FakeNode(fields: ["role": "AXWebArea"], kids: [
+        FakeNode(fields: ["role": "AXGroup", "identifier": "a"], kids: [text("old")]),
+        FakeNode(fields: ["role": "AXGroup", "identifier": "b"], kids: [
+            FakeNode(fields: ["role": "AXGroup", "identifier": "c"], kids: [text(String(repeating: "x", count: 40)),
+                                                                             text(String(repeating: "y", count: 40))])]),
+    ])
+    let cut = walk(tree, budget: 5)  // 40 letters are 12 tokens with the fallback: the last text reaches the budget
+    check(nodes(cut).map { $0["identifier"] as? String ?? $0["role"] as! String } == ["AXWebArea", "b", "c", "AXStaticText"]
+          && nodes(cut).map { $0["depth"] as! Int } == [0, 1, 2, 3] && nodes(cut).last?["text"] as? String == String(repeating: "y", count: 40)
+          && cut["complete"] as? Bool == false, "outline: the budget's stop keeps the last element's ancestors, \(nodes(cut))")
+    let whole = walk(tree)
+    check(nodes(whole).map { $0["text"] as? String ?? $0["identifier"] as? String ?? "" }
+              == ["", "a", "old", "b", "c", String(repeating: "x", count: 40), String(repeating: "y", count: 40)]
+          && whole["complete"] as? Bool == true, "outline: no budget, the whole tree in its order")
+
+    var asked: [String] = []
+    let field = walk(FakeNode(fields: ["role": "AXWebArea"], kids: [
+        FakeNode(fields: ["role": "AXTextField"], value: "typed"), text("shown")]), asked: { asked.append($0.value ?? "") })
+    check(asked == ["shown"] && !nodes(field).contains { $0["text"] as? String == "typed" },
+          "outline: an input field's value is never read")
+}
 
 // The server's messages.
 let parsed = (examples["server"] as! [[String: Any]]).map { ServerMessage.parse(String(decoding: data($0), as: UTF8.self)) }
@@ -413,7 +497,7 @@ do {
     check(!SettingStore.state(of: temperature, in: config).changed,
           "settings: a value equal to the default is no change (temperature 1)")
     let terms = try JSONDecoder().decode(SettingInfo.self, from: Data(#"{"key":"chatTermsTokenBudget","owner":"adapter","group":"context","kind":"integer","title":"Names and terms","default":100,"min":0,"help":"h"}"#.utf8))
-    let claude = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"claude","enabled":true,"apps":[],"electronTree":true,"context":{"chatTermsTokenBudget":200}}"#.utf8))
+    let claude = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"claude","enabled":true,"surfaces":[],"context":{"chatTermsTokenBudget":200}}"#.utf8))
     st = SettingStore.state(of: terms, in: config, scope: .adapter(claude))
     check(st.path == ["adapters", "claude", "chatTermsTokenBudget"] && st.own == .number(3)
           && st.inherited == .number(200) && st.source == .adapter("claude"), "settings: an adapter's over its manifest")
@@ -812,7 +896,7 @@ do {
     check(SettingText.value(.number(60)) == "60" && SettingText.value(.number(0.95)) == "0.95"
           && SettingText.value(.bool(true)) == "on" && SettingText.value(nil) == "", "words: a value")
     let budget = info.settings!.first { $0.key == "chatHistoryTokenBudget" }!
-    let own = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"telegram","enabled":true,"apps":[],"electronTree":false,"context":{"chatHistoryTokenBudget":600}}"#.utf8))
+    let own = try JSONDecoder().decode(ServerInfo.Adapter.self, from: Data(#"{"name":"telegram","enabled":true,"surfaces":[],"context":{"chatHistoryTokenBudget":600}}"#.utf8))
     let bySelf = SettingStore.state(of: budget, in: Config(), scope: .adapter(own))
     let builtIn = SettingStore.state(of: budget, in: Config(), scope: .adapter(info.adapters.first { $0.name == "telegram" }!))
     check(SettingText.source(bySelf, adapters: info.adapters) == "From the Telegram defaults."

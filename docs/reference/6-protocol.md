@@ -17,20 +17,45 @@ The client streams audio while recording. The server returns recognized pieces i
 
    ```json
    {"type": "start", "model": "<name>", "language": "ru", "sampleRate": 16000, "encoding": "pcm_s16le",
-    "client": "<name>", "snapshot": {}, "hints": {}}
+    "client": "<name>",
+    "identity": {"app": {"bundleId": "…", "pid": 501, "name": "Claude"}, "window": {"title": "…"},
+                 "webArea": {"url": "https://claude.ai/epitaxy/…", "title": "…"}}}
    ```
 
-   - `snapshot` is the focus snapshot (see [the chat context](3-context.md)). `hints` (optional) carries what the client knows, for example the Claude Code sessions it has open, and is passed unchanged to adapters. The EchoFox app sends none.
+   - `identity` tells which app, window and page the dictation goes into (see [the chat context](3-context.md#how-the-server-finds-the-conversation)). `window` is the focused window. `webArea` is the nearest web area above the focused element. A part that does not exist is left out. The app sends an identity only for an app of an enabled adapter's surfaces.
    - If `model` is omitted, the server uses the first model in the registry.
-   - `"private": true` makes a private dictation: the server saves nothing, runs no adapter and writes no text into its log. The app sends no snapshot with it.
+   - `"private": true` makes a private dictation: the server saves nothing, runs no adapter and writes no text into its log. The app sends no identity with it.
    - An experiment can also send `prompt` and `options`. These override model settings. The app never sends them.
 2. The client sends the audio in binary messages: 16-bit little-endian PCM, 16 kHz, mono.
-3. When the recording stops, the client sends `{"type": "stop", "reason": "user"}`. The other reasons are `silence`, `max_duration` and `error`.
+3. The server answers the identity with a read request: what to read of the screen for each surface that matched. With no matched surface, `surfaces` is empty.
+
+   ```json
+   {"type": "read", "surfaces": [{"surface": "claude-chat/desktop",
+                                  "outline": {"skip": ["AXButton", "sr-only", "group/morph", "group/tag"], "budget": 1000}}],
+    "tokenWeights": {"cyrillic": 0.238, "latin": 0.199, "digit": 1.649, "space": 0.362, "other": 0.717}}
+   ```
+
+   - The server leaves out a part that the surface does not read, and the app reads no part that is absent or null. `outline` asks for the tree of the page or window, without the children of the elements whose AX role or one of whose DOM classes is in `skip`. `lists` asks for the rows of the window's lists. `processes` asks for the app's child processes.
+   - A `budget` is a number of estimated tokens, counted with `tokenWeights`. A null budget leaves only the structural limits. The server resolves the budgets, so the app does not.
+4. The client reads only what the request asks, of the window it took the identity of, and sends one content message, keyed by the surface:
+
+   ```json
+   {"type": "content", "tookMs": 64,
+    "surfaces": {"claude-code/desktop": {"outline": {"root": "webArea", "complete": true, "nodes": […]}}}}
+   ```
+
+   - A surface's content has `outline` for an outline, `lists` and `focusedFrame` for lists, and `processes` (`pid`, `name`) for processes. [The chat context](3-context.md#what-the-app-reads) describes the fields.
+   - The audio goes on while the content is read, so the content message comes between two audio messages.
+   - The app sends no content after the stop, because the adapters' deadline is the stop. It sends none for an empty request and none in a private dictation.
+   - The server takes the first content message of a recording that asked for one, and of it only the matched surfaces. It ignores a content message that it did not ask for, and a second one. A content message without `surfaces` gets an error, and the recording goes on.
+   - Without content by the stop, the dictation goes without context.
+5. When the recording stops, the client sends `{"type": "stop", "reason": "user"}`. The other reasons are `silence`, `max_duration` and `error`.
 
 The server sends:
 
 | Message | When |
 |---|---|
+| `{"type": "read", …}` | Once, at once after the start, before the model is loaded. Not in a private dictation. |
 | `{"type": "speech"}` | While it hears speech. |
 | `{"type": "stopped", "reason": "max_duration"}` | The recording reached its time limit. The server takes no more audio. |
 | `{"type": "text", "text": "…"}` | One piece has finished. Results arrive in recording order. |
@@ -42,12 +67,15 @@ The server sends:
 Instead of the start message, the client can send `{"type": "info"}`. The server replies and closes the connection. The field outline below is schematic, not valid JSON; see the shared examples for complete messages:
 
 ```text
-{"type": "info", "interface": 2, "adapterInterface": 2, "sampleRate": 16000, "encoding": "pcm_s16le",
+{"type": "info", "interface": 3, "adapterInterface": 3, "sampleRate": 16000, "encoding": "pcm_s16le",
  "textWaitSeconds": 180, "maxRecordingSeconds": 1800.0,
  "languages": [{"code", "name", "notes", "fillers"}],
  "commonNotes": [lines],
- "adapters": [{"name", "title", "enabled", "builtin", "version", "author", "source", "description", "apps",
-               "electronTree", "electronApps", "reads", "screen", "screenApps", "outlineSkip", "context", "error"}],
+ "adapters": [{"name", "title", "enabled", "builtin", "version", "author", "source", "description",
+               "surfaces": [{"id", "title", "apps", "treeOnRequest", "match": {"url", "title"},
+                             "screen": {"outline": {"skip", "budget"}, "lists": {"budget"}, "processes": {}},
+                             "reads": [{"path", "what"}]}],
+               "context", "error"}],
  "models": ["<name>"],
  "model": {"name", "catalog", "title", "prompt", "maxAudioSeconds", "tokenWeights", "variant",
            "variants": [{"id", "name", "bytes", "memoryBytes", "default", "downloaded", "downloading"}]},
@@ -55,7 +83,7 @@ Instead of the start message, the client can send `{"type": "info"}`. The server
                "minExclusive", "maxExclusive", "unit", "help"}]}
 ```
 
-The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null; `electronApps` are its apps that build their accessibility tree only on request, and `electronTree` says whether it has any. `screen` names what of the screen it needs (`lists`, `outline`), `screenApps` are its apps whose screen that is, and `outlineSkip` names the outline's elements that go in without their children. `model.tokenWeights` are the model's tokens per character of each kind, for the screen's token budget. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant; `default` is true for the catalog's default variant. `model.variant` identifies the active variant.
+The response describes audio format, timeouts, languages, adapters, the selected model, and editable settings. `commonNotes` are the notes of every language, with `{LANGUAGE}` not filled in. `adapters[].title` is an adapter's name for people from its manifest, or null. `adapters[].surfaces` are its surfaces as its manifest gives them (`shared/adapter.schema.json`). The app takes two lists from them: the apps of the enabled adapters' surfaces get an identity, and those of their surfaces with `treeOnRequest` are asked for their accessibility tree. The app shows the rest in the settings window. A surface's `budget` here is the key of the adapter's setting, not a number. `model.tokenWeights` are the model's tokens per character of each kind. `models` lists registry names. `model.title` is the model's name for people, from the catalog ("Gemma 4 E4B"). `model.variants` includes download size, estimated memory use, and download status for each variant; `default` is true for the catalog's default variant. `model.variant` identifies the active variant.
 
 `settings` describes each setting that the settings window can show and change:
 

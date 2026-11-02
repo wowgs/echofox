@@ -22,8 +22,9 @@ when no chat is open or the settings hide the name (Telegram/SourceFiles/window/
 """
 import re
 
+from adapters import SPEAKER, screen
+
 TIME = re.compile(r"\b\d{1,2}[:.]\d{2}(?:\s?[AaPp]\.?[Mm]\.?)?(?!\d)")
-SPEAKER = "the speaker"
 
 
 def chat_name(title):
@@ -45,13 +46,13 @@ def _frame(d):
         return None
 
 
-def message_list(focus):
+def message_list(snapshot):
     """The list of the open chat's messages: the one above the focused input box (the list whose horizontal span holds
     the box's middle), else the widest list with rows."""
-    lists = [l for l in (focus or {}).get("lists") or [] if isinstance(l, dict) and l.get("rows")]
+    lists = screen.lists(snapshot)
     if not lists:
         return None
-    box = _frame((focus or {}).get("focusedFrame") or {})
+    box = _frame(screen.focused_frame(snapshot))
     if box:
         middle = box[0] + box[2] / 2
         above = [l for l in lists if (f := _frame(l.get("frame") or {})) and f[0] <= middle <= f[0] + f[2]]

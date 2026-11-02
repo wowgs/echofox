@@ -23,6 +23,12 @@ import recordings
 from fakes import ENTRIES, LOUD, QUIET, HangingStub, StubModel, args, handle, stub_models
 
 START = {"type": "start", "language": "ru"}
+# The identity of Claude Desktop's Code tab, and the content the app sends for its surface claude-code/desktop
+CODE_TAB = {"app": {"bundleId": "com.anthropic.claudefordesktop", "pid": 1, "name": "Claude"}, "window": {"title": "Claude"},
+            "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
+CODE_OUTLINE = {"root": "webArea", "complete": True, "nodes": [{"depth": 0, "role": "AXWebArea"}]}
+CONTENT = json.dumps({"type": "content", "tookMs": 5, "surfaces": {"claude-code/desktop": {"outline": CODE_OUTLINE},
+                                                                  "other/x": {"outline": {}}}})
 
 
 SPEAKS_S = 0.2  # how long a test recording lasts before its stop, for the adapters to end
@@ -55,7 +61,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 async for m in ws:
                     got.append(json.loads(m))
             self.loaded = sorted(stubs)
-            return next(iter(stubs.values()), StubModel("none")), got
+            self.reads = [m for m in got if m["type"] == "read"]  # the read request, apart from the recording's messages
+            return next(iter(stubs.values()), StubModel("none")), [m for m in got if m["type"] != "read"]
 
     def latest(self):
         """The newest recording folder and its adapter.json."""
@@ -137,14 +144,14 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             env = mock.patch.dict(os.environ, {"ECHOFOX_PROJECTS": os.path.join(d, "projects"),
                                                "ECHOFOX_DESKTOP_SESSIONS": os.path.join(d, "store")})
             env.start()
-            snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
-                        "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
             before = set(glob.glob(os.path.join(self.args.recordings, "*", "*")))
             try:
                 with self.assertLogs("gemma_voice", level="INFO") as logs:
-                    stub, got = await self.run_stream({**START, "private": True, "snapshot": snapshot}, LOUD)
+                    stub, got = await self.run_stream({**START, "private": True, "identity": CODE_TAB}, LOUD,
+                                                      between=CONTENT)
             finally:
                 env.stop()
+        self.assertEqual(self.reads, [])  # no read request
         self.assertEqual([m["text"] for m in got if m["type"] == "text"], ["gemma-e4b piece 1"])
         self.assertEqual(set(glob.glob(os.path.join(self.args.recordings, "*", "*"))), before)  # no recording folder
         self.assertNotIn("Готово.", stub.calls[0][1])  # no context before the prompt
@@ -157,12 +164,14 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                          ("info", constants.PROTOCOL_INTERFACE, 16000, "pcm_s16le", 180))
         by = {a["name"]: a for a in got["adapters"]}
         code, chat = by["claude-code"], by["claude-chat"]
-        self.assertTrue(code["enabled"] and code["electronTree"] and code["builtin"] and chat["enabled"])
-        self.assertEqual((code["apps"][0], code["electronApps"], code["title"], code["screen"], code["screenApps"],
-                          chat["screen"], chat["screenApps"]),
-                         ("com.anthropic.claudefordesktop", ["com.anthropic.claudefordesktop"], "Claude Code", ["outline"],
-                          ["com.anthropic.claudefordesktop"], ["outline"], ["com.anthropic.claudefordesktop"]))
-        self.assertIn("com.mitchellh.ghostty", code["apps"])  # a terminal, which builds its tree without asking
+        self.assertTrue(code["enabled"] and code["builtin"] and chat["enabled"])
+        desktop, terminal = code["surfaces"]
+        self.assertEqual((code["title"], desktop["apps"], desktop["treeOnRequest"], desktop["match"], list(desktop["screen"]),
+                          chat["surfaces"][0]["match"]),
+                         ("Claude Code", ["com.anthropic.claudefordesktop"], True, {"url": "https://claude.ai/epitaxy/*"},
+                          ["outline"], {"url": "https://claude.ai/chat/*"}))
+        self.assertIn("com.mitchellh.ghostty", terminal["apps"])  # a terminal, which builds its tree without asking
+        self.assertNotIn("treeOnRequest", terminal)
         self.args.adapters = []
         self.assertFalse(any(a["enabled"] for a in (await self.ask_info())["adapters"]))
 
@@ -170,7 +179,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         saved, release = adapters.context, threading.Event()
         adapters.context = lambda *a: release.wait(5)
         try:
-            stub, got = await self.run_stream(START, LOUD)
+            stub, got = await self.run_stream({**START, "identity": CODE_TAB}, LOUD, between=CONTENT)
         finally:
             release.set()  # the hung call ends, so that the next tests' dictations get their context
             adapters._running.result(5)
@@ -194,7 +203,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((a["model"], a["client"], a["language"], a["stopReason"], a["text"], a["audioSeconds"]),
                          ("gemma-12b", "menubar", "ru", "silence", "gemma-12b piece 1", 2.0))
         self.assertEqual(a["input"], {"inputVolume": 50, "device": None})
-        self.assertIsNone(a["chat"])  # no hints and no app: no context
+        self.assertEqual((a["chat"], a["identity"], a["surfaces"], a["content"]), (None, None, [], None))  # no app
+        self.assertEqual([r["surfaces"] for r in self.reads], [[]])  # a read request without surfaces
         self.args.save_recordings = False
         n = len(glob.glob(os.path.join(self.args.recordings, "*", "*")))
         await self.run_stream(START, LOUD)
@@ -218,7 +228,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("gemma-e4b, gemma-12b", got[0]["message"])
         self.assertEqual(self.loaded, [])
 
-    async def test_the_context_comes_from_the_adapter_that_claims_the_snapshot(self):
+    async def test_the_context_comes_from_the_surface_the_identity_is_on_once_its_content_came(self):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "projects", "p"))
             os.makedirs(os.path.join(d, "store", "o", "a"))
@@ -231,20 +241,46 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             env = mock.patch.dict(os.environ, {"ECHOFOX_PROJECTS": os.path.join(d, "projects"),
                                                "ECHOFOX_DESKTOP_SESSIONS": os.path.join(d, "store")})
             env.start()
-            snapshot = {"app": {"bundleId": "com.anthropic.claudefordesktop"},
-                        "webArea": {"url": "https://claude.ai/epitaxy/local_abc", "title": "X - Claude Code"}}
+            self.args.adapter_options = {"claude-chat": {"chat_history_token_budget": 300}}
             try:
-                stub, got = await self.run_stream({**START, "snapshot": snapshot}, LOUD)
-                a = self.latest()[1]
-                stub2, got = await self.run_stream({**START, "hints": {"sessions": ["s1"]}}, LOUD)
-                a2 = self.latest()[1]
+                stub, got = await self.run_stream({**START, "identity": CODE_TAB}, LOUD, between=CONTENT)
+                read, a = self.reads, self.latest()[1]
+                await self.run_stream({**START, "identity": CODE_TAB}, LOUD)  # the app sent no content by the stop
+                late = self.latest()[1]
+                chat = {**CODE_TAB, "webArea": {"url": "https://claude.ai/chat/1"}}
+                await self.run_stream({**START, "identity": chat}, LOUD)
+                chat_read = self.reads
             finally:
                 env.stop()
+        self.assertEqual(read, [{"type": "read", "tokenWeights": read[0]["tokenWeights"], "surfaces": [
+            {"surface": "claude-code/desktop",
+             "outline": {"skip": ["epitaxy-document-page", "group/file-tree", "epitaxy-chat-panel-body"], "budget": None}}]}])
+        self.assertTrue(read[0]["tokenWeights"]["cyrillic"] > 0)  # the model's, for the app's estimate
+        self.assertEqual(chat_read[0]["surfaces"][0]["outline"]["budget"], 300)  # the config's entry
         self.assertIn("Claude: Готово.", stub.calls[0][1])
         self.assertTrue(stub.calls[0][1].endswith("</context>\n\n" + dictation.prompt("ru")))  # the context, then the prompt
-        self.assertEqual((a["chat"]["adapter"], a["chat"]["details"]["how"], a["chat"]["details"]["desktopSession"],
-                          a["chat"]["details"]["session"]), ("claude-code", "desktop store", "local_abc", "s1"))
-        self.assertEqual(a2["chat"]["details"]["how"], "named sessions")  # the client's hints reach the adapter
+        self.assertEqual((a["chat"]["adapter"], a["chat"]["surface"], a["chat"]["details"]["how"],
+                          a["chat"]["details"]["desktopSession"], a["chat"]["details"]["session"]),
+                         ("claude-code", "claude-code/desktop", "desktop store", "local_abc", "s1"))
+        # The record keeps the identity, the matched surfaces and their content (not another surface's)
+        self.assertEqual((a["identity"], a["surfaces"], a["content"]),
+                         (CODE_TAB, ["claude-code/desktop"], {"claude-code/desktop": {"outline": CODE_OUTLINE}}))
+        self.assertEqual((late["chat"], late["content"]), ({"errors": ["no content by the stop"]}, None))
+
+    async def test_the_read_request_comes_at_once_while_another_recording_holds_the_model(self):
+        models = stub_models(ENTRIES, make=lambda name, entry: HangingStub(name))
+        async with asyncio.timeout(10):
+            async with serve(lambda ws: handle(ws, models, self.args), "127.0.0.1", 0, max_size=None) as server:
+                url = f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+                async with connect(url) as first, connect(url) as second:
+                    await first.send(json.dumps(START))
+                    await first.send(LOUD)
+                    await first.send(json.dumps({"type": "stop"}))
+                    while not models.recording.locked():
+                        await asyncio.sleep(0.01)
+                    await second.send(json.dumps({**START, "identity": CODE_TAB}))
+                    self.assertEqual(json.loads(await second.recv())["surfaces"][0]["surface"], "claude-code/desktop")
+                    self.assertTrue(models.recording.locked())  # the first recording still holds the model
 
     async def test_a_recording_writes_its_metrics_under_the_id_of_its_folder(self):
         with tempfile.TemporaryDirectory() as d:

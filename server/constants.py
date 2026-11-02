@@ -24,7 +24,10 @@ MODELS_FOLDER = "~/Library/Application Support/EchoFox/models"  # the model file
 LLAMA_SERVER = "/Applications/EchoFox.app/Contents/Resources/llama/llama-server"
 ADAPTERS = "~/Library/Application Support/EchoFox/adapters"  # the user's adapters; $ECHOFOX_ADAPTERS sets another
 CONFIG_VERSION = 11
-PROTOCOL_INTERFACE = 2  # of the protocol (docs/reference/6-protocol.md); the app checks it
+PROTOCOL_INTERFACE = 3  # of the protocol (docs/reference/6-protocol.md); the app checks it
+# Of the adapters (docs/reference/3-context.md, "Write an adapter"; shared/adapter.schema.json): 3, an adapter is a
+# product with surfaces, which the core matches with the identity; context(surface, snapshot) and clean(text)
+ADAPTER_INTERFACE = 3
 
 # Audio, as the client sends it: 16-bit little-endian PCM, mono.
 RATE = 16000

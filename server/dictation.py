@@ -1,5 +1,5 @@
 """One recording on one model: the prompt, the text before the audio (the context within the token budget), and
-each piece as a request of its own. The model is any object with the interface of llama.Model."""
+each piece as a request of its own. The model is any object with the interface of llama_client.Model."""
 import asyncio
 import contextlib
 import json
@@ -46,9 +46,12 @@ async def run_blocking(fn, *args, cancel=None):
     return run.result()
 
 
-def context_options(adapter, server):
-    """The context knobs that `adapter`'s entry in the config sets ({} for none)."""
-    return (getattr(server, "adapter_options", None) or {}).get(adapter) or {}
+def adapter_options(adapter, options, server, client=None):
+    """The options for the context of `adapter`: the recording's `options`, then the adapter's owners (its manifest's
+    defaults, its entry in the config), then the client's (tuning.resolve). The budgets of the screen that the read
+    request gives (session.py) and those of the context are both these."""
+    entry = (getattr(server, "adapter_options", None) or {}).get(adapter) or {}
+    return tuning.resolve(options, adapters.registry.context_defaults(adapter), entry, client=client)
 
 
 def context_header(about, documents=False):
@@ -78,9 +81,8 @@ class Dictation:
         model.begin()
 
     def adapter_options(self, name):
-        """The options for the context of adapter `name`: the recording's, then the adapter's owners (tuning.resolve)."""
-        return tuning.resolve(self.options, adapters.registry.context_defaults(name), context_options(name, self.server),
-                              client=self.client)
+        """The options for the context of adapter `name` (adapter_options)."""
+        return adapter_options(name, self.options, self.server, self.client)
 
     def _build(self, context):
         """The text before the audio: the context within the token budgets (budget.take: greedy, the item that reaches

@@ -129,10 +129,10 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         menu.update()
     }
 
-    // MARK: Electron apps
+    // MARK: Accessibility trees on request
 
     /// Electron apps build their accessibility tree only on request, about 2 s after it (see FocusSnapshot), and forget
-    /// it when they quit. Only the Electron apps of enabled adapters are asked (ElectronTree).
+    /// it when they quit. Only the apps of the enabled adapters' surfaces with treeOnRequest are asked (ElectronTree).
     private func prepareAll() {
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular { prepare(app) }
     }
@@ -161,7 +161,7 @@ final class App: NSObject, NSApplicationDelegate, MenuActions, SettingsActions {
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let info = infoClient.info
         if info == nil { infoClient.refresh(config.serverURL) }
-        let d = Dictation(config: config, server: info, plan: info?.snapshotPlan(for: front, config: config) ?? .none, isPrivate: isPrivate)
+        let d = Dictation(config: config, server: info, plan: info?.identityPlan(for: front) ?? .none, isPrivate: isPrivate)
         if isPrivate { Log.write("a private dictation: the screen is not read, nothing is saved") }
         d.onPhase = { [weak self] d in self?.changed(d) }
         dictations.start(d)

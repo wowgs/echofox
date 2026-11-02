@@ -1,20 +1,19 @@
 """The claude-code adapter: the Claude Code session a dictation goes into, read from its transcript on the Mac.
 
-- Claude Desktop's Code tab, the session in focus (confidence 1.0). Ways to the session: the web area's URL → Desktop's
-  record of the session → its Claude Code transcript ("desktop store"); without a record, the web area's title → the
-  one transcript with that title ("title"); several transcripts with that title: no context. The Markdown file that
-  the tab's Files panel shows goes in as a document, read from the session's folder (the record's "cwd"; desktop.py).
-- A terminal's tab (Ghostty, Terminal, iTerm2, Warp) with Claude Code in it (confidence 1.0): the claude among the
+- Surface "desktop", Claude Desktop's Code tab, the session in focus. Ways to the session: the web area's URL →
+  Desktop's record of the session → its Claude Code transcript ("desktop store"); without a record, the web area's
+  title → the one transcript with that title ("title"); several transcripts with that title: no messages. The Markdown
+  file that the tab's Files panel shows goes in as a document, read from the session's folder (the record's "cwd";
+  desktop.py).
+- Surface "terminal", a terminal's tab (Ghostty, Terminal, iTerm2, Warp) with Claude Code in it: the claude among the
   terminal's processes whose session's name the window's title shows ("terminal title", terminal.py); not in tmux or
   screen.
-- Claude Code sessions that the client names in the start message (confidence 0.9): the newest of them.
-It never guesses a session from the app alone: without the Code tab's URL in the snapshot (no Accessibility
-permission, another window, a chat: that is claude-chat's) it does not claim Desktop, and the newest session of an app
-is often another one that runs in the background. The context has only Claude's replies: with the speaker's own
-messages, the model copied the previous dictation instead of transcribing the new one (2026-10-14).
-Claude writes its replies in Markdown; clean makes them plain prose.
+It never guesses a session from the app alone: the newest session of an app is often another one that runs in the
+background. The context has only Claude's replies: with the speaker's own messages, the model copied the previous
+dictation instead of transcribing the new one (2026-10-14). Claude writes its replies in Markdown, and Claude Code adds
+its tags to them; clean makes them plain prose.
 """
-from adapters import Adapter, Claim, markdown
+from adapters import Adapter, markdown
 
 from . import desktop, terminal, transcripts
 
@@ -33,45 +32,36 @@ def as_context(found, **details):
 
 
 class ClaudeCode(Adapter):
-    def claim(self, focus, hints):
-        m = desktop.code_tab(focus)
-        if m:
-            return Claim(self.name, 1.0, f"the Code tab of Claude Desktop session {m}")
-        t = terminal.session(focus)
-        if t:
-            return Claim(self.name, 1.0, f"the terminal tab of Claude Code session {t['name']}")
-        if sessions(hints):
-            return Claim(self.name, 0.9, "the client named its Claude Code sessions")
-        return None
-
-    def context(self, focus, hints):
-        t = terminal.session(focus)
-        if t:
-            found = transcripts.context_of(transcripts.session_file([t["session"]]), "terminal title")
-            return as_context(found, pid=t["pid"]) or {"about": ABOUT, "details": {"session": t["session"], "pid": t["pid"]}}
-        local = desktop.code_tab(focus)
-        if not local:
-            return as_context(transcripts.context_of(transcripts.session_file(sessions(hints)), "named sessions"))
-        rec = desktop.record(local) or {}
-        cli = rec.get("cliSessionId")
-        where = transcripts.session_file([cli]) if cli else None
-        if where:
-            found = as_context(transcripts.context_of(where, "desktop store"), desktopSession=local)
-        else:
-            title = str(desktop.web_area(focus).get("title") or "")
-            found = as_context(transcripts.context_of(transcripts.titled_session(title[:-len(desktop.TITLE_SUFFIX)]), "title")) \
-                if title.endswith(desktop.TITLE_SUFFIX) else None
-        found = found or {"about": ABOUT, "details": {"desktopSession": local}}  # claimed, but no transcript found
-        doc = desktop.open_markdown(focus, rec.get("cwd"))
-        if doc:
-            found["documents"] = [doc]
-            found["details"]["openFile"] = doc["name"]
-        return found
+    def context(self, surface, snapshot):
+        return (terminal_context if surface == "terminal" else desktop_context)(snapshot)
 
     def clean(self, text):
-        return markdown.plain(text)
+        return markdown.plain(transcripts.strip_tags(text))
 
 
-def sessions(hints):
-    """The Claude Code session ids a client sends (hints["sessions"])."""
-    return [s for s in (hints or {}).get("sessions") or [] if isinstance(s, str)][:50]
+def terminal_context(snapshot):
+    t = terminal.session(snapshot)
+    if not t:
+        return None
+    found = transcripts.context_of(transcripts.session_file(t["session"]), "terminal title")
+    return as_context(found, pid=t["pid"]) or {"about": ABOUT, "details": {"session": t["session"], "pid": t["pid"]}}
+
+
+def desktop_context(snapshot):
+    local = desktop.code_tab(snapshot)
+    if not local:
+        return None
+    rec = desktop.record(local) or {}
+    cli = rec.get("cliSessionId")
+    where = transcripts.session_file(cli) if cli else None
+    if where:
+        found = as_context(transcripts.context_of(where, "desktop store"), desktopSession=local)
+    else:
+        title = desktop.session_title(snapshot)
+        found = as_context(transcripts.context_of(transcripts.titled_session(title), "title")) if title else None
+    found = found or {"about": ABOUT, "details": {"desktopSession": local}}  # the tab, but no transcript found
+    doc = desktop.open_markdown(snapshot, rec.get("cwd"))
+    if doc:
+        found["documents"] = [doc]
+        found["details"]["openFile"] = doc["name"]
+    return found

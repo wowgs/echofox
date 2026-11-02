@@ -1,23 +1,17 @@
 """The adapters: the built-in ones in server/adapters/builtin/, the user's in ~/Library/Application Support/EchoFox/
 adapters/ ($ECHOFOX_ADAPTERS). Each adapter is a folder, a package, with:
-  adapter.json  its manifest: {"name", "title" (optional, for people), "version", "author", "source", "description", "interface": 2,
-                "apps": [bundle ids it reads the focus of], "electronTree": its apps build their accessibility tree
-                only on request (Electron): true for all of them, or the list of those among "apps" that do,
-                "reads": [the files it reads],
-                "screen": [what of the screen the client sends for its apps: "lists", the rows of the lists in the
-                focused window (a messenger's messages); "outline", the tree of the focused web page or window, for
-                messages that are not in lists (a chat in a web app); see FOCUS in adapters/__init__.py],
-                "screenApps": [those among "apps" whose screen it needs (optional; without it, all of them)],
-                "outlineSkip": [names of the outline's elements whose subtree the client leaves out: an element
-                whose AX role or one of whose DOM classes is a name goes in alone, without its children, whose text
-                never enters the snapshot],
-                "context": {the defaults of its context's settings: the adapter's knobs of tuning.py, such as
-                chatHistoryTokenBudget; the user's entry in the config changes them}}
+  adapter.json  its manifest, interface 3: shared/adapter.schema.json has its fields. An adapter is a product the
+                speaker writes into, and its "surfaces" say where the product is on the screen ("apps", "match"), what
+                the app reads there besides the identity ("screen") and which files the adapter reads ("reads").
+                "context" has the defaults of its context's settings: the adapter's knobs of tuning.py, such as
+                chatHistoryTokenBudget; the user's entry in the config changes them.
   adapter.py    a module with one class that subclasses adapters.Adapter; the folder is a package, so adapter.py can
                 import the adapter's other modules (from . import helpers)
-An adapter the user puts in the folder is theirs to trust: the server checks only that the manifest reads, that its
-interface is this one, that its "context" has only the adapter's knobs, and that the module has its class. A user adapter with the name
-of a built-in one replaces it. An adapter works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
+An adapter the user puts in the folder is theirs to trust: the server checks only that the manifest follows the
+schema's rules (check(); the venv has no JSON Schema library, so the rules are in the code, and test_contract.py ties
+them to the schema's fields), that its interface is this one, that its "context" and its budgets name only the
+adapter's knobs, and that the module has its class. A user adapter with the name of a built-in one replaces it. An
+adapter works only when the config enables it (adapters: {"<name>": {"enabled": true}}).
 """
 import contextlib
 import importlib.util
@@ -33,8 +27,13 @@ import adapters
 import constants
 import tuning
 
-INTERFACE = 2  # 2: any app, not only sessions with agents: focus and hints, about, from, terms, source, details
-SCREEN = {"lists", "outline"}  # what of the screen an adapter can ask the client for (its manifest's "screen")
+NAME = re.compile(r"[A-Za-z0-9_.-]+")
+SURFACE_ID = re.compile(r"[a-z0-9-]+")
+# The fields of a surface and of its parts, as shared/adapter.schema.json has them (no other field is allowed)
+SURFACE = {"id", "title", "apps", "treeOnRequest", "match", "screen", "reads"}
+MATCH = {"url", "title"}
+SCREEN = {"outline": {"skip", "budget"}, "lists": {"budget"}, "processes": set()}
+READ = {"path", "what"}
 BUILTIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builtin")
 log = logging.getLogger("gemma_voice")
 
@@ -49,29 +48,90 @@ class Package:
     dir: str
     builtin: bool
     manifest: dict = field(default_factory=dict)
+    surfaces: list = field(default_factory=list)  # the manifest's, once they are checked
     adapter: object = None
     error: str = None
 
-    def electron_apps(self):
-        """The apps of "apps" that build their accessibility tree only on request (manifest "electronTree")."""
-        tree, apps = self.manifest.get("electronTree"), self.manifest.get("apps") or []
-        return list(apps) if tree is True else [a for a in apps if a in tree] if isinstance(tree, list) else []
-
-    def screen_apps(self):
-        """The apps of "apps" whose screen the adapter needs (manifest "screenApps"; without it, all of them)."""
-        some, apps = self.manifest.get("screenApps"), self.manifest.get("apps") or []
-        return [a for a in apps if a in some] if isinstance(some, list) else list(apps)
-
     def info(self, enabled):
-        """For the app: what the adapter is, says about itself, and whether it works."""
+        """For the app: what the adapter is, says about itself, its surfaces as the manifest has them, and whether it
+        works."""
         m = self.manifest
-        return {"name": self.name, "title": m.get("title"), "enabled": self.name in enabled and self.adapter is not None, "builtin": self.builtin,
-                "version": m.get("version"), "author": m.get("author"), "source": m.get("source"),
-                "description": m.get("description"), "apps": m.get("apps") or [],
-                "electronTree": bool(self.electron_apps()), "electronApps": self.electron_apps(),
-                "reads": m.get("reads") or [],
-                "screen": m.get("screen") or [], "screenApps": self.screen_apps(), "outlineSkip": m.get("outlineSkip") or [],
+        return {"name": self.name, "title": m.get("title"), "enabled": self.name in enabled and self.adapter is not None,
+                "builtin": self.builtin, "version": m.get("version"), "author": m.get("author"),
+                "source": m.get("source"), "description": m.get("description"), "surfaces": self.surfaces,
                 "context": m.get("context") or {}, "error": self.error}
+
+
+def _object(value, what, allowed):
+    if not isinstance(value, dict):
+        raise ValueError(f"{what} is not an object")
+    unknown = sorted(set(value) - set(allowed))
+    if unknown:
+        raise ValueError(f"{what} has {unknown}; it may have only {sorted(allowed)}")
+    return value
+
+
+def _strings(value, what, least=0):
+    if not (isinstance(value, list) and len(value) >= least and all(isinstance(s, str) and s for s in value)):
+        raise ValueError(f"{what} is not a list of {'at least one ' if least else ''}names")
+    return value
+
+
+def _budget(part, what):
+    key = part.get("budget")
+    knob = tuning.BY_KEY.get(key) if isinstance(key, str) else None
+    if "budget" in part and not (knob and knob.owner == "adapter" and knob.kind is int):
+        raise ValueError(f"{what} budget {key!r} is not a token budget of the adapter's knobs")
+
+
+def check_surface(s, i):
+    """One surface of a manifest, checked against the schema's rules; raises ValueError with what is wrong."""
+    _object(s, f"surface {i}", SURFACE)
+    what = f"surface {s.get('id', i)!r}"
+    if not isinstance(s.get("id"), str) or not SURFACE_ID.fullmatch(s["id"]):
+        raise ValueError(f"surface {i} has no good \"id\" (small letters, digits and -)")
+    if not isinstance(s.get("title"), str):
+        raise ValueError(f"{what} has no \"title\"")
+    _strings(s.get("apps"), f"{what} \"apps\"", least=1)
+    if not isinstance(s.get("treeOnRequest", False), bool):
+        raise ValueError(f"{what} \"treeOnRequest\" is neither true nor false")
+    for k, v in _object(s.get("match", {}), f"{what} \"match\"", MATCH).items():
+        if not isinstance(v, str):
+            raise ValueError(f"{what} \"match\" {k} is not a pattern")
+    for part, value in _object(s.get("screen", {}), f"{what} \"screen\"", SCREEN).items():
+        _object(value, f"{what} \"screen\" {part}", SCREEN[part])
+        if "skip" in value:
+            _strings(value["skip"], f"{what} outline \"skip\"")
+        _budget(value, f"{what} {part}")
+    reads = s.get("reads", [])
+    if not isinstance(reads, list):
+        raise ValueError(f"{what} \"reads\" is not a list")
+    for r in reads:
+        _object(r, f"{what} \"reads\" entry", READ)
+        if not isinstance(r.get("what"), str) or not isinstance(r.get("path", ""), str):
+            raise ValueError(f"{what} \"reads\" entry needs \"what\", and \"path\" is text")
+
+
+def check(m):
+    """A manifest, checked against the schema's rules (shared/adapter.schema.json); raises ValueError."""
+    if not isinstance(m, dict) or not isinstance(m.get("name"), str) or not NAME.fullmatch(m["name"]):
+        raise ValueError("adapter.json has no good \"name\"")
+    if m.get("interface") != constants.ADAPTER_INTERFACE:
+        raise ValueError(f"interface {m.get('interface')!r}; this server has interface {constants.ADAPTER_INTERFACE}")
+    if not isinstance(m.get("version"), str):
+        raise ValueError("adapter.json has no \"version\"")
+    for k in ("title", "author", "source", "description"):
+        if k in m and not isinstance(m[k], str):
+            raise ValueError(f"\"{k}\" is not text")
+    surfaces = m.get("surfaces")
+    if not isinstance(surfaces, list) or not surfaces:
+        raise ValueError("adapter.json has no \"surfaces\"")
+    for i, s in enumerate(surfaces):
+        check_surface(s, i)
+    ids = [s["id"] for s in surfaces]
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"the surfaces' ids repeat: {ids}")
+    tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
 
 
 def load(folder, builtin):
@@ -80,26 +140,10 @@ def load(folder, builtin):
     try:
         with open(os.path.join(folder, "adapter.json"), encoding="utf-8") as f:
             m = json.load(f)
-        if not isinstance(m, dict) or not isinstance(m.get("name"), str) or not re.fullmatch(r"[\w.-]+", m["name"]):
-            raise ValueError("adapter.json has no good \"name\"")
-        p.name, p.manifest = m["name"], m
-        if m.get("interface") != INTERFACE:
-            raise ValueError(f"interface {m.get('interface')!r}; this server has interface {INTERFACE}")
-        if not all(isinstance(a, str) for a in m.get("apps") or []):
-            raise ValueError("\"apps\" is not a list of bundle ids")
-        tree = m.get("electronTree", False)
-        if not isinstance(tree, bool) and not (isinstance(tree, list) and set(tree) <= set(m.get("apps") or [])):
-            raise ValueError("\"electronTree\" is neither true, false nor a list of its \"apps\"")
-        unknown = [s for s in m.get("screen") or [] if s not in SCREEN]
-        if unknown:
-            raise ValueError(f"\"screen\" has {unknown}; the client sends only {sorted(SCREEN)}")
-        some = m.get("screenApps", m.get("apps") or [])
-        if not (isinstance(some, list) and set(some) <= set(m.get("apps") or [])):
-            raise ValueError("\"screenApps\" is not a list of its \"apps\"")
-        skip = m.get("outlineSkip", [])
-        if not (isinstance(skip, list) and all(isinstance(s, str) and s for s in skip)):
-            raise ValueError("\"outlineSkip\" is not a list of names")
-        tuning.parse(m.get("context"), "adapter", "\"context\"")  # raises for a key that is not the adapter's
+        if isinstance(m, dict) and isinstance(m.get("name"), str) and NAME.fullmatch(m["name"]):
+            p.name, p.manifest = m["name"], m
+        check(m)
+        p.surfaces = m["surfaces"]
         package = f"echofox_adapter_{re.sub(r'\W', '_', p.name)}"
         spec = importlib.util.spec_from_file_location(package, os.path.join(folder, "adapter.py"),
                                                       submodule_search_locations=[folder])
@@ -166,8 +210,8 @@ def packages():
 
 
 def enabled(names):
-    """The working adapters among `names` (the config's enabled ones), in the order of the packages."""
-    return [p.adapter for n, p in packages().items() if n in set(names or ()) and p.adapter is not None]
+    """The working packages among `names` (the config's enabled ones), in the order of the packages."""
+    return [p for n, p in packages().items() if n in set(names or ()) and p.adapter is not None]
 
 
 def context_defaults(name):

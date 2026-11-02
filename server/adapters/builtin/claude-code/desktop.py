@@ -1,4 +1,4 @@
-"""Claude Desktop (bundle id com.anthropic.claudefordesktop), its Code tab, for the claude-code adapter.
+"""Claude Desktop's Code tab, for the claude-code adapter's surface "desktop".
 
 The Code tab is a web page in the app. Its web area, above the input box, has the URL
 https://claude.ai/epitaxy/local_<id>; <id> is the Desktop session. Desktop keeps a record of each session in
@@ -12,7 +12,7 @@ button for each part of the file's path under the session's folder: "docs", "ref
 2026-11-02, Claude Desktop, a session in /Users/alex/echofox: a file at the folder's root had one, "README.md"). With
 several files open as tabs, the panel shows the active one. The session's folder is the record's "cwd". The adapter
 reads the file from the disk, not from the screen: the preview on the screen is the file without its Markdown, and the
-manifest's outlineSkip leaves it out of the snapshot ("epitaxy-document-page"), with the panel's file tree
+surface's skip list leaves it out of the snapshot ("epitaxy-document-page"), with the panel's file tree
 ("group/file-tree") and the chat ("epitaxy-chat-panel-body"), whose messages the transcript has.
 """
 import glob
@@ -20,9 +20,8 @@ import json
 import os
 import re
 
-from adapters import bundle
+from adapters import place, screen
 
-BUNDLE = "com.anthropic.claudefordesktop"
 CODE_URL = re.compile(r"^https://claude\.ai/epitaxy/(local_[0-9A-Za-z-]+)")
 TITLE_SUFFIX = " - Claude Code"
 DOCUMENT_PAGE = "epitaxy-document-page"
@@ -30,13 +29,7 @@ MARKDOWN = (".md", ".markdown")
 
 
 def store():
-    """Desktop's session records, or $ECHOFOX_DESKTOP_SESSIONS (read at each call, so that tests can set it)."""
-    return os.environ.get("ECHOFOX_DESKTOP_SESSIONS") or os.path.expanduser(
-        "~/Library/Application Support/Claude/claude-code-sessions")
-
-
-def web_area(snapshot):
-    return (snapshot or {}).get("webArea") or {}
+    return place("~/Library/Application Support/Claude/claude-code-sessions", "ECHOFOX_DESKTOP_SESSIONS")
 
 
 def record(desktop_id, root=None):
@@ -54,25 +47,25 @@ def record(desktop_id, root=None):
 
 def code_tab(snapshot):
     """The Desktop session (local_<id>) whose Code tab has the focus in this snapshot, or None."""
-    if bundle(snapshot) != BUNDLE:
-        return None
-    m = CODE_URL.match(str(web_area(snapshot).get("url") or ""))
+    m = CODE_URL.match(screen.web_url(snapshot))
     return m.group(1) if m else None
+
+
+def session_title(snapshot):
+    """The session's name, from the web area's title "<name> - Claude Code", or None."""
+    t = screen.web_title(snapshot)
+    return (t[:-len(TITLE_SUFFIX)] or None) if t.endswith(TITLE_SUFFIX) else None
 
 
 def open_file(snapshot):
     """The parts of the path, under the session's folder, of the file that the Files panel shows in this snapshot
     (["docs", "reference", "4-app.md"]), or None."""
-    nodes = ((snapshot or {}).get("outline") or {}).get("nodes") or []
-    page = next((i for i, n in enumerate(nodes) if DOCUMENT_PAGE in (n.get("domClasses") or [])), None)
+    nodes = screen.nodes(snapshot)
+    page = next((i for i, n in enumerate(nodes) if DOCUMENT_PAGE in screen.classes(n)), None)
     if page is None:
         return None
-    depth, parts = nodes[page].get("depth"), []
-    for n in reversed(nodes[:page]):
-        if n.get("depth") != depth:
-            if (n.get("depth") or 0) < depth:
-                break
-            continue  # inside an element before the page
+    parts = []
+    for n in (nodes[j] for j in screen.siblings_before(nodes, page)):
         if n.get("role") == "AXPopUpButton" and isinstance(n.get("title"), str):
             parts.append(n["title"])
         elif n.get("role") != "AXButton" or parts:

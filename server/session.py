@@ -1,5 +1,6 @@
 """One recording on one connection (docs/reference/1-server.md, "From a recording to text"): the start message
-parsed (Start), then the Session: the audio arrives and is saved; while the speaker talks, a piece is cut and goes to
+parsed (Start), then the Session: the read request for the surfaces that the start's identity is on, at once; the
+audio arrives and is saved, and the client's content of those surfaces between its messages; while the speaker talks, a piece is cut and goes to
 the model each time enough audio is heard (audio.live_cut); at the stop, the rest is cut into pieces; one model request
 per piece, each as soon as it is cut, on llama-server's slots, after the text before the audio (the adapters'
 context, then the prompt) was warmed in the slots while the speaker talked; the texts go to the client in the order
@@ -21,7 +22,7 @@ import metrics
 import recordings
 import tuning
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
-from dictation import Dictation, prompt
+from dictation import Dictation, adapter_options, prompt
 from vad import Stream
 
 SPEECH_EVERY_S = 0.3        # at most one "speech" message per this long
@@ -42,9 +43,8 @@ class Start:
     own_prompt: str
     text_prompt: str
     client: str
-    hints: dict = field(default_factory=dict)
-    snapshot: dict = field(default_factory=dict)
-    private: bool = False   # a private dictation: nothing saved, no adapter, no text in the log
+    identity: dict = field(default_factory=dict)  # of the focused app, window and page (IDENTITY, adapters/__init__.py)
+    private: bool = False   # a private dictation: nothing saved, no read request, no adapter, no text in the log
     client_options: dict = field(default_factory=dict)  # the start message's own options: they win over every owner
 
 
@@ -66,8 +66,7 @@ def parse_start(m, models, args=None):
     return Start(model=name, entry=entry, options=options, language=language, own_prompt=own,
                  text_prompt=prompt(language, own, entry, getattr(args, "languages", None)),
                  client=str(m.get("client") or "")[:CLIENT_NAME_CHARS], client_options=client,
-                 hints=m["hints"] if isinstance(m.get("hints"), dict) else {},
-                 snapshot=m["snapshot"] if isinstance(m.get("snapshot"), dict) else {},
+                 identity=m["identity"] if isinstance(m.get("identity"), dict) and m.get("private") is not True else {},
                  private=m.get("private") is True)
 
 
@@ -98,6 +97,8 @@ class Session:
         self.texts, self.errors, self.chat = [], [], {}
         self.stopped_at, self.stop_reason = None, None
         self.stopped = asyncio.Event()  # set at the stop: the adapters' context is waited for until then
+        self.surfaces, self.content = [], None  # the matched surfaces; what the client read there, by surface name
+        self.content_came = asyncio.Event()  # set when the content message came, or when no surface needs one
         self.mic = asyncio.ensure_future(asyncio.to_thread(recordings.input_info)) if self.rec else None
         log.info("recording %s: model %s, client %s, language=%s (%s), %s prompt: %r, options %s, sampler %s",
                  self.id, start.model, start.client or "unknown", start.language,
@@ -148,9 +149,25 @@ class Session:
             if not isinstance(m, dict):
                 await self.fail(f"a message that is not a JSON object: {str(message)[:100]!r}")
                 continue
-            if m.get("type") == "stop":
+            if m.get("type") == "content":
+                await self.take_content(m)
+            elif m.get("type") == "stop":
                 return m.get("reason") if m.get("reason") in STOP_REASONS else "user"
         return None  # the connection ended without a stop
+
+    async def take_content(self, m):
+        """The content message: what the client read for the matched surfaces. Only the first one counts, and only for
+        a recording whose surfaces need one; of it, only the matched surfaces' parts."""
+        if self.content_came.is_set():
+            log.warning("recording %s: a content message that was not asked for, or a second one: ignored", self.id)
+            return
+        if not isinstance(m.get("surfaces"), dict):
+            await self.fail("a content message without its surfaces")
+            return
+        self.content = {s.name: m["surfaces"][s.name] for s in self.surfaces if isinstance(m["surfaces"].get(s.name), dict)}
+        log.info("recording %s: the client read %s in %s ms", self.id, ", ".join(self.content) or "nothing",
+                 m.get("tookMs"))
+        self.content_came.set()
 
     def cut_live(self):
         """While the speaker talks: each piece that can be cut goes to the model now, with its seconds of speech, so
@@ -166,25 +183,59 @@ class Session:
 
     # The context and the pieces
 
+    def read_request(self):
+        """The surfaces of the enabled adapters that the start's identity is on, and the read request's surfaces: what
+        the client reads there, with the budgets of the adapter's options (dictation.adapter_options), the same as its
+        context's."""
+        surfaces = adapters.match(self.start.identity, self.args.adapters)
+
+        def budget(adapter, key):
+            options = adapter_options(adapter, self.start.options, self.args, self.start.client_options)
+            return tuning.value(tuning.BY_KEY[key].name, options, self.args)
+        return surfaces, adapters.read(surfaces, budget)
+
+    async def ask_to_read(self):
+        """The read request, at once, before the model loads: the client reads the matched surfaces while the speaker
+        talks. With no surface that reads anything, the adapters need no content message. A private dictation gets no
+        read request."""
+        if not self.start.private:
+            self.surfaces, read = await asyncio.to_thread(self.read_request)
+            log.info("recording %s: app %s, surfaces %s", self.id, adapters.screen.bundle(self.start.identity) or "unknown",
+                     ", ".join(s.name for s in self.surfaces) or "none")
+            with contextlib.suppress(Exception):  # a closed connection ends the recording in receive()
+                await self.send(type="read", surfaces=read, tokenWeights=catalog.token_weights(self.start.entry))
+        if not adapters.needs_content(self.surfaces):
+            self.content_came.set()
+
     async def context(self):
-        """The adapters' context, or None; what it was goes to the record. A private dictation has none: the client
-        sent no snapshot, and no adapter runs."""
+        """The adapters' context, or None; what it was goes to the record. The adapters run once the client's content
+        came (or at once for surfaces that read nothing), until the stop. A private dictation has none: no adapter
+        runs."""
         if self.start.private:
             log.info("recording %s: private, no context", self.id)
             return None
+        if not self.surfaces:
+            return None
+        if not self.content_came.is_set():
+            came, stopped = asyncio.ensure_future(self.content_came.wait()), asyncio.ensure_future(self.stopped.wait())
+            await asyncio.wait({came, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            came.cancel()
+            stopped.cancel()
+            if not self.content_came.is_set():
+                self.chat["errors"] = ["no content by the stop"]
+                log.error("recording %s: no context: the client sent no content by the stop", self.id)
+                return None
         # Adapters still running at the stop: the dictation goes on without context
-        found = await adapters.context_until(self.start.snapshot, self.start.hints, self.args.adapters,
-                                             self.stopped) or {}
+        found = await adapters.context_until(self.start.identity, self.surfaces, self.content, self.stopped) or {}
         if not found.get("adapter") and found.get("errors"):
             log.error("recording %s: no context: %s", self.id, "; ".join(found["errors"]))
-        self.chat.update({k: found[k] for k in ("adapter", "confidence", "reason", "about", "source", "details",
-                                                "errors") if found.get(k)})
+        self.chat.update({k: found[k] for k in ("adapter", "surface", "about", "source", "details", "errors")
+                          if found.get(k)})
         chat = found if found.get("messages") or found.get("documents") or found.get("terms") else None
         if chat:
             self.chat.update(messages=len(chat.get("messages") or []), documents=len(chat.get("documents") or []),
                              terms=len(chat.get("terms") or []))
-        log.info("recording %s: adapter %s (%s), context %s", self.id, found.get("adapter", "none"),
-                 found.get("reason", "no adapter claims it"),
+        log.info("recording %s: surface %s, context %s", self.id, found.get("surface", "none"),
                  f"{found.get('source') or found.get('about')}, {self.chat['messages']} messages, "
                  f"{self.chat['documents']} files, {self.chat['terms']} terms" if chat else "none")
         return chat
@@ -267,6 +318,7 @@ class Session:
             self.rec.save("audio.json", report)
 
     async def run(self):
+        await self.ask_to_read()
         worker = asyncio.create_task(self.transcribe())
         try:
             self.stop_reason = await self.receive()
@@ -324,6 +376,8 @@ class Session:
                 mic_info = await asyncio.wait_for(asyncio.shield(self.mic), MIC_INFO_WAIT_S)
         self.rec.finish({"model": self.start.model, "language": self.start.language, "client": self.start.client,
                          "stopReason": self.stop_reason or "connection closed", "error": "; ".join(self.errors) or None,
-                         "chat": self.chat or None, "pieces": self.texts, "text": " ".join(self.texts),
+                         "identity": self.start.identity or None, "surfaces": [s.name for s in self.surfaces],
+                         "content": self.content, "chat": self.chat or None, "pieces": self.texts,
+                         "text": " ".join(self.texts),
                          "input": mic_info})
 

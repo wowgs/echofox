@@ -1,24 +1,21 @@
 {
   "name": "claude-chat",
   "title": "Claude chats",
-  "version": "2.1",
+  "version": "3.0",
   "author": "echofox",
   "source": "https://github.com/wowgs/echofox",
   "description": "Reads the chat open in Claude Desktop, from the outline of the page that the window shows.",
-  "interface": 2,
-  "apps": [
-    "com.anthropic.claudefordesktop"
-  ],
-  "electronTree": true,
-  "reads": [],
-  "screen": [
-    "outline"
-  ],
-  "outlineSkip": [
-    "AXButton",
-    "sr-only",
-    "group/morph",
-    "group/tag"
+  "interface": 3,
+  "surfaces": [
+    {
+      "id": "desktop",
+      "title": "Claude Desktop, chats",
+      "apps": ["com.anthropic.claudefordesktop"],
+      "treeOnRequest": true,
+      "match": {"url": "https://claude.ai/chat/*"},
+      "screen": {"outline": {"skip": ["AXButton", "sr-only", "group/morph", "group/tag"], "budget": "chatHistoryTokenBudget"}},
+      "reads": []
+    }
   ],
   "context": {
     "chatHistoryTokenBudget": 1000,

@@ -3,8 +3,8 @@
 // AXManualAccessibility, Electron's switch for assistive apps (electronjs.org, "Accessibility"), and
 // AXEnhancedUserInterface, which VoiceOver sets and Chromium watches to detect it (the comment in Chromium's
 // browser_accessibility_state_impl.h). AXEnhancedUserInterface is set always: an app need not list it among its
-// attributes. The caller asks only for the Electron apps of enabled adapters (their manifest's electronApps); no other
-// app is touched, since the tree costs the app CPU and memory.
+// attributes. The caller asks only for the apps of the enabled adapters' surfaces with treeOnRequest
+// (ServerInfo.treeApps); no other app is touched, since the tree costs the app CPU and memory.
 import ApplicationServices
 
 public enum ElectronTree {

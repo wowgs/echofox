@@ -1,6 +1,6 @@
 // The estimate of a text's tokens for the model, the same as the server's (server/budget.py): the characters by kind,
 // each kind weighed by the model's tokens per character of it (its catalog entry's tokenWeights, which the server's
-// info gives). The snapshot reads the screen up to the token budget of the adapters that ask for it. Both sides check
+// read request gives). The snapshot reads the screen up to the budgets of the server's read request. Both sides check
 // the same examples (shared/token-examples.json).
 import Foundation
 

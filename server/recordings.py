@@ -2,9 +2,10 @@
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/mic.wav       the whole recording as the client sent it (16 kHz, 16-bit, mono),
                                                   before any cutting
   <root>/<YYYY-MM-DD>/<HHMMSS>-<id>/adapter.json  the model, the language, the client, the stop reason, the errors,
-                                                  each piece's text and the whole text, the context
-                                                  (adapter, what it read, its details), and the Mac's input
-                                                  volume and input device at the start
+                                                  each piece's text and the whole text, the identity of the
+                                                  focused app, the matched surfaces and their content, the
+                                                  context (adapter, what it read, its details), and the Mac's
+                                                  input volume and input device at the start
 The recording also gets each piece's audio, the text before the audio, each piece's text (pieces.jsonl) and the
 levels (audio.json), all through Recording.save. ~/speech/tools/link_corrections.py reads chat.details (session,
 file) and "text" of adapter.json.
