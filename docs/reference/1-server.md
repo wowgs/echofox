@@ -15,15 +15,15 @@ See also: [configuration](2-config.md), [conversation context](3-context.md), [p
 
 1. The app streams microphone audio: 16 kHz, 16-bit, mono.
 2. Silero VAD detects speech as the audio arrives. A voice activity detector (VAD) distinguishes speech from silence. The server uses Silero v6.2.3 through onnxruntime.
-3. Once 20 seconds have accumulated since the previous cut, the server finds the quietest point between seconds 12 and 15. It sends the completed piece to the model and keeps at least 5 seconds for the next piece.
-4. When recording stops, the server splits the remaining audio into roughly 15-second pieces. No piece exceeds the model's 30-second input limit.
+3. A cut goes into a pause: at least 0.2 seconds without speech by the VAD (`minPauseSeconds`). The server looks for one between 8 and 25 seconds after the previous cut (`minPieceSeconds`, `maxPieceSeconds`) and takes the one nearest to 15 seconds (`pieceSeconds`). It cuts in the middle of the pause, once at least 5 more seconds are heard (`minLastPieceSeconds`) and no pause still to come could be nearer to 15 seconds. It sends the piece to the model. With no pause by 25 seconds, it cuts at the quietest 300 ms of that stretch.
+4. When recording stops, the server splits the remaining audio into roughly 15-second pieces, each cut in the pause nearest to its equal point in the same way. No piece exceeds the model's 30-second input limit.
 5. Pieces with less than 0.3 seconds of detected speech are skipped. This prevents the model from inventing text or copying context when the input is silent.
-6. Each piece becomes a separate model request: conversation context, recognition prompt, and audio. Two requests can run at once.
+6. Each piece becomes a separate model request: conversation context, recognition prompt, and audio.
 7. The server removes configured hesitation sounds, such as “э” and “мм” in Russian, and returns the text in recording order.
 
 While you speak, the server also prepares the context and the prompt in the model's processing slot. This reduces repeated work when the audio is ready. The server handles one recording at a time; a second waits for the first to finish.
 
-Speech detection also drives the app's silence timeout. Audio levels are used to choose cut points and report recording quality, not to decide whether speech is present.
+Speech detection also drives the app's silence timeout and finds the pauses for the cuts. Between the words of a phrase there is no pause: the level dips there for 30 to 150 ms, but it dips as much in the closure of a "п" or a "т" inside a word, and the VAD hears speech through both. Audio levels choose a cut only when no pause comes, and report recording quality.
 
 ## Limit of a piece's text
 

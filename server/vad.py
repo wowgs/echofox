@@ -105,3 +105,16 @@ class Stream:
 def speech_seconds(probabilities, threshold=THRESHOLD):
     """Seconds of the chunks that are speech."""
     return sum(p >= threshold for p in probabilities) * CHUNK_S
+
+
+def pauses(probabilities, min_s, threshold=THRESHOLD):
+    """The stretches without speech of at least `min_s` seconds: [(start, end)] in seconds from the first chunk."""
+    out, run = [], None
+    for k, p in enumerate(list(probabilities) + [1.0]):  # a speech chunk at the end closes the last run
+        if p < threshold:
+            run = k if run is None else run
+        elif run is not None:
+            if (k - run) * CHUNK_S >= min_s:
+                out.append((run * CHUNK_S, k * CHUNK_S))
+            run = None
+    return out

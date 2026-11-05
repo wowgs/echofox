@@ -61,8 +61,12 @@ KNOBS = [
     # longer pieces (18 s and more) turned Russian words into Latin letters more often (2026-10-19); cutting while
     # the speaker talks took the median wait after the stop for 20 to 40 s recordings from 3.66 to 2.35 s (2026-10-20).
     Knob("pieceSeconds", "piece_seconds", float, 15.0, "server", "cutting", low=5, unit="s"),
-    Knob("cutSearchSeconds", "cut_search_seconds", float, 3.0, "server", "cutting", low=0, high=10, open_low=True,
-         unit="s"),
+    # A cut goes into a pause without speech (VAD) of at least minPauseSeconds, the one nearest to pieceSeconds within
+    # minPieceSeconds to maxPieceSeconds after the cut before (audio.live_cut has why); the model takes 30 s. Not tuned:
+    # 8 and 25 s widen the 12 to 15 s that missed a pause by 0.03 s on 2026-11-05.
+    Knob("minPieceSeconds", "min_piece_seconds", float, 8.0, "server", "cutting", low=1, unit="s"),
+    Knob("maxPieceSeconds", "max_piece_seconds", float, 25.0, "server", "cutting", low=1, unit="s"),
+    Knob("minPauseSeconds", "min_pause_seconds", float, 0.2, "server", "cutting", low=0, open_low=True, unit="s"),
     Knob("cutWhileSpeaking", "cut_while_speaking", bool, True, "server", "cutting"),
     Knob("minLastPieceSeconds", "min_last_piece_seconds", float, 5.0, "server", "cutting", low=0, unit="s"),
     # From the speech that Silero VAD found in the 2038 saved pieces (2026-10-15 to 2026-10-22): the 35 pieces with

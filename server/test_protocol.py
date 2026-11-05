@@ -111,6 +111,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_pieces_are_cut_while_the_speaker_talks_and_the_rest_at_the_stop(self):
         self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
+        self.args.min_piece_seconds = self.args.max_piece_seconds = 5  # no pause in a tone: each cut at 5 s
         with tempfile.TemporaryDirectory() as d:
             file = os.path.join(d, "metrics.jsonl")
             saved = metrics.configure(file)
@@ -128,6 +129,7 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_recording_too_short_for_a_cut_is_cut_at_the_stop(self):
         self.args.piece_seconds, self.args.min_last_piece_seconds = 5, 5
+        self.args.min_piece_seconds = self.args.max_piece_seconds = 5  # no pause in a tone: each cut at 5 s
         stub, got = await self.run_stream(START, LOUD * 7)  # 7 s < 5 + 5: no cut while speaking
         self.assertEqual([c[0] for c in stub.calls], [7.0])  # and at the stop round(7 / 5) = 1 piece
 
@@ -302,7 +304,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_models_options_reach_the_model_and_a_clients_options_override_them(self):
         entries = {"g": {"llamaServer": "http://127.0.0.1:9", "options": {"temperature": 0.5, "topP": 0.9}}}
-        stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0, "pieceSeconds": 5}},
+        stub, got = await self.run_stream({**START, "options": {"topK": 1, "temperature": 0, "pieceSeconds": 5,
+                                                                    "minPieceSeconds": 5, "maxPieceSeconds": 5}},
                                           LOUD * 12, entries=entries)
         self.assertEqual(sorted(c[0] for c in stub.calls), [5.0, 7.0])  # pieceSeconds 5: a cut at 10 s heard, 7 s left
         options = stub.calls[0][2]  # the catalog's defaults, the model's options over them, the client's over both

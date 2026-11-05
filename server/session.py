@@ -24,6 +24,7 @@ import prompt
 import recordings
 import resolve
 import tuning
+import vad
 from audio import FRAME_BYTES, FRAME_S, Levels, live_cut, seconds, split
 from dictation import Dictation
 from vad import Stream
@@ -81,10 +82,15 @@ class Session:
         self.files = recordings.start(args.recordings, args.save_recordings and not start.private)
         self.id = self.files.id
         opts = start.options
-        self.cut = {n: resolve.value(n, opts, args) for n in ("piece_seconds", "cut_search_seconds", "cut_while_speaking",
+        self.cut = {n: resolve.value(n, opts, args) for n in ("piece_seconds", "min_piece_seconds", "max_piece_seconds",
+                                                             "min_pause_seconds", "cut_while_speaking",
                                                              "min_last_piece_seconds")}
         self.max_audio = catalog.max_audio_seconds(start.entry)  # what the model takes in one request
-        self.cut["piece_seconds"] = min(self.cut["piece_seconds"], self.max_audio)
+        for n in ("piece_seconds", "max_piece_seconds"):
+            self.cut[n] = min(self.cut[n], self.max_audio)
+        # The window of a cut holds the wanted length, whatever an experiment sets
+        self.cut["min_piece_seconds"] = min(self.cut["min_piece_seconds"], self.cut["piece_seconds"])
+        self.cut["max_piece_seconds"] = max(self.cut["max_piece_seconds"], self.cut["piece_seconds"])
         self.cut_frame, self.live_pieces = 0, 0  # the audio before cut_frame (a 30 ms frame) went into pieces
         self.meta = {"recording": self.id, "language": start.language,
                      "prompt": "own" if start.own_prompt else "default", "prompt_chars": len(start.text_prompt),
@@ -170,12 +176,18 @@ class Session:
         that after the stop only the rest is left."""
         if not self.cut["cut_while_speaking"]:
             return
-        while (c := live_cut(self.levels.rms, self.cut_frame, self.cut["piece_seconds"], self.cut["cut_search_seconds"],
+        while (c := live_cut(self.levels.rms, self.pauses(), self.cut_frame, self.cut["piece_seconds"],
+                             self.cut["min_piece_seconds"], self.cut["max_piece_seconds"],
                              self.cut["min_last_piece_seconds"])) is not None:
             self.pending.put_nowait((bytes(self.audio[self.cut_frame * FRAME_BYTES:c * FRAME_BYTES]),
                                      self.speech.seconds(self.cut_frame * FRAME_S, c * FRAME_S)))
             self.live_pieces += 1
             self.cut_frame = c
+
+    def pauses(self, after_s=0.0):
+        """The stretches without speech of the recording so far (vad.pauses), in seconds from `after_s`."""
+        return [(a - after_s, b - after_s) for a, b in vad.pauses(self.speech.probabilities, self.cut["min_pause_seconds"])
+                if b > after_s]
 
     # The context and the pieces
 
@@ -324,8 +336,9 @@ class Session:
             # The recording is whole: cut what is left of it now, into pieces as equal as the pauses allow.
             rest, start = self.cut_frame * FRAME_BYTES, self.cut_frame * FRAME_S
             self.speech.flush()
-            for pcm, a, b in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:],
-                                   self.cut["piece_seconds"], self.cut["cut_search_seconds"], self.max_audio):
+            for pcm, a, b in split(bytes(self.audio[rest:]), self.levels.rms[self.cut_frame:], self.pauses(start),
+                                   self.cut["piece_seconds"], self.cut["min_piece_seconds"],
+                                   self.cut["max_piece_seconds"], self.max_audio):
                 self.pending.put_nowait((pcm, self.speech.seconds(start + a, start + b)))
             if self.live_pieces:
                 log.info("recording %s: %d pieces cut while the speaker talked, %.1f s left at the stop", self.id,

@@ -14,9 +14,9 @@ def levels(pcm, chunk=None):
     return lv
 
 
-def split(pcm, piece_s=20, search_s=3):
+def split(pcm, piece_s=20, pauses=(), min_s=8, max_s=25):
     lv = levels(pcm)
-    return [round(seconds(p), 1) for p, _, _ in a.split(pcm, lv.rms, piece_s, search_s)]
+    return [round(seconds(p), 1) for p, _, _ in a.split(pcm, lv.rms, list(pauses), piece_s, min_s, max_s)]
 
 
 class SplitTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class SplitTest(unittest.TestCase):
 
     def test_the_pieces_cover_the_audio_and_say_where_they_are(self):
         lv = levels(LOUD * 45)
-        pieces = a.split(LOUD * 45, lv.rms, 20, 3)
+        pieces = a.split(LOUD * 45, lv.rms, [], 20, 8, 25)
         self.assertEqual([(s, e) for _, s, e in pieces], [(0.0, 22.5), (22.5, 45.0)])
         self.assertEqual(b"".join(p for p, _, _ in pieces), LOUD * 45)
 
@@ -35,13 +35,21 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(sorted(split(LOUD * 62)), [20.6, 20.7, 20.7])
 
     def test_none_is_longer_than_the_model_takes(self):
-        self.assertTrue(all(x <= 30 for x in split(LOUD * 61, piece_s=30)))
-        self.assertEqual(len(split(LOUD * 61, piece_s=30)), 3)  # round(61 / 30) = 2 would make 30.5 s pieces
+        self.assertTrue(all(x <= 30 for x in split(LOUD * 61, piece_s=30, max_s=30)))
+        self.assertEqual(len(split(LOUD * 61, piece_s=30, max_s=30)), 3)  # round(61 / 30) = 2 makes 30.5 s pieces
 
-    def test_a_cut_moves_into_the_nearest_pause(self):
-        pieces = split(LOUD * 19 + QUIET + LOUD * 21)  # the equal point is 20.5 s, the pause 19 to 20 s
+    def test_without_a_pause_a_cut_moves_into_the_quietest_place(self):
+        pieces = split(LOUD * 19 + QUIET + LOUD * 21)  # the equal point is 20.5 s, the quiet second 19 to 20 s
         self.assertEqual(len(pieces), 2)
         self.assertTrue(19.0 <= pieces[0] <= 20.0, pieces)
+
+    def test_a_pause_wins_over_a_quieter_place_and_the_nearest_pause_to_the_equal_point_wins(self):
+        pcm = LOUD * 20 + QUIET + LOUD * 24  # 45 s: the equal point 22.5 s; the level is lowest at 20 to 21 s
+        self.assertEqual(split(pcm, pauses=[(16.0, 16.4), (24.0, 24.4)])[0], 24.2)  # 1.7 s from it, not 6.3 s
+        self.assertEqual(split(pcm, pauses=[(5.0, 5.4)]), split(pcm))  # before 8 s: as without it
+
+    def test_a_cut_leaves_the_shortest_piece_to_the_pieces_after_it(self):
+        self.assertEqual(split(LOUD * 40, pauses=[(36.0, 36.5)]), [20.0, 20.0])  # 4 s after it would be too short
 
 
 def tone(amplitude, seconds=1):
@@ -49,27 +57,35 @@ def tone(amplitude, seconds=1):
 
 
 class LiveCutTest(unittest.TestCase):
-    def cut(self, pcm, start=0, piece_s=15, search_s=3, last_s=5):
-        c = a.live_cut(levels(pcm).rms, start, piece_s, search_s, last_s)
-        return None if c is None else round(c * a.FRAME_S, 1)
+    def cut(self, pcm, pauses=(), start=0, piece_s=15, min_s=8, max_s=25, last_s=5):
+        c = a.live_cut(levels(pcm).rms, list(pauses), start, piece_s, min_s, max_s, last_s)
+        return None if c is None else round(c * a.FRAME_S, 2)
 
     def test_no_cut_before_the_piece_and_the_last_piece_are_heard(self):
-        self.assertIsNone(self.cut(LOUD * 19))
-        self.assertEqual(self.cut(LOUD * 20), 15.0)  # no pause: at the wanted length
+        self.assertIsNone(self.cut(LOUD * 19, [(14.9, 15.1)]))
+        self.assertIsNone(self.cut(LOUD * 20, [(14.9, 15.1)]))  # the pause goes on past the last 5 s: not all of it seen
+        self.assertEqual(self.cut(LOUD * 21, [(14.9, 15.1)]), 15.0)  # the pause's middle
 
-    def test_a_cut_moves_back_into_a_pause_never_forward(self):
-        self.assertTrue(13.0 <= self.cut(LOUD * 13 + QUIET + LOUD * 6) <= 14.0)  # the pause 13 to 14 s
-        self.assertEqual(self.cut(LOUD * 15 + QUIET + LOUD * 4), 15.0)  # a pause after 15 s is not taken
+    def test_the_pause_nearest_to_the_wanted_length_once_no_nearer_one_can_come(self):
+        pcm = LOUD * 20
+        self.assertIsNone(self.cut(pcm, [(9.0, 9.4)]))  # 6 s before 15 s: one up to 21 s could be nearer
+        self.assertEqual(self.cut(LOUD * 26, [(9.0, 9.4)]), 9.18)  # 21 s seen: no nearer pause came
+        self.assertEqual(self.cut(LOUD * 26, [(9.0, 9.4), (17.0, 17.4)]), 17.19)  # 2.2 s after it, not 5.8 s before
 
-    def test_what_follows_a_cut_is_never_shorter_than_the_last_piece(self):
-        pcm = LOUD * 12 + QUIET + LOUD * 7  # 20 s; the pause 12 to 13 s is within the 3 s before 15 s
-        c = self.cut(pcm)
-        self.assertTrue(12.0 <= c <= 13.0 and 20 - c >= 5, c)
+    def test_without_a_pause_it_waits_for_the_longest_piece_then_takes_the_quietest_place(self):
+        self.assertIsNone(self.cut(LOUD * 29))  # no pause in 8 to 24 s: a pause up to 25 s may still come
+        self.assertEqual(self.cut(LOUD * 30), 15.0)  # none came: the quietest 300 ms, all equal, the nearest to 15 s
+        self.assertTrue(20.0 <= self.cut(LOUD * 20 + QUIET + LOUD * 9) <= 21.0)  # the quiet second wins
+        # 2026-11-05: a pause ended at 12.03 s, speech from 12.06 to 15 s. The pause is 3.15 s before 15 s, so it is
+        # taken once 18.15 s are past the last 5 s, not a dip in the speech
+        self.assertIsNone(self.cut(LOUD * 23, [(11.7, 12.03)]))
+        self.assertEqual(self.cut(LOUD * 24, [(11.7, 12.03)]), 11.85)
 
     def test_the_next_cut_counts_from_the_cut_before(self):
-        rms = levels(LOUD * 34).rms
-        self.assertIsNone(a.live_cut(rms, round(15 / a.FRAME_S), 15, 3, 5))  # 19 s since the cut at 15 s
-        self.assertEqual(a.live_cut(levels(LOUD * 35).rms, round(15 / a.FRAME_S), 15, 3, 5), round(30 / a.FRAME_S))
+        start = round(15 / a.FRAME_S)
+        self.assertIsNone(a.live_cut(levels(LOUD * 34).rms, [], start, 15, 8, 25, 5))  # 19 s since the cut at 15 s
+        c = a.live_cut(levels(LOUD * 45).rms, [(27.0, 27.4)], start, 15, 8, 25, 5)
+        self.assertEqual(round(c * a.FRAME_S, 1), 27.2)  # the pause 12 s after the cut before
 
 
 class LevelsTest(unittest.TestCase):

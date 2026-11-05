@@ -58,7 +58,7 @@ Inside the app, the decisions live in `EchoFoxCore`, which needs no screen and h
 
 ### Why the audio is cut into pieces
 
-The model takes at most 30 seconds of audio per request. The server sends finished pieces while the person still speaks, and handles the rest after the stop. Silero VAD decides whether a piece has speech. The audio level helps to choose a quiet place for a cut, but it does not replace the VAD. A speech threshold and a limit on the answer's length protect against invented text on silence and endless generation. The values are in the [server reference](reference/1-server.md).
+The model takes at most 30 seconds of audio per request. The server sends finished pieces while the person still speaks, and handles the rest after the stop. Silero VAD decides whether a piece has speech and where a cut goes: into a pause between phrases, the one nearest to 15 seconds within 8 to 25 seconds. A cut inside a phrase, even between two words, broke the short word after it. The audio level chooses a cut only when no pause comes. A speech threshold and a limit on the answer's length protect against invented text on silence and endless generation. The values are in the [server reference](reference/1-server.md).
 
 ## Settings
 
